@@ -1,0 +1,261 @@
+/* ============================================================================
+   PharmaKinEx — Custom Styles
+   ============================================================================ */
+
+/* --- Global refinements -------------------------------------------------- */
+body {
+  font-feature-settings: "liga", "kern";
+  -webkit-font-smoothing: antialiased;
+}
+
+.navbar-brand {
+  font-weight: 600 !important;
+  letter-spacing: 0.02em;
+}
+
+/* --- Sidebar styling ----------------------------------------------------- */
+.sidebar .card {
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  margin-bottom: 0.75rem;
+}
+
+.sidebar .card-header {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.5rem 0.75rem;
+  letter-spacing: 0.01em;
+}
+
+.sidebar .card-body {
+  padding: 0.75rem;
+}
+
+.sidebar h6 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6c757d;
+}
+
+/* --- Compact form controls ----------------------------------------------- */
+.sidebar .form-group {
+  margin-bottom: 0.5rem;
+}
+
+.sidebar .form-label,
+.sidebar .control-label {
+  font-size: 0.8rem;
+  margin-bottom: 0.15rem;
+  font-weight: 500;
+}
+
+.sidebar .form-control,
+.sidebar .form-select {
+  font-size: 0.85rem;
+  padding: 0.3rem 0.5rem;
+}
+
+/* --- Value boxes --------------------------------------------------------- */
+.bslib-value-box {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.bslib-value-box .value-box-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.bslib-value-box .value-box-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+
+/* --- Cards --------------------------------------------------------------- */
+.card {
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  border-color: #e9ecef;
+}
+
+.card-header {
+  font-weight: 600;
+  font-size: 0.9rem;
+  border-bottom: 1px solid #e9ecef;
+}
+
+/* --- DataTables refinements ---------------------------------------------- */
+.dataTables_wrapper {
+  font-size: 0.85rem;
+}
+
+table.dataTable thead th {
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background-color: #f8f9fa;
+}
+
+table.dataTable.compact td {
+  padding: 4px 8px;
+}
+
+/* --- Alert styling for Lambda Z info ------------------------------------- */
+.alert table {
+  margin-bottom: 0;
+}
+
+.alert td {
+  padding: 0.15rem 0.4rem;
+}
+
+/* --- Status indicators --------------------------------------------------- */
+.status-ok {
+  color: #18BC9C;
+  font-weight: 600;
+}
+
+.status-warn {
+  color: #F39C12;
+  font-weight: 600;
+}
+
+.status-fail {
+  color: #E74C3C;
+  font-weight: 600;
+}
+
+/* --- Plotly overrides ----------------------------------------------------- */
+.plotly .modebar {
+  opacity: 0.6;
+}
+
+.plotly .modebar:hover {
+  opacity: 1;
+}
+
+/* --- Tab navigation refinements ------------------------------------------ */
+.nav-tabs .nav-link {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.nav-tabs .nav-link.active {
+  font-weight: 700;
+}
+
+/* --- Print styling ------------------------------------------------------- */
+@media print {
+  .sidebar, .navbar, .nav-tabs {
+    display: none !important;
+  }
+  .card {
+    box-shadow: none;
+    border: 1px solid #ddd;
+  }
+}
+
+/* --- Tooltip for parameter names ----------------------------------------- */
+.param-tooltip {
+  cursor: help;
+  border-bottom: 1px dotted #6c757d;
+}
+
+/* --- File upload area ---------------------------------------------------- */
+.shiny-input-container .btn-file {
+  border-radius: 6px;
+}
+
+/* --- Action button emphasis ---------------------------------------------- */
+.btn-success.btn-lg {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 8px;
+  padding: 0.6rem 1.5rem;
+}
+
+/* --- Scrollable NCA table ------------------------------------------------ */
+.dataTables_scrollBody {
+  border-bottom: 1px solid #ddd;
+}
+
+/* --- Help Button (info popovers) ---------------------------------------- */
+.info-help-btn {
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.info-help-btn:hover {
+  opacity: 1;
+}
+
+.popover {
+  max-width: 380px;
+  font-size: 0.85rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  border: 1px solid #dee2e6;
+}
+
+.popover-header {
+  font-weight: 600;
+  font-size: 0.85rem;
+  background-color: #f1f3f5;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.popover-body {
+  line-height: 1.5;
+}
+
+.popover-body ul, .popover-body ol {
+  padding-left: 1.2rem;
+  margin-bottom: 0.3rem;
+}
+
+.popover-body li {
+  margin-bottom: 0.25rem;
+}
+
+/* --- Getting Started steps ----------------------------------------------- */
+.rounded-circle.bg-primary {
+  font-size: 0.85rem;
+}
+
+/* --- Quality report items ------------------------------------------------ */
+.border-start.border-3 {
+  transition: background-color 0.15s;
+}
+
+.border-start.border-3:hover {
+  background: rgba(0, 0, 0, 0.04) !important;
+}
+
+/* --- Hub Card hover effects ---------------------------------------------- */
+.hub-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1) !important;
+}
+
+.hub-card .card-body {
+  border-radius: 8px;
+}
+
+/* --- Breadcrumb bar ------------------------------------------------------ */
+.breadcrumb-bar a {
+  text-decoration: none;
+}
+
+/* --- Data gate cards ----------------------------------------------------- */
+.border-warning .card-body a {
+  color: #F39C12;
+  font-weight: 600;
+}
+
+/* --- Subject navigator --------------------------------------------------- */
+.subject-nav .btn {
+  min-width: 100px;
+}
