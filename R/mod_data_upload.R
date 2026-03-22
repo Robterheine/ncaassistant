@@ -25,7 +25,6 @@ data_upload_ui <- function(id) {
             
             conditionalPanel(
               condition = sprintf("output['%s'] == true", ns("is_csv")),
-              ns = ns,
               layout_columns(
                 col_widths = c(6, 6),
                 selectInput(ns("csv_sep"), "Delimiter",
@@ -38,7 +37,6 @@ data_upload_ui <- function(id) {
             
             conditionalPanel(
               condition = sprintf("output['%s'] == true", ns("is_excel")),
-              ns = ns,
               numericInput(ns("excel_sheet"), "Sheet number", value = 1, min = 1)
             )
           ),
@@ -52,7 +50,6 @@ data_upload_ui <- function(id) {
     # Column mapping (only shown after upload)
     conditionalPanel(
       condition = sprintf("output['%s'] == true", ns("has_data")),
-      ns = ns,
       
       card(
         card_header(

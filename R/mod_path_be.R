@@ -23,7 +23,6 @@ path_be_ui <- function(id) {
     
     conditionalPanel(
       condition = sprintf("output['%s'] == true", ns("data_ok")),
-      ns = ns,
       
       layout_sidebar(
         fillable = FALSE,

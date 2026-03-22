@@ -733,3 +733,20 @@ cat("\n")
 while (dev.cur() > 1) try(dev.off(), silent = TRUE)
 rplots <- list.files(pattern = "^Rplots.*[.]pdf$")
 if (length(rplots) > 0) invisible(file.remove(rplots))
+
+# C13: No double-namespaced conditionalPanels (ns() in condition + ns=ns param)
+module_files <- list.files("/home/claude/pharmakinex_v2/R/", pattern="\\.R$", full.names=TRUE)
+double_ns <- 0
+for (f in module_files) {
+  lines <- readLines(f)
+  for (i in seq_along(lines)) {
+    if (grepl("condition.*ns\\(", lines[i]) && i < length(lines)) {
+      if (grepl("^\\s*ns\\s*=\\s*ns", lines[i+1])) {
+        double_ns <- double_ns + 1
+        cat("    Double-ns in", basename(f), "line", i, "\n")
+      }
+    }
+  }
+}
+chk("C13: No double-namespaced conditionalPanels", double_ns == 0,
+    if (double_ns > 0) sprintf("(%d found)", double_ns) else "")

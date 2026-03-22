@@ -39,7 +39,6 @@ path_single_nca_ui <- function(id) {
     # --- MANUAL ENTRY MODE --------------------------------------------------
     conditionalPanel(
       condition = sprintf("input['%s'] == 'manual'", ns("data_mode")),
-      ns = ns,
       card(
         card_header(class = "bg-warning text-dark",
                     icon("keyboard"), " Enter Concentration-Time Data"),
@@ -76,14 +75,12 @@ path_single_nca_ui <- function(id) {
     # --- UPLOADED DATA GATE ------------------------------------------------
     conditionalPanel(
       condition = sprintf("input['%s'] == 'uploaded'", ns("data_mode")),
-      ns = ns,
       uiOutput(ns("data_gate"))
     ),
     
     # --- ANALYSIS AREA (shared by both modes) ------------------------------
     conditionalPanel(
       condition = sprintf("output['%s'] == true", ns("ready")),
-      ns = ns,
       
       card(
         card_header("Analysis Settings"),
