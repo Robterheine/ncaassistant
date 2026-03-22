@@ -750,3 +750,11 @@ for (f in module_files) {
 }
 chk("C13: No double-namespaced conditionalPanels", double_ns == 0,
     if (double_ns > 0) sprintf("(%d found)", double_ns) else "")
+
+# C14: Manual entry uses proper Shiny inputs (not raw tags$textarea)
+single_nca_code <- readLines("/home/claude/pharmakinex_v2/R/mod_path_single_nca.R")
+raw_textarea <- grep("tags\\$textarea.*manual_", single_nca_code)
+proper_input <- grep("textAreaInput.*manual_", single_nca_code)
+chk("C14: Manual entry uses textAreaInput (not raw tags$textarea)",
+    length(raw_textarea) == 0 && length(proper_input) >= 2,
+    sprintf("(raw: %d, proper: %d)", length(raw_textarea), length(proper_input)))

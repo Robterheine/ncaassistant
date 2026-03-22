@@ -77,7 +77,8 @@ path_be_ui <- function(id) {
                           )),
               
               checkboxGroupInput(ns("be_params"), "Parameters to compare",
-                                 choices = NULL),
+                                 choices = c("CMAX", "AUCLST", "AUCIFO", "TMAX", "LAMZHL"),
+                                 selected = c("CMAX", "AUCLST", "AUCIFO")),
               
               checkboxInput(ns("log_transform"),
                             tagList("Log-transform (recommended)", help_log_transform),

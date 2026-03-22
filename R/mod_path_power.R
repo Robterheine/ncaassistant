@@ -301,21 +301,43 @@ path_power_server <- function(id, shared) {
     })
     
     # Power curve
+    # Helper: compute power for any analysis type at given n
+    compute_power <- function(n, type, alpha, theta0, theta1, theta2, cv, cv_wr, design) {
+      if (is.null(cv_wr) || is.na(cv_wr)) cv_wr <- cv  # fallback
+      tryCatch({
+        switch(type,
+          "abe" = power.TOST(alpha = alpha, theta0 = theta0,
+                             theta1 = theta1, theta2 = theta2,
+                             CV = cv, n = n, design = design, method = "exact"),
+          "noninf" = power.noninf(alpha = alpha, theta0 = theta0,
+                                  margin = theta1, CV = cv,
+                                  n = n, design = design),
+          "abel" = power.scABEL(alpha = alpha, theta0 = theta0,
+                                CV = cv_wr, n = n, design = design, nsims = 1e4),
+          "rsabe" = power.RSABE(alpha = alpha, theta0 = theta0,
+                                CV = cv_wr, n = n, design = design, nsims = 1e4),
+          "ntid" = power.NTIDFDA(alpha = alpha, theta0 = theta0,
+                                 CV = cv_wr, n = n, design = design, nsims = 1e4),
+          NA  # dp and others — no power function available
+        )
+      }, error = function(e) NA)
+    }
+    
     output$power_curve <- renderPlotly({
       req(calc_result())
+      
+      if (input$analysis_type == "dp") {
+        return(plotly_empty() %>%
+          layout(title = list(text = "Power curve not available for dose-proportionality",
+                              font = list(size = 12))))
+      }
+      
       n_range <- seq(4, 200, by = 2)
       powers <- sapply(n_range, function(n) {
-        tryCatch({
-          if (input$analysis_type == "abe") {
-            power.TOST(alpha = input$alpha, theta0 = input$theta0,
-                       theta1 = input$theta1, theta2 = input$theta2,
-                       CV = input$cv, n = n, design = input$design, method = "exact")
-          } else if (input$analysis_type == "noninf") {
-            power.noninf(alpha = input$alpha, theta0 = input$theta0,
-                         margin = input$theta1, CV = input$cv,
-                         n = n, design = input$design)
-          } else NA
-        }, error = function(e) NA)
+        compute_power(n, input$analysis_type, input$alpha, input$theta0,
+                      input$theta1, input$theta2, input$cv,
+                      input$cv_wr,
+                      input$design)
       })
       df <- data.frame(N = n_range, Power = powers)
       df <- df[!is.na(df$Power), ]
@@ -343,16 +365,39 @@ path_power_server <- function(id, shared) {
     # Sensitivity plot
     output$sensitivity_plot <- renderPlotly({
       req(calc_result())
-      cv_seq <- seq(0.10, 0.50, length.out = 9)
+      
+      if (input$analysis_type == "dp") {
+        return(plotly_empty() %>%
+          layout(title = list(text = "Sensitivity not available for dose-proportionality",
+                              font = list(size = 12))))
+      }
+      
+      cv_seq <- seq(0.10, 0.60, length.out = 11)
+      target_pwr <- if (input$calc_mode == "sample_size") input$target_power else 0.80
+      
       results <- lapply(cv_seq, function(cv_val) {
         tryCatch({
-          if (input$analysis_type == "abe") {
-            r <- sampleN.TOST(alpha = input$alpha, targetpower = input$target_power,
-                              theta0 = input$theta0, theta1 = input$theta1,
-                              theta2 = input$theta2, CV = cv_val,
-                              design = input$design, print = FALSE)
-            data.frame(CV = cv_val, N = r[["Sample size"]])
-          } else NULL
+          r <- switch(input$analysis_type,
+            "abe" = sampleN.TOST(alpha = input$alpha, targetpower = target_pwr,
+                                 theta0 = input$theta0, theta1 = input$theta1,
+                                 theta2 = input$theta2, CV = cv_val,
+                                 design = input$design, print = FALSE),
+            "noninf" = sampleN.noninf(alpha = input$alpha, targetpower = target_pwr,
+                                      theta0 = input$theta0, margin = input$theta1,
+                                      CV = cv_val, design = input$design, print = FALSE),
+            "abel" = sampleN.scABEL(alpha = input$alpha, targetpower = target_pwr,
+                                    theta0 = input$theta0, CV = cv_val,
+                                    design = input$design, print = FALSE, nsims = 1e4),
+            "rsabe" = sampleN.RSABE(alpha = input$alpha, targetpower = target_pwr,
+                                    theta0 = input$theta0, CV = cv_val,
+                                    design = input$design, print = FALSE, nsims = 1e4),
+            "ntid" = sampleN.NTIDFDA(alpha = input$alpha, targetpower = target_pwr,
+                                     theta0 = input$theta0, CV = cv_val,
+                                     design = input$design, print = FALSE, nsims = 1e4),
+            NULL
+          )
+          if (!is.null(r)) data.frame(CV = cv_val, N = r[["Sample size"]])
+          else NULL
         }, error = function(e) NULL)
       })
       df <- do.call(rbind, results[!sapply(results, is.null)])

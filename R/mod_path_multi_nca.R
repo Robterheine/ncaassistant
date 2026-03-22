@@ -150,7 +150,20 @@ path_multi_nca_ui <- function(id) {
                   card_header("Select a Profile"),
                   card_body(
                     selectInput(ns("lz_profile"), "Profile:", choices = NULL),
-                    uiOutput(ns("lz_info"))
+                    uiOutput(ns("lz_info")),
+                    hr(),
+                    tags$p(class = "text-muted small",
+                           tags$span(class = "fw-bold", style = "color: #E74C3C;", "\u25CF"),
+                           " = used for half-life \u00A0\u00A0",
+                           tags$span(class = "fw-bold", style = "color: #BDC3C7;", "\u25CF"),
+                           " = not used"),
+                    tags$p(class = "text-muted small",
+                           "Uncheck points that don't belong on the straight line."),
+                    checkboxGroupInput(ns("lz_points"), "Points for half-life:",
+                                       choices = NULL),
+                    actionButton(ns("lz_recalc"), "Recalculate",
+                                 class = "btn-outline-primary btn-sm w-100",
+                                 icon = icon("refresh"))
                   )
                 ),
                 card(
@@ -169,6 +182,11 @@ path_multi_nca_ui <- function(id) {
 path_multi_nca_server <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
+    
+    lz_state <- reactiveValues(override = NULL)
+    
+    # Reset override when profile changes
+    observeEvent(input$lz_profile, { lz_state$override <- NULL }, ignoreInit = TRUE)
     
     output$data_ok <- reactive({ shared$data_ready })
     outputOptions(output, "data_ok", suspendWhenHidden = FALSE)
@@ -344,8 +362,8 @@ path_multi_nca_server <- function(id, shared) {
         labs(x = "Time", y = "Concentration (log)")
     }, res = 100)
     
-    # Half-life inspector
-    output$lz_info <- renderUI({
+    # Half-life inspector — helper to get selected profile's data
+    lz_sub_data <- reactive({
       req(input$lz_profile, shared$pk_data, shared$col_map)
       d <- shared$pk_data; cm <- shared$col_map; sel <- input$lz_profile
       if (grepl(" \\| ", sel)) {
@@ -353,45 +371,153 @@ path_multi_nca_server <- function(id, shared) {
         sub_d <- d[d[[cm$subject]] == trimws(parts[1]) &
                      d[[cm$treatment]] == trimws(parts[2]), ]
       } else { sub_d <- d[d[[cm$subject]] == sel, ] }
-      lz <- estimate_lambda_z(sub_d[[cm$time]], sub_d[[cm$conc]], 0.7)
+      sub_d <- sub_d[order(sub_d[[cm$time]]), ]
+      list(time = sub_d[[cm$time]], conc = sub_d[[cm$conc]])
+    })
+    
+    output$lz_info <- renderUI({
+      sd <- lz_sub_data(); req(length(sd$time) >= 3)
+      lz <- if (!is.null(lz_state$override)) lz_state$override
+            else estimate_lambda_z(sd$time, sd$conc, 0.7)
       if (is.na(lz$lambda_z)) {
         tags$div(class="alert alert-warning py-2", tags$small(lz$message))
       } else {
+        badge <- if (!is.null(lz_state$override))
+          tags$span(class = "badge bg-info ms-2", "manually adjusted") else NULL
         tags$div(class="alert alert-success py-2",
-                 tags$small(paste0("Half-life: ", signif(lz$half_life,4), "h | R²: ",
-                                   signif(lz$r2adj,4), " | ", lz$n_points, " pts")))
+                 tags$small(paste0("Half-life: ", signif(lz$half_life,4), " h | R\u00B2: ",
+                                   signif(lz$r2adj,4), " | ", lz$n_points, " pts")),
+                 badge)
       }
     })
     
     output$lz_plot <- renderPlotly({
-      req(input$lz_profile, shared$pk_data, shared$col_map)
-      d <- shared$pk_data; cm <- shared$col_map; sel <- input$lz_profile
-      if (grepl(" \\| ", sel)) {
-        parts <- strsplit(sel, " \\| ")[[1]]
-        sub_d <- d[d[[cm$subject]] == trimws(parts[1]) &
-                     d[[cm$treatment]] == trimws(parts[2]), ]
-      } else { sub_d <- d[d[[cm$subject]] == sel, ] }
-      time <- sub_d[[cm$time]]; conc <- sub_d[[cm$conc]]
-      lz <- estimate_lambda_z(time, conc, 0.7)
-      df <- data.frame(time = time, lc = ifelse(conc > 0, log(conc), NA), used = FALSE)
+      sd <- lz_sub_data(); req(length(sd$time) >= 3)
+      lz <- if (!is.null(lz_state$override)) lz_state$override
+            else estimate_lambda_z(sd$time, sd$conc, 0.7)
+      df <- data.frame(
+        Time = sd$time,
+        ln_Conc = ifelse(sd$conc > 0, log(sd$conc), NA),
+        Conc = sd$conc,
+        used = FALSE
+      )
       if (length(lz$time_used) > 0) {
-        for (i in seq_along(lz$time_used))
-          { m <- which(abs(time - lz$time_used[i]) < 1e-10)
-            if (length(m)>0) df$used[m[1]] <- TRUE }
+        for (i in seq_along(lz$time_used)) {
+          m <- which(abs(sd$time - lz$time_used[i]) < 1e-10)
+          if (length(m) > 0) df$used[m[1]] <- TRUE
+        }
       }
-      df$type <- ifelse(df$used, "Included", "Excluded")
-      df <- df[!is.na(df$lc), ]
-      p <- ggplot(df, aes(x=time, y=lc, color=type)) + geom_point(size=3) +
-        scale_color_manual(values=c("Included"="#E74C3C","Excluded"="#BDC3C7")) +
-        theme_minimal(base_size=11) + labs(x="Time",y="ln(Conc)",color=NULL)
+      df$Status <- ifelse(df$used, "Used for half-life", "Not used")
+      df <- df[!is.na(df$ln_Conc), ]
+      df$tooltip <- paste0("Time: ", round(df$Time, 2), " h\n",
+                           "Conc: ", signif(df$Conc, 4), "\n",
+                           "ln(Conc): ", round(df$ln_Conc, 3))
+      
+      p <- ggplot(df, aes(x = Time, y = ln_Conc, color = Status, text = tooltip)) +
+        geom_point(size = 3.5, alpha = 0.85) +
+        scale_color_manual(values = c("Used for half-life" = "#E74C3C",
+                                      "Not used" = "#BDC3C7")) +
+        theme_minimal(base_size = 11) +
+        labs(x = "Time", y = "ln(Concentration)") +
+        theme(legend.position = "none", plot.margin = margin(5, 10, 5, 5))
+      
       if (!is.na(lz$lambda_z)) {
         tr <- range(lz$time_used)
-        tp <- seq(tr[1], tr[2]*1.1, length.out=30)
-        p <- p + geom_line(data=data.frame(time=tp, lc=lz$intercept-lz$lambda_z*tp),
-                           aes(x=time,y=lc), inherit.aes=FALSE,
-                           color="#E74C3C", linetype="dashed")
+        tp <- seq(tr[1], tr[2] * 1.05, length.out = 30)
+        line_df <- data.frame(Time = tp,
+                              ln_Conc = lz$intercept - lz$lambda_z * tp)
+        p <- p + geom_line(data = line_df, aes(x = Time, y = ln_Conc),
+                           inherit.aes = FALSE, color = "#E74C3C",
+                           linetype = "dashed", linewidth = 0.7)
       }
-      ggplotly(p)
+      ggplotly(p, tooltip = "text") %>%
+        layout(margin = list(b = 40))
+    })
+    
+    # Populate checkboxes when profile changes
+    observe({
+      sd <- lz_sub_data(); req(length(sd$time) >= 3)
+      valid <- !is.na(sd$conc) & sd$conc > 0
+      cmax_t <- sd$time[which.max(sd$conc)]
+      term <- valid & sd$time > cmax_t
+      if (any(term)) {
+        ch <- paste0("t=", sd$time[term], "  C=", round(sd$conc[term], 3))
+        names(ch) <- which(term)
+        if (!is.null(lz_state$override)) {
+          sel <- as.character(which(term)[sd$time[term] %in% lz_state$override$time_used])
+        } else {
+          lz <- estimate_lambda_z(sd$time, sd$conc, 0.7)
+          sel <- if (length(lz$time_used) > 0)
+            as.character(which(term)[sd$time[term] %in% lz$time_used]) else NULL
+        }
+        updateCheckboxGroupInput(session, "lz_points",
+                                 choices = setNames(names(ch), ch), selected = sel)
+      }
+    })
+    
+    # Recalculate from user-selected points
+    observeEvent(input$lz_recalc, {
+      sd <- lz_sub_data(); req(length(sd$time) >= 2)
+      sel_idx <- as.integer(input$lz_points)
+      if (length(sel_idx) < 2) {
+        showNotification("Select at least 2 points.", type = "warning"); return()
+      }
+      t_sel <- sd$time[sel_idx]; c_sel <- sd$conc[sel_idx]
+      valid <- c_sel > 0 & !is.na(c_sel)
+      t_sel <- t_sel[valid]; c_sel <- c_sel[valid]
+      if (length(t_sel) < 2) {
+        showNotification("Need 2+ points with positive concentration.", type = "warning"); return()
+      }
+      fit <- lm(log(c_sel) ~ t_sel)
+      lz_new <- -coef(fit)[2]; int_new <- coef(fit)[1]
+      hl_new <- log(2) / lz_new; n_pts <- length(t_sel)
+      ss_res <- sum(residuals(fit)^2)
+      ss_tot <- sum((log(c_sel) - mean(log(c_sel)))^2)
+      r2adj <- 1 - (1 - (1 - ss_res/ss_tot)) * (n_pts - 1) / (n_pts - 2)
+      
+      lz_state$override <- list(
+        lambda_z = as.numeric(lz_new), half_life = as.numeric(hl_new),
+        intercept = as.numeric(int_new), r2adj = as.numeric(r2adj),
+        n_points = n_pts, time_used = t_sel, message = "User-selected"
+      )
+      
+      # Update this profile's row in the NCA results table
+      r <- nca_result()
+      if (!is.null(r)) {
+        sel <- input$lz_profile
+        if (grepl(" \\| ", sel)) {
+          parts <- strsplit(sel, " \\| ")[[1]]
+          row_idx <- which(r$Subject == trimws(parts[1]) & r$Treatment == trimws(parts[2]))
+        } else {
+          row_idx <- which(r[[1]] == sel)
+        }
+        if (length(row_idx) == 1) {
+          r$LAMZ[row_idx]    <- lz_new
+          r$LAMZHL[row_idx]  <- hl_new
+          r$R2ADJ[row_idx]   <- r2adj
+          r$LAMZNPT[row_idx] <- n_pts
+          auclst <- as.numeric(r$AUCLST[row_idx])
+          clast  <- as.numeric(r$CLST[row_idx])
+          if (!is.na(clast) && lz_new > 0) {
+            aucifo <- auclst + clast / lz_new
+            r$AUCIFO[row_idx] <- aucifo
+            if ("CLFO" %in% names(r)) {
+              dose_col <- if ("DOSE" %in% names(r)) as.numeric(r$DOSE[row_idx]) else NA
+              dose_val <- if (!is.na(dose_col)) dose_col else input$dose
+              if (is.null(dose_val)) dose_val <- 100
+              r$CLFO[row_idx] <- dose_val / aucifo
+              r$VZFO[row_idx] <- dose_val / (aucifo * lz_new)
+            }
+          }
+          nca_result(r)
+          shared$nca_results <- r
+        }
+      }
+      
+      showNotification(
+        sprintf("Recalculated: t\u00BD = %.3f h (R\u00B2 = %.4f, %d pts)",
+                hl_new, r2adj, n_pts),
+        type = "message", duration = 5)
     })
     
     # Downloads
