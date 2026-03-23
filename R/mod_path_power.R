@@ -216,47 +216,41 @@ path_power_server <- function(id, shared) {
     
     observeEvent(input$btn_calc, {
       withProgress(message = "Calculating...", value = 0.5, {
+        cv_wr <- if (!is.null(input$cv_wr)) input$cv_wr else input$cv
         result <- tryCatch({
           if (input$calc_mode == "sample_size") {
-            if (input$analysis_type == "abe") {
-              sampleN.TOST(alpha = input$alpha, targetpower = input$target_power,
-                           theta0 = input$theta0, theta1 = input$theta1,
-                           theta2 = input$theta2, CV = input$cv,
-                           design = input$design, method = "exact", print = FALSE)
-            } else if (input$analysis_type == "abel") {
-              sampleN.scABEL(alpha = input$alpha, targetpower = input$target_power,
-                             theta0 = input$theta0, CV = input$cv_wr,
-                             design = input$design, print = FALSE, nsims = 1e5)
-            } else if (input$analysis_type == "rsabe") {
-              sampleN.RSABE(alpha = input$alpha, targetpower = input$target_power,
-                            theta0 = input$theta0, CV = input$cv_wr,
-                            design = input$design, print = FALSE, nsims = 1e5)
-            } else if (input$analysis_type == "ntid") {
-              sampleN.NTIDFDA(alpha = input$alpha, targetpower = input$target_power,
-                              theta0 = input$theta0, CV = input$cv_wr,
-                              design = input$design, print = FALSE, nsims = 1e5)
-            } else if (input$analysis_type == "noninf") {
-              sampleN.noninf(alpha = input$alpha, targetpower = input$target_power,
-                             theta0 = input$theta0, margin = input$theta1,
-                             CV = input$cv, design = input$design, print = FALSE)
-            } else if (input$analysis_type == "dp") {
-              sampleN.dp(alpha = input$alpha, targetpower = input$target_power,
-                         CV = input$cv, print = FALSE)
-            }
+            switch(input$analysis_type,
+              "abe" = sampleN.TOST(alpha = input$alpha, targetpower = input$target_power,
+                                   theta0 = input$theta0, theta1 = input$theta1,
+                                   theta2 = input$theta2, CV = input$cv,
+                                   design = input$design, method = "exact", print = FALSE),
+              "abel" = sampleN.scABEL(alpha = input$alpha, targetpower = input$target_power,
+                                      theta0 = input$theta0, CV = cv_wr,
+                                      design = input$design, print = FALSE, nsims = 1e5),
+              "rsabe" = sampleN.RSABE(alpha = input$alpha, targetpower = input$target_power,
+                                      theta0 = input$theta0, CV = cv_wr,
+                                      design = input$design, print = FALSE, nsims = 1e5),
+              "ntid" = sampleN.NTIDFDA(alpha = input$alpha, targetpower = input$target_power,
+                                       theta0 = input$theta0, CV = cv_wr,
+                                       design = input$design, print = FALSE, nsims = 1e5),
+              "noninf" = sampleN.noninf(alpha = input$alpha, targetpower = input$target_power,
+                                        theta0 = input$theta0, margin = input$theta1,
+                                        CV = input$cv, design = input$design, print = FALSE),
+              "dp" = sampleN.dp(alpha = input$alpha, targetpower = input$target_power,
+                                CV = input$cv, print = FALSE)
+            )
           } else {
-            # Power calculation
-            if (input$analysis_type == "abe") {
-              pwr <- power.TOST(alpha = input$alpha, theta0 = input$theta0,
-                                theta1 = input$theta1, theta2 = input$theta2,
-                                CV = input$cv, n = input$n_subjects,
-                                design = input$design, method = "exact")
+            # Power calculation — compute power at given N
+            pwr <- compute_power(input$n_subjects, input$analysis_type,
+                                 input$alpha, input$theta0, input$theta1,
+                                 input$theta2, input$cv, cv_wr, input$design)
+            if (is.na(pwr)) {
+              showNotification("Power calculation not available for this analysis type with these settings.",
+                               type = "warning")
+              NULL
+            } else {
               data.frame(Design = input$design, n = input$n_subjects,
                          power = pwr, CV = input$cv)
-            } else if (input$analysis_type == "noninf") {
-              pwr <- power.noninf(alpha = input$alpha, theta0 = input$theta0,
-                                  margin = input$theta1, CV = input$cv,
-                                  n = input$n_subjects, design = input$design)
-              data.frame(Design = input$design, n = input$n_subjects, power = pwr)
             }
           }
         }, error = function(e) {

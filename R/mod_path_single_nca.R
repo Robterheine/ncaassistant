@@ -618,8 +618,14 @@ path_single_nca_server <- function(id, shared) {
       filename = function() paste0("NCA_single_", Sys.Date(), ".csv"),
       content = function(file) {
         r <- nca_res()
-        if (!is.null(r)) write.csv(data.frame(Parameter=names(r), Value=as.character(r)),
-                                    file, row.names=FALSE)
+        if (!is.null(r)) {
+          df <- data.frame(
+            Parameter = sapply(names(r), friendly_name),
+            Abbreviation = names(r),
+            Value = as.character(r)
+          )
+          write.csv(df, file, row.names = FALSE)
+        }
       }
     )
   })

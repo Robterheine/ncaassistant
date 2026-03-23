@@ -110,7 +110,10 @@ path_multi_nca_ui <- function(id) {
               icon = icon("table"),
               tags$p(class = "text-muted small",
                      "One row per subject (or per subject-treatment for crossover data). ",
-                     "Each column is a PK parameter."),
+                     "Key PK parameters shown. Tick the box below for all 37 parameters, ",
+                     "or download the full table as Excel."),
+              checkboxInput(ns("show_all_params"),
+                            "Show all parameters (37 columns)", FALSE),
               DTOutput(ns("param_table")),
               downloadButton(ns("dl_params_csv"), "Download as CSV",
                              class = "btn-outline-primary btn-sm mt-2"),
@@ -306,11 +309,25 @@ path_multi_nca_server <- function(id, shared) {
     # Parameter table
     output$param_table <- renderDT({
       req(nca_result())
-      datatable(nca_result(),
+      display_df <- rename_nca_columns(nca_result())
+      
+      if (!isTRUE(input$show_all_params)) {
+        key_cols <- intersect(
+          c("Subject", "Treatment",
+            "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
+            "AUC to Last Point", "AUC to Infinity (observed)",
+            "Half-Life (h)", "Apparent Clearance (CL/F)",
+            "Apparent Volume (Vz/F)", "Adjusted R-squared",
+            "Points Used for Half-Life"),
+          names(display_df))
+        display_df <- display_df[, key_cols, drop = FALSE]
+      }
+      
+      datatable(display_df,
                 options = list(scrollX = TRUE, scrollY = "400px",
                                pageLength = 50, dom = "frtip"),
                 rownames = FALSE, class = "compact stripe hover") %>%
-        formatSignif(columns = which(sapply(nca_result(), is.numeric)), digits = 4)
+        formatSignif(columns = which(sapply(display_df, is.numeric)), digits = 4)
     })
     
     # Summary stats
@@ -321,6 +338,7 @@ path_multi_nca_server <- function(id, shared) {
                        names(r))
       if (length(key) == 0) return(NULL)
       summ <- summarize_pk_params(r, key)
+      summ <- rename_summary_columns(summ)
       datatable(summ, options = list(scrollX = TRUE, dom = "t"),
                 rownames = FALSE, class = "compact stripe hover") %>%
         formatSignif(columns = 3:ncol(summ), digits = 4)
@@ -335,7 +353,8 @@ path_multi_nca_server <- function(id, shared) {
       long <- r %>%
         select(all_of(key)) %>%
         pivot_longer(everything(), names_to = "Parameter", values_to = "Value") %>%
-        mutate(Value = as.numeric(Value)) %>%
+        mutate(Value = as.numeric(Value),
+               Parameter = sapply(Parameter, friendly_name)) %>%
         filter(!is.na(Value))
       p <- ggplot(long, aes(x = Parameter, y = Value)) +
         geom_boxplot(fill = "#3498DB", alpha = 0.6) +
@@ -523,19 +542,23 @@ path_multi_nca_server <- function(id, shared) {
     # Downloads
     output$dl_params_csv <- downloadHandler(
       filename = function() paste0("NCA_results_", Sys.Date(), ".csv"),
-      content = function(file) { req(nca_result()); write.csv(nca_result(), file, row.names=FALSE) }
+      content = function(file) {
+        req(nca_result())
+        write.csv(rename_nca_columns(nca_result()), file, row.names=FALSE)
+      }
     )
     output$dl_params_xlsx <- downloadHandler(
       filename = function() paste0("NCA_results_", Sys.Date(), ".xlsx"),
       content = function(file) {
         req(nca_result())
         wb <- createWorkbook()
-        addWorksheet(wb, "Individual_Parameters"); writeData(wb, 1, nca_result())
+        addWorksheet(wb, "Individual_Parameters")
+        writeData(wb, 1, rename_nca_columns(nca_result()))
         r <- nca_result()
         key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r))
         if (length(key)>0) {
           addWorksheet(wb, "Summary_Statistics")
-          writeData(wb, 2, summarize_pk_params(r, key))
+          writeData(wb, 2, rename_summary_columns(summarize_pk_params(r, key)))
         }
         saveWorkbook(wb, file, overwrite=TRUE)
       }

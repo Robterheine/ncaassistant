@@ -77,7 +77,8 @@ path_be_ui <- function(id) {
                           )),
               
               checkboxGroupInput(ns("be_params"), "Parameters to compare",
-                                 choices = c("CMAX", "AUCLST", "AUCIFO", "TMAX", "LAMZHL"),
+                                 choiceNames = unname(sapply(c("CMAX", "AUCLST", "AUCIFO", "TMAX", "LAMZHL"), friendly_name)),
+                                 choiceValues = c("CMAX", "AUCLST", "AUCIFO", "TMAX", "LAMZHL"),
                                  selected = c("CMAX", "AUCLST", "AUCIFO")),
               
               checkboxInput(ns("log_transform"),
@@ -122,6 +123,10 @@ path_be_ui <- function(id) {
                      "and its 90% confidence interval. If the CI falls entirely within ",
                      "the acceptance limits (usually 80–125%), the formulations are bioequivalent."),
               DTOutput(ns("ci_table")),
+              tags$p(class = "text-muted small mt-2",
+                     icon("circle-info", class = "me-1"),
+                     "Full details (N per group, acceptance limits, residual variance, ",
+                     "degrees of freedom) are included in the Excel and CSV downloads."),
               hr(),
               tags$p(class = "text-muted small",
                      "Forest plot: dot = point estimate, bar = 90% CI, ",
@@ -134,6 +139,7 @@ path_be_ui <- function(id) {
               icon = icon("table"),
               tags$p(class = "text-muted small",
                      "Individual NCA results for all subject-treatment profiles."),
+              checkboxInput(ns("nca_show_all"), "Show all parameters (37 columns)", FALSE),
               DTOutput(ns("nca_table"))
             ),
             
@@ -200,7 +206,9 @@ path_be_server <- function(id, shared) {
         c("CMAX","AUCLST","AUCIFO","AUCIFP","TMAX","LAMZHL"), names(r))
       default <- intersect(c("CMAX","AUCLST","AUCIFO"), available)
       updateCheckboxGroupInput(session, "be_params",
-                               choices = available, selected = default)
+                               choiceNames = unname(sapply(available, friendly_name)),
+                               choiceValues = available,
+                               selected = default)
     })
     
     # NCA results (run as part of BE)
@@ -389,10 +397,19 @@ path_be_server <- function(id, shared) {
     # CI table
     output$ci_table <- renderDT({
       req(be_result())
-      datatable(be_result()$ci_table,
-                options = list(scrollX=TRUE, dom="t"),
+      display_ci <- rename_be_columns(be_result()$ci_table)
+      be_col <- if ("Bioequivalent?" %in% names(display_ci)) "Bioequivalent?" else "Bioequivalent"
+      
+      # Show only key columns — the rest are in the Excel export
+      key_cols <- intersect(c("PK Parameter", "Ratio (%)", "90% CI Lower",
+                              "90% CI Upper", "Bioequivalent?"),
+                            names(display_ci))
+      display_ci <- display_ci[, key_cols, drop = FALSE]
+      
+      datatable(display_ci,
+                options = list(scrollX = TRUE, dom = "t", ordering = FALSE),
                 rownames = FALSE, class = "compact stripe hover") %>%
-        formatStyle("Bioequivalent",
+        formatStyle(be_col,
                     backgroundColor = styleEqual(c("YES","NO"), c("#d4edda","#f8d7da")),
                     fontWeight = "bold")
     })
@@ -403,9 +420,10 @@ path_be_server <- function(id, shared) {
       ci <- be_result()$ci_table
       ci <- ci[!is.na(ci$Point_Est), ]
       if (nrow(ci) == 0) return(plotly_empty())
-      ci$Parameter <- factor(ci$Parameter, levels = rev(ci$Parameter))
+      ci$Label <- sapply(ci$Parameter, friendly_name)
+      ci$Label <- factor(ci$Label, levels = rev(ci$Label))
       
-      p <- ggplot(ci, aes(x = Point_Est, y = Parameter)) +
+      p <- ggplot(ci, aes(x = Point_Est, y = Label)) +
         geom_vline(xintercept = 100, color = "grey50") +
         geom_vline(xintercept = c(ci$BE_Lower[1], ci$BE_Upper[1]),
                    color = "#E74C3C", linetype = "dashed") +
@@ -423,10 +441,23 @@ path_be_server <- function(id, shared) {
     # NCA table
     output$nca_table <- renderDT({
       req(be_nca_result())
-      datatable(be_nca_result(), options = list(scrollX=TRUE, scrollY="400px",
-                                                 pageLength=50, dom="frtip"),
-                rownames=FALSE, class="compact stripe hover") %>%
-        formatSignif(columns = which(sapply(be_nca_result(), is.numeric)), digits = 4)
+      display_nca <- rename_nca_columns(be_nca_result())
+      
+      if (!isTRUE(input$nca_show_all)) {
+        key_cols <- intersect(
+          c("Subject", "Treatment",
+            "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
+            "AUC to Last Point", "AUC to Infinity (observed)",
+            "Half-Life (h)", "Apparent Clearance (CL/F)",
+            "Apparent Volume (Vz/F)", "Adjusted R-squared"),
+          names(display_nca))
+        display_nca <- display_nca[, key_cols, drop = FALSE]
+      }
+      
+      datatable(display_nca, options = list(scrollX = TRUE, scrollY = "400px",
+                                            pageLength = 50, dom = "frtip"),
+                rownames = FALSE, class = "compact stripe hover") %>%
+        formatSignif(columns = which(sapply(display_nca, is.numeric)), digits = 4)
     })
     
     # ANOVA
@@ -435,11 +466,19 @@ path_be_server <- function(id, shared) {
       aov_list <- be_result()$anova
       if (length(aov_list) == 0) return(tags$p("No ANOVA tables available."))
       tagList(lapply(names(aov_list), function(param) {
-        card(card_header(paste("ANOVA for", param)),
+        card(card_header(paste("ANOVA for", friendly_name(param))),
              card_body(renderTable({
                df <- as.data.frame(aov_list[[param]])
                df$Source <- rownames(df)
-               df[, c("Source", setdiff(names(df), "Source"))]
+               # Rename ANOVA columns
+               nm <- names(df)
+               nm[nm == "Df"]      <- "df"
+               nm[nm == "Sum Sq"]  <- "Sum of Squares"
+               nm[nm == "Mean Sq"] <- "Mean Square"
+               nm[nm == "F value"] <- "F statistic"
+               nm[nm == "Pr(>F)"]  <- "p-value"
+               names(df) <- nm
+               df[, c("Source", setdiff(nm, "Source"))]
              }, digits = 4, striped = TRUE, hover = TRUE)))
       }))
     })
@@ -464,12 +503,14 @@ path_be_server <- function(id, shared) {
       content = function(file) {
         req(be_result())
         wb <- createWorkbook()
-        addWorksheet(wb, "Confidence_Intervals"); writeData(wb, 1, be_result()$ci_table)
+        addWorksheet(wb, "Confidence_Intervals")
+        writeData(wb, 1, rename_be_columns(be_result()$ci_table))
         if (!is.null(be_nca_result())) {
-          addWorksheet(wb, "NCA_Parameters"); writeData(wb, 2, be_nca_result())
+          addWorksheet(wb, "NCA_Parameters")
+          writeData(wb, 2, rename_nca_columns(be_nca_result()))
         }
         for (p in names(be_result()$anova)) {
-          sn <- substr(paste0("ANOVA_", p), 1, 31)
+          sn <- substr(paste0("ANOVA_", friendly_name(p)), 1, 31)
           addWorksheet(wb, sn)
           df <- as.data.frame(be_result()$anova[[p]])
           df$Source <- rownames(df); writeData(wb, sn, df)
@@ -480,7 +521,10 @@ path_be_server <- function(id, shared) {
     
     output$dl_ci_csv <- downloadHandler(
       filename = function() paste0("BE_CI_table_", Sys.Date(), ".csv"),
-      content = function(file) { req(be_result()); write.csv(be_result()$ci_table, file, row.names=FALSE) }
+      content = function(file) {
+        req(be_result())
+        write.csv(rename_be_columns(be_result()$ci_table), file, row.names=FALSE)
+      }
     )
   })
 }

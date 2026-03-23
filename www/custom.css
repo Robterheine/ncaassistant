@@ -259,3 +259,37 @@ table.dataTable.compact td {
 .subject-nav .btn {
   min-width: 100px;
 }
+
+/* --- Responsive tables --------------------------------------------------- */
+.dataTables_wrapper {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.dataTable {
+  font-size: 0.82rem !important;
+}
+
+.dataTable th,
+.dataTable td {
+  white-space: nowrap;
+  padding: 0.35rem 0.5rem !important;
+}
+
+/* Ensure card bodies don't overflow */
+.card-body {
+  overflow-x: auto;
+}
+
+/* Sidebar layout: prevent result area from being squeezed */
+.bslib-sidebar-layout > .main-content {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+/* Value box text: prevent wrapping on small screens */
+.bslib-value-box .value-box-value {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

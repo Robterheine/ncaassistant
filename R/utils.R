@@ -2,6 +2,169 @@
 # NCA Assistant — Utility Functions
 # ============================================================================
 
+# --- Parameter name dictionary ------------------------------------------------
+# Maps NonCompart abbreviations to plain-language descriptions.
+
+pk_param_labels <- c(
+  # Subject/design
+  "Subject"   = "Subject",
+  "Treatment" = "Treatment",
+  
+  # Primary PK parameters
+  "CMAX"     = "Peak Concentration (Cmax)",
+  "CMAXD"    = "Dose-Normalised Cmax",
+  "TMAX"     = "Time of Peak (Tmax)",
+  "TLAG"     = "Lag Time",
+  
+  # Terminal phase
+  "LAMZHL"   = "Half-Life (h)",
+  "LAMZ"     = "Elimination Rate Constant",
+  "LAMZLL"   = "Lambda_z Lower Time",
+  "LAMZUL"   = "Lambda_z Upper Time",
+  "LAMZNPT"  = "Points Used for Half-Life",
+  
+  # Goodness of fit
+  "CORRXY"   = "Correlation (r)",
+  "R2"       = "R-squared",
+  "R2ADJ"    = "Adjusted R-squared",
+  "b0"       = "Y-Intercept (ln scale)",
+  
+  # AUC — observed
+  "AUCLST"   = "AUC to Last Point",
+  "AUCALL"   = "AUC All (incl. trailing zero)",
+  
+  # AUC — extrapolated (observed Clast)
+  "AUCIFO"   = "AUC to Infinity (observed)",
+  "AUCIFOD"  = "Dose-Normalised AUC to Infinity",
+  "AUCPEO"   = "AUC % Extrapolated (observed)",
+  
+  # AUC — extrapolated (predicted Clast)
+  "AUCIFP"   = "AUC to Infinity (predicted)",
+  "AUCIFPD"  = "Dose-Normalised AUC Inf (pred)",
+  "AUCPEP"   = "AUC % Extrapolated (predicted)",
+  
+  # AUMC
+  "AUMCLST"  = "AUMC to Last Point",
+  "AUMCIFO"  = "AUMC to Infinity (observed)",
+  "AUMCIFP"  = "AUMC to Infinity (predicted)",
+  "AUMCPEO"  = "AUMC % Extrapolated (obs)",
+  "AUMCPEP"  = "AUMC % Extrapolated (pred)",
+  
+  # Clearance and volume
+  "CLFO"     = "Apparent Clearance (CL/F)",
+  "CLFP"     = "Apparent Clearance (pred)",
+  "VZFO"     = "Apparent Volume (Vz/F)",
+  "VZFP"     = "Apparent Volume (pred)",
+  "CLO"      = "Clearance (CL)",
+  "VZO"      = "Volume of Distribution (Vz)",
+  
+  # MRT
+  "MRTEVLST" = "Mean Residence Time (to last)",
+  "MRTEVIFO" = "Mean Residence Time (to inf, obs)",
+  "MRTEVIFP" = "Mean Residence Time (to inf, pred)",
+  
+  # Last observed
+  "CLST"     = "Last Measurable Concentration",
+  "CLSTP"    = "Predicted Last Concentration",
+  "TLST"     = "Time of Last Measurable Conc",
+  
+  # Steady-state derived
+  "AUCTAU"   = "AUC Within Dosing Interval",
+  "TAU"      = "Dosing Interval (tau)",
+  "CAVG"     = "Average Concentration (Cavg)",
+  "CMIN_SS"  = "Trough Concentration (Cmin)",
+  "FLUCTP"   = "Peak-Trough Fluctuation (%)",
+  "SWING"    = "Swing ((Cmax-Cmin)/Cmin)",
+  
+  # Dose-normalised (from add_dose_normalized)
+  "CMAX_DN"  = "Dose-Normalised Cmax",
+  "AUCLST_DN"= "Dose-Normalised AUC Last",
+  "AUCIFO_DN"= "Dose-Normalised AUC Inf"
+)
+
+#' Translate a NonCompart parameter name to plain English
+#' @param name Character: the abbreviation
+#' @return Character: the friendly name, or the original if unknown
+friendly_name <- function(name) {
+  label <- pk_param_labels[name]
+  ifelse(is.na(label), name, label)
+}
+
+#' Rename columns of an NCA result data frame to friendly names
+#' @param df Data frame with NonCompart column names
+#' @return Data frame with renamed columns
+rename_nca_columns <- function(df) {
+  if (is.null(df) || nrow(df) == 0) return(df)
+  nm <- names(df)
+  for (i in seq_along(nm)) {
+    label <- pk_param_labels[nm[i]]
+    if (!is.na(label)) nm[i] <- label
+  }
+  names(df) <- nm
+  df
+}
+
+#' Rename summary statistics columns to friendly names
+#' @param df Summary data frame from summarize_pk_params
+#' @return Data frame with renamed columns
+rename_summary_columns <- function(df) {
+  renames <- c(
+    "Parameter" = "Parameter",
+    "N"         = "N",
+    "Mean"      = "Mean",
+    "SD"        = "Std Dev",
+    "CV_pct"    = "CV (%)",
+    "Median"    = "Median",
+    "Min"       = "Min",
+    "Max"       = "Max",
+    "Geo_Mean"  = "Geometric Mean",
+    "Geo_CV_pct"= "Geometric CV (%)"
+  )
+  nm <- names(df)
+  for (i in seq_along(nm)) {
+    r <- renames[nm[i]]
+    if (!is.na(r)) nm[i] <- r
+  }
+  names(df) <- nm
+  # Also rename parameter values in the Parameter column
+  if ("Parameter" %in% names(df)) {
+    df$Parameter <- sapply(df$Parameter, friendly_name)
+  }
+  df
+}
+
+#' Rename BE CI table columns to friendly names
+#' @param df CI result data frame
+#' @return Data frame with renamed columns
+rename_be_columns <- function(df) {
+  renames <- c(
+    "Parameter"     = "PK Parameter",
+    "Test"          = "Test Formulation",
+    "Reference"     = "Reference Formulation",
+    "N_Test"        = "N (Test)",
+    "N_Ref"         = "N (Reference)",
+    "Point_Est"     = "Ratio (%)",
+    "CI_Lower"      = "90% CI Lower",
+    "CI_Upper"      = "90% CI Upper",
+    "BE_Lower"      = "Accept. Lower",
+    "BE_Upper"      = "Accept. Upper",
+    "Bioequivalent" = "Bioequivalent?",
+    "MSE"           = "Residual Variance",
+    "DF"            = "Degrees of Freedom"
+  )
+  nm <- names(df)
+  for (i in seq_along(nm)) {
+    r <- renames[nm[i]]
+    if (!is.na(r)) nm[i] <- r
+  }
+  names(df) <- nm
+  # Also rename parameter values
+  if ("PK Parameter" %in% names(df)) {
+    df[["PK Parameter"]] <- sapply(df[["PK Parameter"]], friendly_name)
+  }
+  df
+}
+
 #' Detect study design from data structure
 #' @param data Data frame with mapped columns
 #' @param col_map Named list of column mappings
