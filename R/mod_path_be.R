@@ -41,7 +41,21 @@ path_be_ui <- function(id) {
                           choices = c("Oral / IM / SC" = "extravascular",
                                       "IV Bolus" = "iv_bolus",
                                       "IV Infusion" = "iv_infusion")),
-              numericInput(ns("dose"), "Dose", value = 100, min = 0),
+              
+              radioButtons(ns("dose_source"), "Dose information",
+                           choices = c(
+                             "Same dose for all subjects" = "single",
+                             "Different doses (from Dose column)" = "from_data"
+                           ), selected = "single"),
+              conditionalPanel(
+                condition = sprintf("input['%s'] == 'single'", ns("dose_source")),
+                numericInput(ns("dose"), "Dose", value = 100, min = 0)
+              ),
+              conditionalPanel(
+                condition = sprintf("input['%s'] == 'from_data'", ns("dose_source")),
+                uiOutput(ns("dose_column_status"))
+              ),
+              
               layout_columns(
                 col_widths = c(4, 4, 4),
                 textInput(ns("dose_unit"), "Dose unit", value = "mg"),
@@ -177,6 +191,33 @@ path_be_server <- function(id, shared) {
     output$data_ok <- reactive({ shared$data_ready })
     outputOptions(output, "data_ok", suspendWhenHidden = FALSE)
     
+    # Auto-select "from_data" when Dose column is mapped
+    observe({
+      if (shared$data_ready && !is.null(shared$col_map$dose)) {
+        updateRadioButtons(session, "dose_source", selected = "from_data")
+      }
+    })
+    
+    # Dose column status
+    output$dose_column_status <- renderUI({
+      if (!shared$data_ready || is.null(shared$col_map$dose)) {
+        return(tags$div(class = "alert alert-warning py-2 small",
+                        icon("triangle-exclamation"),
+                        " No Dose column mapped. Map it in Upload & Check Data, ",
+                        "or switch to 'Same dose for all'."))
+      }
+      dose_vals <- shared$pk_data[[shared$col_map$dose]]
+      dose_by_subj <- tapply(dose_vals, shared$pk_data[[shared$col_map$subject]],
+                             function(x) max(x, na.rm = TRUE))
+      unique_doses <- sort(unique(dose_by_subj))
+      tags$div(class = "alert alert-success py-2 small",
+               icon("circle-check"),
+               paste0(" Dose column '", shared$col_map$dose, "': ",
+                      length(unique_doses), " dose level(s): ",
+                      paste(unique_doses, collapse = ", "), " ",
+                      input$dose_unit, "."))
+    })
+    
     output$data_gate <- renderUI({
       if (!shared$data_ready) {
         card(class = "border-warning",
@@ -219,13 +260,14 @@ path_be_server <- function(id, shared) {
       req(shared$pk_data, shared$col_map, shared$col_map$treatment)
       
       cm <- shared$col_map
+      use_data_dose <- (input$dose_source == "from_data" && !is.null(cm$dose))
       
       withProgress(message = "Step 1: Running NCA...", value = 0.3, {
         
         # Run NCA
         settings <- list(
           admin_route = input$admin_route,
-          dose = input$dose,
+          dose = if (use_data_dose) NA else input$dose,
           infusion_duration = 0,
           is_steady_state = FALSE,
           dose_unit = input$dose_unit,
@@ -235,6 +277,14 @@ path_be_server <- function(id, shared) {
           r2adj_threshold = 0.7,
           mw = 0, partial_aucs = NULL
         )
+        
+        if (use_data_dose) {
+          dose_df <- shared$pk_data %>%
+            group_by(.data[[cm$subject]]) %>%
+            summarize(dose = max(.data[[cm$dose]], na.rm = TRUE),
+                      .groups = "drop")
+          settings$dose <- dose_df$dose
+        }
         
         nca_res <- run_nca(shared$pk_data, cm, settings)
         

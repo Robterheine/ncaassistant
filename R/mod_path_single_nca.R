@@ -86,6 +86,8 @@ path_single_nca_ui <- function(id) {
                                     "IV Bolus" = "iv_bolus",
                                     "IV Infusion" = "iv_infusion")),
             numericInput(ns("dose"), "Dose", value = 100, min = 0),
+            tags$div(id = ns("dose_hint_container"),
+                     uiOutput(ns("dose_hint"))),
             textInput(ns("dose_unit"), "Dose unit", value = "mg"),
             textInput(ns("time_unit"), "Time unit", value = "h"),
             textInput(ns("conc_unit"), "Conc unit", value = "ng/mL"),
@@ -172,6 +174,31 @@ path_single_nca_server <- function(id, shared) {
     # Reset lambda_z override when profile changes or new NCA runs
     observeEvent(input$sel_profile, { local$lz_override <- NULL }, ignoreInit = TRUE)
     observeEvent(input$btn_use_manual, { local$lz_override <- NULL }, ignoreInit = TRUE)
+    
+    # Auto-fill dose from data when profile changes
+    observeEvent(input$sel_profile, {
+      if (!shared$data_ready || is.null(shared$col_map$dose)) return()
+      d <- shared$pk_data; cm <- shared$col_map; sel <- input$sel_profile
+      if (grepl(" \\| ", sel)) {
+        parts <- strsplit(sel, " \\| ")[[1]]
+        sub_d <- d[d[[cm$subject]] == trimws(parts[1]), ]
+      } else {
+        sub_d <- d[d[[cm$subject]] == sel, ]
+      }
+      dose_val <- max(sub_d[[cm$dose]], na.rm = TRUE)
+      if (is.finite(dose_val)) {
+        updateNumericInput(session, "dose", value = dose_val)
+      }
+    }, ignoreInit = TRUE)
+    
+    # Dose hint
+    output$dose_hint <- renderUI({
+      if (shared$data_ready && !is.null(shared$col_map$dose)) {
+        tags$span(class = "text-muted", style = "font-size: 0.75rem;",
+                  icon("circle-info", class = "me-1"),
+                  "Auto-filled from your data's Dose column.")
+      }
+    })
     
     # Mode info
     output$mode_info <- renderUI({

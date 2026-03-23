@@ -90,9 +90,12 @@ data_guide_ui <- function() {
             tags$tr(tags$td("Single subject, single dose"),
                     tags$td(tags$code("Time"), ", ", tags$code("Concentration")),
                     tags$td("One Subject at a Time (manual entry)")),
-            tags$tr(tags$td("Multiple subjects, single dose"),
+            tags$tr(tags$td("Multiple subjects, same dose"),
                     tags$td(tags$code("Subject"), ", ", tags$code("Time"), ", ", tags$code("Concentration")),
                     tags$td("All Subjects (Batch)")),
+            tags$tr(tags$td("Multiple subjects, different doses"),
+                    tags$td(tags$code("Subject"), ", ", tags$code("Time"), ", ", tags$code("Concentration"), ", ", tags$code("Dose")),
+                    tags$td("All Subjects (select 'from Dose column')")),
             tags$tr(tags$td("2-period crossover (BE)"),
                     tags$td(tags$code("Subject"), ", ", tags$code("Period"), ", ", tags$code("Sequence"), ", ", tags$code("Treatment"), ", ", tags$code("Time"), ", ", tags$code("Concentration")),
                     tags$td("Bioequivalence")),
@@ -106,7 +109,13 @@ data_guide_ui <- function() {
                     tags$td(tags$code("Subject"), ", ", tags$code("Time"), ", ", tags$code("Concentration")),
                     tags$td("All Subjects (tick 'steady-state')"))
           )
-        )
+        ),
+        tags$p(class = "text-muted small mt-2",
+               tags$strong("Note on the Dose column: "),
+               "If all subjects received the same dose, you don't need a Dose column — ",
+               "just enter the dose in the app settings. If subjects received different doses ",
+               "(dose escalation, weight-based dosing), include a Dose column in your data and ",
+               "select 'Each subject has a different dose' in the analysis settings.")
       )
     ),
     
@@ -166,21 +175,23 @@ data_guide_ui <- function() {
       ),
       
       # ----------------------------------------------------------------
-      # SCENARIO 2: Multiple subjects, single dose
+      # SCENARIO 2: Multiple subjects
       # ----------------------------------------------------------------
       nav_panel(
         "Multiple Subjects",
         icon = icon("users"),
         
-        tags$h5(class = "fw-bold mt-2", "Scenario 2: Multiple Subjects, Single Dose"),
-        tags$p("A standard pharmacokinetic study: several subjects each received the same drug ",
-               "at the same dose, and blood samples were collected at protocol-specified times. ",
-               "This is the most common scenario for Phase I PK studies."),
+        tags$h5(class = "fw-bold mt-2", "Scenario 2: Multiple Subjects"),
+        tags$p("Several subjects each received the drug and blood samples were collected ",
+               "at protocol-specified times. This covers both single-dose PK studies ",
+               "and dose-escalation studies."),
         
-        tags$h6(class = "fw-semibold", "What you need"),
+        # --- Same dose ---
+        tags$h6(class = "fw-semibold mt-3",
+                "Case A: Everyone received the same dose"),
         tags$p(class = "small",
-               "Three columns: a subject identifier (can be a number or code), time, and concentration. ",
-               "Stack all subjects into one table — not one sheet per subject."),
+               "Three columns: subject ID, time, and concentration. ",
+               "You enter the dose once in the app settings — no Dose column needed."),
         
         ex_table(data.frame(
           Subject = c("S001","S001","S001","S001","S002","S002","S002","S002","S003","S003","S003","S003"),
@@ -188,9 +199,35 @@ data_guide_ui <- function() {
           Concentration = c(0,22.5,8.3,0.4, 0,28.1,10.2,0.6, 0,19.8,7.1,0.3)
         )),
         
+        # --- Different doses ---
+        tags$h6(class = "fw-semibold mt-4",
+                "Case B: Subjects received different doses"),
+        tags$p(class = "small",
+               "This happens in dose-escalation studies (Phase I: cohort 1 gets 50 mg, ",
+               "cohort 2 gets 100 mg, etc.) and with weight-based dosing (each subject ",
+               "gets mg/kg \u00D7 their weight). Add a ",
+               tags$strong("Dose"), " column with each subject's actual dose."),
+        
+        ex_table(data.frame(
+          Subject = c("S001","S001","S001","S002","S002","S002","S003","S003","S003"),
+          Dose    = c(50,50,50, 50,50,50, 100,100,100),
+          Time    = c(0,1,24, 0,1,24, 0,1,24),
+          Concentration = c(0,10.2,0.2, 0,12.8,0.3, 0,25.1,0.5)
+        )),
+        
+        tags$div(
+          class = "alert alert-info py-2 small",
+          tags$strong("How it works in the app: "),
+          "During data upload, map the Dose column. In the analysis settings, select ",
+          "'Each subject has a different dose (from Dose column in data)'. ",
+          "The app reads each subject's dose from the data and uses it to calculate ",
+          "dose-dependent parameters like clearance (CL = Dose / AUC) and volume of distribution."
+        ),
+        
         tags$p(class = "small text-muted",
-               "In reality you would have more time points per subject (8-15 is typical). ",
-               "This example is shortened for clarity."),
+               "The Dose column should contain a single value per subject (the same value ",
+               "on every row for that subject). If doses vary within a subject's rows, ",
+               "the app uses the maximum value."),
         
         tags$div(
           class = "alert alert-info py-2 small",
@@ -205,13 +242,15 @@ data_guide_ui <- function() {
             "Use a unique ID for each subject (S001, S002, ... or 1, 2, 3, ...)",
             "Stack all subjects into one long table, not separate sheets",
             "Use actual sampling times if available (not just nominal protocol times)",
-            "Include all subjects, even those with incomplete profiles"
+            "Include all subjects, even those with incomplete profiles",
+            "Include a Dose column if subjects received different doses"
           ),
           dont_items = c(
             "Put each subject in a separate sheet or file",
             "Use wide format (subjects as columns) — use long format (subjects as rows)",
             "Remove subjects with missing data points — let the app handle them",
-            "Exclude pre-dose samples"
+            "Exclude pre-dose samples",
+            "Leave out the Dose column for dose-escalation studies — the app can't guess doses"
           )
         ),
         
@@ -244,7 +283,8 @@ data_guide_ui <- function() {
         checklist(c(
           "One row per observation (long format)",
           "Subject IDs are unique and consistent (no 'S01' vs 'S1' mix-up)",
-          "All subjects have the same dose (or include a Dose column if doses differ)",
+          "If same dose for all: enter the dose in the app (no Dose column needed)",
+          "If different doses: include a Dose column and map it during upload",
           "Time is in hours since the individual subject's dose",
           "Pre-dose sample (time 0) is present for each subject"
         ))

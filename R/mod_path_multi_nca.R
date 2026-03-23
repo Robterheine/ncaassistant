@@ -36,7 +36,25 @@ path_multi_nca_ui <- function(id) {
                           choices = c("Oral / IM / SC (extravascular)" = "extravascular",
                                       "IV Bolus (injected into vein at once)" = "iv_bolus",
                                       "IV Infusion (drip over time)" = "iv_infusion")),
-              numericInput(ns("dose"), "Dose given to each subject", value = 100, min = 0),
+              
+              # Dose source selector
+              radioButtons(ns("dose_source"), "Dose information",
+                           choices = c(
+                             "Same dose for all subjects" = "single",
+                             "Each subject has a different dose (from Dose column in data)" = "from_data"
+                           ), selected = "single"),
+              
+              conditionalPanel(
+                condition = sprintf("input['%s'] == 'single'", ns("dose_source")),
+                numericInput(ns("dose"), "Dose given to each subject",
+                             value = 100, min = 0)
+              ),
+              
+              conditionalPanel(
+                condition = sprintf("input['%s'] == 'from_data'", ns("dose_source")),
+                uiOutput(ns("dose_column_status"))
+              ),
+              
               conditionalPanel(
                 condition = sprintf("input['%s'] == 'iv_infusion'", ns("admin_route")),
                 numericInput(ns("inf_dur"), "Infusion duration", value = 0, min = 0)),
@@ -194,6 +212,49 @@ path_multi_nca_server <- function(id, shared) {
     output$data_ok <- reactive({ shared$data_ready })
     outputOptions(output, "data_ok", suspendWhenHidden = FALSE)
     
+    # Auto-select "from_data" when a Dose column is mapped
+    observe({
+      if (shared$data_ready && !is.null(shared$col_map$dose)) {
+        updateRadioButtons(session, "dose_source", selected = "from_data")
+      }
+    })
+    
+    # Dose column status — shows summary when "from data" is selected
+    output$dose_column_status <- renderUI({
+      if (!shared$data_ready) {
+        return(tags$div(class = "alert alert-warning py-2 small",
+                        icon("triangle-exclamation"),
+                        " Upload data first and map a Dose column."))
+      }
+      
+      if (is.null(shared$col_map$dose)) {
+        return(tags$div(class = "alert alert-warning py-2 small",
+                        icon("triangle-exclamation"),
+                        " No Dose column mapped. Go to Upload & Check Data ",
+                        "and map the Dose column, or switch to 'Same dose for all'."))
+      }
+      
+      # Show dose summary from data
+      dose_vals <- shared$pk_data[[shared$col_map$dose]]
+      dose_by_subj <- tapply(dose_vals, shared$pk_data[[shared$col_map$subject]],
+                             function(x) max(x, na.rm = TRUE))
+      unique_doses <- sort(unique(dose_by_subj))
+      
+      tags$div(
+        class = "alert alert-success py-2 small",
+        icon("circle-check"),
+        paste0(" Dose column '", shared$col_map$dose, "' found. "),
+        if (length(unique_doses) == 1) {
+          paste0("All subjects received ", unique_doses, " ",
+                 input$dose_unit, ".")
+        } else {
+          paste0(length(unique_doses), " different doses: ",
+                 paste(unique_doses, collapse = ", "), " ", input$dose_unit,
+                 " (", length(dose_by_subj), " subjects).")
+        }
+      )
+    })
+    
     output$data_gate <- renderUI({
       if (!shared$data_ready) {
         card(class = "border-warning",
@@ -212,9 +273,13 @@ path_multi_nca_server <- function(id, shared) {
     observeEvent(input$run_nca, {
       req(shared$pk_data, shared$col_map)
       
+      # Determine dose
+      use_data_dose <- (input$dose_source == "from_data" &&
+                        !is.null(shared$col_map$dose))
+      
       settings <- list(
         admin_route       = input$admin_route,
-        dose              = input$dose,
+        dose              = if (use_data_dose) NA else input$dose,
         infusion_duration = ifelse(input$admin_route == "iv_infusion",
                                    input$inf_dur, 0),
         is_steady_state   = input$is_ss,
@@ -227,7 +292,7 @@ path_multi_nca_server <- function(id, shared) {
         partial_aucs      = NULL
       )
       
-      if (!is.null(shared$col_map$dose)) {
+      if (use_data_dose) {
         dose_df <- shared$pk_data %>%
           group_by(.data[[shared$col_map$subject]]) %>%
           summarize(dose = max(.data[[shared$col_map$dose]], na.rm = TRUE),
