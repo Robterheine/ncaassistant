@@ -1,6 +1,6 @@
 # Non-Compartmental Analysis Assistant
 
-**Version 0.1 (test release)**
+**Version 1.0 Release Candidate 1 (1.0 RC1)**
 
 A freely available, open-source Shiny application for pharmacokinetic non-compartmental analysis (NCA), bioequivalence testing, and study planning. Developed by the [Radboud Applied Pharmacometrics](https://www.radboudumc.nl/en/research/research-groups/radboud-applied-pharmacometrics) research group at Radboudumc, Nijmegen, The Netherlands.
 
@@ -176,7 +176,7 @@ GPL-3. All R packages retain their original licenses.
 
 If you use this software in published work, please cite:
 
-> NCA Assistant (v0.1). Radboud Applied Pharmacometrics, Radboudumc, Nijmegen, The Netherlands. Available at: https://github.com/Robterheine/NCAassistant
+> NCA Assistant (v1.0 RC1). Radboud Applied Pharmacometrics, Radboudumc, Nijmegen, The Netherlands. Available at: https://github.com/Robterheine/NCAassistant
 
 And the underlying NCA engine:
 
@@ -186,7 +186,7 @@ And the underlying NCA engine:
 
 ## Contributing
 
-This is a test release. Bug reports, feature requests, and pull requests are welcome via [GitHub Issues](https://github.com/Robterheine/NCAassistant/issues).
+This is a release candidate. Bug reports, feature requests, and pull requests are welcome via [GitHub Issues](https://github.com/Robterheine/NCAassistant/issues).
 
 ---
 

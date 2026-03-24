@@ -8,7 +8,7 @@
 
 cat("
 ======================================================
-  Non-Compartmental Analysis Assistant v0.1
+  Non-Compartmental Analysis Assistant v1.0 RC1
   Radboud Applied Pharmacometrics — Radboudumc
 ======================================================
 \n")

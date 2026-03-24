@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 # ============================================================================
-# NCA Assistant v0.1 — Comprehensive Validation Suite
+# NCA Assistant v1.0 RC1 — Comprehensive Validation Suite
 # ============================================================================
 # Tests:
 #   A. STATISTICAL ACCURACY (Senior Researcher)
@@ -35,7 +35,7 @@ chk <- function(name, cond, detail = "") {
 }
 
 cat("\n================================================================\n")
-cat("  NCA Assistant v0.1 — Comprehensive Validation Suite\n")
+cat("  NCA Assistant v1.0 RC1 — Comprehensive Validation Suite\n")
 cat("================================================================\n\n")
 
 
