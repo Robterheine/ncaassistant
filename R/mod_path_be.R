@@ -83,6 +83,19 @@ path_be_ui <- function(id) {
                             "4-period replicate crossover" = "replicate_2x2x4"
                           )),
               
+              conditionalPanel(
+                condition = sprintf("input['%s'] == 'replicate_2x2x4'", ns("be_design")),
+                tags$div(
+                  class = "alert alert-info py-2 small mb-2",
+                  icon("circle-info", class = "me-1"),
+                  tags$strong("Note: "),
+                  "This app performs standard ABE (fixed 80\u2013125% limits) for all designs. ",
+                  "It does not perform reference-scaled analysis (ABEL/RSABE). ",
+                  "If your drug requires widened or scaled limits (CV", tags$sub("wR"),
+                  " > 30%), use dedicated software for the scaled analysis."
+                )
+              ),
+              
               selectInput(ns("model_type"),
                           tagList("Statistical model", help_mixed_effects),
                           choices = c(
