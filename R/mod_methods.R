@@ -6,6 +6,17 @@
 
 methods_ui <- function() {
   
+  # Safe package version lookup (returns "X.Y.Z" or "?" if not installed)
+  pkg_ver <- function(pkg) {
+    tryCatch(as.character(packageVersion(pkg)), error = function(e) "?")
+  }
+  
+  # Safe version strings
+  ver <- tryCatch(get("APP_VERSION", envir = globalenv()), error = function(e) "?")
+  
+  # Safe R version
+  r_ver <- tryCatch(R.version.string, error = function(e) "R")
+  
   # Helper: equation block
   eq <- function(...) {
     tags$div(
@@ -29,6 +40,7 @@ methods_ui <- function() {
     )
   }
   
+  tryCatch({
   tags$div(
     class = "container-fluid py-4",
     style = "max-width: 900px; margin: 0 auto;",
@@ -47,7 +59,7 @@ methods_ui <- function() {
     
     tags$p(class = "text-muted small",
            "All analyses were performed using the NCA Assistant application (v",
-           APP_VERSION, "), built in R (R Core Team, 2024). ",
+           ver, "), built in R (R Core Team, 2024). ",
            "The following sections describe each statistical method. ",
            "Adapt and combine the sections relevant to your study."),
     
@@ -66,7 +78,7 @@ methods_ui <- function() {
         
         tags$p(
           "Pharmacokinetic parameters were estimated by non-compartmental analysis ",
-          "using the NonCompart R package (version ", as.character(packageVersion("NonCompart")),
+          "using the NonCompart R package (version ", pkg_ver("NonCompart"),
           "; Kim et al., 2018), validated against Certara Phoenix WinNonlin\u00AE."
         ),
         
@@ -290,7 +302,7 @@ methods_ui <- function() {
                "This is the standard approach for balanced crossover studies."),
         
         tags$p(tags$strong("Mixed-effects model"), " (R package nlme, version ",
-               as.character(packageVersion("nlme")), "; Pinheiro & Bates, 2000):"),
+               pkg_ver("nlme"), "; Pinheiro & Bates, 2000):"),
         tags$p(class = "small",
                "Sequence, Period, and Treatment are modelled as fixed effects. ",
                "Subject nested within Sequence is modelled as a random effect:"),
@@ -357,7 +369,7 @@ methods_ui <- function() {
         
         tags$p(
           "Power and sample size calculations were performed using the PowerTOST R package ",
-          "(version ", as.character(packageVersion("PowerTOST")),
+          "(version ", pkg_ver("PowerTOST"),
           "; Labes et al.), which implements exact methods based on Owen\u2019s Q function ",
           "for average bioequivalence and simulation-based approaches for ",
           "reference-scaled methods."
@@ -429,7 +441,7 @@ methods_ui <- function() {
           tags$strong("Software reference:"),
           tags$br(),
           "Labes D, Sch\u00FCtz H, Lang B. PowerTOST: Power and Sample Size for (Bio)Equivalence Studies. ",
-          "R package version ", as.character(packageVersion("PowerTOST")), ".",
+          "R package version ", pkg_ver("PowerTOST"), ".",
           tags$br(), tags$br(),
           tags$strong("Methodological references:"),
           tags$br(),
@@ -476,7 +488,7 @@ methods_ui <- function() {
             "). Concentrations below the LLOQ [state value] were handled as follows: ",
             "pre-first-quantifiable set to zero, post-last-quantifiable treated as missing. ",
             "All NCA computations were performed using the NonCompart R package (version ",
-            as.character(packageVersion("NonCompart")), "; Kim et al., 2018)."
+            pkg_ver("NonCompart"), "; Kim et al., 2018)."
           )
         ),
         
@@ -498,13 +510,13 @@ methods_ui <- function() {
             "Bioequivalence was concluded if the 90% CI fell entirely within the ",
             "acceptance limits of 80.00\u2013125.00%. ",
             "The NCA was performed using NonCompart (version ",
-            as.character(packageVersion("NonCompart")),
+            pkg_ver("NonCompart"),
             "; Kim et al., 2018), the mixed-effects model using nlme (version ",
-            as.character(packageVersion("nlme")),
+            pkg_ver("nlme"),
             "; Pinheiro & Bates, 2000), and sample size estimation using PowerTOST (version ",
-            as.character(packageVersion("PowerTOST")),
+            pkg_ver("PowerTOST"),
             "; Labes et al.). All analyses were conducted in R (version ",
-            R.version.string, ")."
+            r_ver, ")."
           )
         ),
         
@@ -517,7 +529,7 @@ methods_ui <- function() {
                  ". Springer, New York, 2000."),
           tags$p("Labes D, Sch\u00FCtz H, Lang B. PowerTOST: Power and Sample Size for ",
                  "(Bio)Equivalence Studies. R package version ",
-                 as.character(packageVersion("PowerTOST")), "."),
+                 pkg_ver("PowerTOST"), "."),
           tags$p("R Core Team. R: A Language and Environment for Statistical Computing. ",
                  "R Foundation for Statistical Computing, Vienna, Austria, 2024."),
           tags$p("Schuirmann DJ. A comparison of the two one-sided tests procedure and ",
@@ -534,4 +546,16 @@ methods_ui <- function() {
       )
     )
   )
+  }, error = function(e) {
+    tags$div(
+      class = "container-fluid py-4",
+      style = "max-width: 900px; margin: 0 auto;",
+      tags$div(class = "alert alert-danger",
+               tags$h5("Error loading Statistical Methods page"),
+               tags$p("Details: ", e$message),
+               tags$p(class = "small text-muted",
+                      "This may be caused by a missing R package. ",
+                      "Check that all packages listed in install_and_run.R are installed."))
+    )
+  })
 }

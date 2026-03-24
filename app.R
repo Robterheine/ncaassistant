@@ -83,8 +83,8 @@ ui <- page_fluid(
         tags$a(
           href = "#",
           onclick = "Shiny.setInputValue('nav_path', 'methods', {priority: 'event'}); return false;",
-          class = "btn btn-outline-info btn-sm ms-3",
-          style = "font-size: 0.7rem; padding: 2px 8px;",
+          class = "btn btn-info btn-sm ms-3",
+          style = "font-size: 0.7rem; padding: 2px 8px; color: #fff;",
           icon("flask-vial", class = "me-1"), "Statistical Methods"
         ),
         tags$a(
