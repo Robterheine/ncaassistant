@@ -395,83 +395,6 @@ server <- function(input, output, session) {
           icon("circle-info", class = "text-info"),
           " buttons throughout the app — they explain every setting in plain language."
         )
-      ),
-      
-      # Version history
-      tags$details(
-        class = "mt-4 mb-3",
-        tags$summary(
-          class = "fw-semibold text-muted small",
-          style = "cursor: pointer;",
-          icon("clock-rotate-left", class = "me-1"),
-          "Version History"
-        ),
-        tags$div(
-          class = "mt-2 small",
-          style = "max-width: 800px; margin: 0 auto;",
-          
-          tags$div(
-            class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.0 RC1 — Release Candidate 1",
-                    tags$span(class = "badge bg-primary ms-2", "current")),
-            tags$p(class = "text-muted mb-1", "March 2026"),
-            tags$ul(class = "mb-0",
-              tags$li("Publication-ready statistical methods page with example manuscript paragraphs and full citations"),
-              tags$li("All result tables show plain-language parameter names (e.g., 'Peak Concentration (Cmax)' instead of 'CMAX')"),
-              tags$li("Compact table layout: key parameters shown by default, expandable to all 37 columns"),
-              tags$li("Per-subject dose support: dose-escalation and weight-based dosing via Dose column"),
-              tags$li("Power curves and sensitivity analysis for all 6 analysis types (ABE, ABEL, RSABE, NTID, non-inferiority, dose-proportionality)"),
-              tags$li("Half-life recalculation with manual point adjustment in both single-subject and batch analysis"),
-              tags$li("Steady-state NCA support with derived parameters (AUC\u03C4, Cavg, Cmin, fluctuation, swing)"),
-              tags$li("Responsive CSS for all screen sizes"),
-              tags$li("238 automated tests across 3 validation suites")
-            )
-          ),
-          
-          tags$div(
-            class = "border-start border-3 border-secondary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v0.9 — Feature Complete"),
-            tags$p(class = "text-muted mb-1", "March 2026"),
-            tags$ul(class = "mb-0",
-              tags$li("Built-in Data Preparation Guide with 8 scenario tabs and example datasets"),
-              tags$li("BE parameter checkboxes with friendly names and pre-populated defaults"),
-              tags$li("Improved half-life plot: clean tooltips, inline colour legend, no label overlap"),
-              tags$li("Fixed startup crash caused by NULL input in module server evaluation"),
-              tags$li("Fixed conditionalPanel double-namespacing across all modules"),
-              tags$li("Fixed manual data entry using proper Shiny textAreaInput binding")
-            )
-          ),
-          
-          tags$div(
-            class = "border-start border-3 border-secondary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v0.5 — Hub Architecture"),
-            tags$p(class = "text-muted mb-1", "March 2026"),
-            tags$ul(class = "mb-0",
-              tags$li("Redesigned from linear 6-tab layout to 5 independent workflow paths with central hub"),
-              tags$li("Path 1: Plan a Study (Power & Sample Size) — standalone, no data needed"),
-              tags$li("Path 2: Upload & Check Data — shared data gateway with 20+ quality checks"),
-              tags$li("Path 3: Analyze One Subject at a Time — with manual data entry and Previous/Next navigation"),
-              tags$li("Path 4: Analyze All Subjects (Batch NCA) — summary statistics, individual grid, half-life review"),
-              tags$li("Path 5: Bioequivalence Testing — complete workflow from NCA to 90% CI to conclusion"),
-              tags$li("About & Packages page with runtime environment and all R package references")
-            )
-          ),
-          
-          tags$div(
-            class = "border-start border-3 border-secondary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v0.1 — Initial Release"),
-            tags$p(class = "text-muted mb-1", "March 2026"),
-            tags$ul(class = "mb-0",
-              tags$li("Non-compartmental analysis engine (NonCompart) validated against WinNonlin"),
-              tags$li("5 BLQ handling rules (WinNonlin-compatible)"),
-              tags$li("Bioequivalence ANOVA with fixed and mixed-effects models"),
-              tags$li("PowerTOST integration for sample size and power"),
-              tags$li("Crossover data handling with composite Subject||Treatment key"),
-              tags$li("Contextual help system with 25+ plain-language popovers"),
-              tags$li("153 automated validation tests")
-            )
-          )
-        )
       )
     )
   }
@@ -687,6 +610,76 @@ server <- function(input, output, session) {
                  "This is version ", APP_VERSION, ". The software is provided ",
                  "as-is for research and educational purposes. Results should be ",
                  "independently verified before use in regulatory submissions.")
+        )
+      ),
+      
+      # Version history
+      card(
+        card_header(icon("clock-rotate-left"), " Version History"),
+        card_body(
+          class = "small",
+          
+          tags$div(
+            class = "border-start border-3 border-primary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.0 RC1 \u2014 Release Candidate 1",
+                    tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "March 2026"),
+            tags$ul(class = "mb-0",
+              tags$li("Publication-ready statistical methods page with full equations, example manuscript paragraphs, and citations reviewed by medical writer, biostatistician, and pharmacokineticist"),
+              tags$li("Plain-language parameter names throughout all result tables and exports"),
+              tags$li("Compact table layout: key parameters shown by default, expandable to all 37 columns"),
+              tags$li("Per-subject dose support: dose-escalation and weight-based dosing via Dose column"),
+              tags$li("Power curves and sensitivity analysis for all 6 analysis types"),
+              tags$li("Half-life recalculation with manual point adjustment in both single-subject and batch analysis"),
+              tags$li("Steady-state NCA with derived parameters (AUC\u03C4, Cavg, Cmin, fluctuation, swing)"),
+              tags$li("Responsive CSS for all screen sizes"),
+              tags$li("238 automated tests across 3 validation suites")
+            )
+          ),
+          
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v0.9 \u2014 Feature Complete"),
+            tags$p(class = "text-muted mb-1", "March 2026"),
+            tags$ul(class = "mb-0",
+              tags$li("Built-in Data Preparation Guide with 8 scenario tabs and example datasets"),
+              tags$li("BE parameter checkboxes with friendly names and pre-populated defaults"),
+              tags$li("Improved half-life plot: clean tooltips, inline colour legend, no label overlap"),
+              tags$li("Fixed startup crash caused by NULL input in module server evaluation"),
+              tags$li("Fixed conditionalPanel double-namespacing across all modules"),
+              tags$li("Fixed manual data entry using proper Shiny textAreaInput binding")
+            )
+          ),
+          
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v0.5 \u2014 Hub Architecture"),
+            tags$p(class = "text-muted mb-1", "March 2026"),
+            tags$ul(class = "mb-0",
+              tags$li("Redesigned from linear 6-tab layout to 5 independent workflow paths with central hub"),
+              tags$li("Path 1: Plan a Study (Power & Sample Size) \u2014 standalone, no data needed"),
+              tags$li("Path 2: Upload & Check Data \u2014 shared data gateway with 20+ quality checks"),
+              tags$li("Path 3: Analyze One Subject at a Time \u2014 with manual data entry and Previous/Next navigation"),
+              tags$li("Path 4: Analyze All Subjects (Batch NCA) \u2014 summary statistics, individual grid, half-life review"),
+              tags$li("Path 5: Bioequivalence Testing \u2014 complete workflow from NCA to 90% CI to conclusion"),
+              tags$li("About & Packages page with runtime environment and all R package references")
+            )
+          ),
+          
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v0.1 \u2014 Initial Release"),
+            tags$p(class = "text-muted mb-1", "March 2026"),
+            tags$ul(class = "mb-0",
+              tags$li("Non-compartmental analysis engine (NonCompart) validated against WinNonlin"),
+              tags$li("5 BLQ handling rules (WinNonlin-compatible)"),
+              tags$li("Bioequivalence ANOVA with fixed and mixed-effects models"),
+              tags$li("PowerTOST integration for sample size and power"),
+              tags$li("Crossover data handling with composite Subject||Treatment key"),
+              tags$li("Contextual help system with 25+ plain-language popovers"),
+              tags$li("153 automated validation tests")
+            )
+          )
         )
       )
     )
