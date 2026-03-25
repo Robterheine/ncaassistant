@@ -84,25 +84,31 @@ data_upload_ui <- function(id) {
           hr(),
           
           layout_columns(
-            col_widths = c(4, 5, 3),
+            col_widths = c(4, 8),
             numericInput(ns("lloq"),
                          tagList("LLOQ value", help_lloq),
                          value = 0, min = 0, step = 0.01),
-            selectInput(ns("blq_rule"),
-                        tagList("BLQ handling rule", help_blq_rules),
-                        choices = c(
-                          "Rule 1: Pre-first = 0, post-last = missing (recommended)" = "rule1",
-                          "Rule 2: All BLQ = 0" = "rule2",
-                          "Rule 3: Exclude all BLQ values" = "rule3",
-                          "Rule 4: All BLQ = half the LLOQ" = "rule4",
-                          "Rule 5: Pre-Cmax = 0, post-Cmax = missing" = "rule5"
-                        )),
             tags$div(
-              style = "padding-top: 1.7rem;",
-              actionButton(ns("btn_apply"), "Process Data",
-                           class = "btn-success w-100",
-                           icon = icon("check"))
+              radioButtons(ns("blq_rule"),
+                           tagList("BLQ handling rule", help_blq_rules),
+                           choiceNames = list(
+                             tags$span("Standard", tags$span(class="text-muted", " \u2014 pre-first = 0, post-last = missing (Rule 1, WinNonlin default)")),
+                             tags$span("All BLQ \u2192 zero", tags$span(class="text-muted", " (Rule 2)")),
+                             tags$span("All BLQ \u2192 excluded", tags$span(class="text-muted", " (Rule 3)")),
+                             tags$span("All BLQ \u2192 LLOQ/2", tags$span(class="text-muted", " (Rule 4)")),
+                             tags$span("Before peak \u2192 zero, after peak \u2192 excluded", tags$span(class="text-muted", " (Rule 5)")),
+                             tags$span("First BLQ \u2192 LLOQ/2, rest \u2192 zero", tags$span(class="text-muted", " (Rule 6, for drugs with lag time)"))
+                           ),
+                           choiceValues = c("rule1", "rule2", "rule3", "rule4", "rule5", "rule6"),
+                           selected = "rule1")
             )
+          ),
+          
+          tags$div(
+            class = "text-end mt-2",
+            actionButton(ns("btn_apply"), "Process Data",
+                         class = "btn-success",
+                         icon = icon("check"))
           )
         )
       ),

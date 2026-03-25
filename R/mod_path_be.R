@@ -78,10 +78,24 @@ path_be_ui <- function(id) {
                           tagList("Study design", help_be_design),
                           choices = c(
                             "Standard 2-period crossover" = "crossover_2x2",
+                            "Fixed-order crossover (all subjects same sequence)" = "crossover_fixed_order",
                             "3-period crossover" = "crossover_3period",
                             "Parallel groups" = "parallel",
                             "4-period replicate crossover" = "replicate_2x2x4"
                           )),
+              
+              conditionalPanel(
+                condition = sprintf("input['%s'] == 'crossover_fixed_order'", ns("be_design")),
+                tags$div(
+                  class = "alert alert-warning py-2 small mb-2",
+                  icon("triangle-exclamation", class = "me-1"),
+                  tags$strong("Limitation: "),
+                  "All subjects received treatments in the same order. ",
+                  "Period and treatment effects are fully confounded and cannot be separated. ",
+                  "A paired analysis (equivalent to a paired t-test on the log-transformed ",
+                  "parameters) is used. Results should be interpreted with caution."
+                )
+              ),
               
               conditionalPanel(
                 condition = sprintf("input['%s'] == 'replicate_2x2x4'", ns("be_design")),
@@ -272,6 +286,16 @@ path_be_server <- function(id, shared) {
     observeEvent(input$run_be, {
       req(shared$pk_data, shared$col_map, shared$col_map$treatment)
       
+      # Dataset size guard
+      nr <- nrow(shared$pk_data)
+      if (nr > 50000) {
+        showNotification("Dataset too large for BE analysis (>50,000 rows). Consider subsetting.",
+                         type = "error", duration = 8); return()
+      }
+      if (nr > 10000) {
+        showNotification("Large dataset — analysis may take a moment.", type = "warning", duration = 5)
+      }
+      
       cm <- shared$col_map
       use_data_dose <- (input$dose_source == "from_data" && !is.null(cm$dose))
       
@@ -307,6 +331,7 @@ path_be_server <- function(id, shared) {
         
         be_nca_result(nca_res)
         shared$nca_results <- nca_res
+        gc()  # Free NCA intermediates before BE analysis
         
         setProgress(0.5, message = "Step 2: Running BE analysis...")
         
@@ -361,14 +386,28 @@ path_be_server <- function(id, shared) {
           }
           be_data$.response <- vals
           
+          # Guard: if Sequence has only 1 level, drop it (prevents lm() crash)
+          if (!is.null(seq_col) && length(unique(be_data[[seq_col]])) < 2) {
+            seq_col <- NULL
+          }
+          
           use_mixed <- input$model_type == "mixed" &&
                        input$be_design != "parallel" &&
+                       input$be_design != "crossover_fixed_order" &&
                        requireNamespace("nlme", quietly = TRUE)
           
           # Build and fit model
           if (input$be_design == "parallel") {
             fit <- tryCatch(lm(as.formula(paste(".response ~", trt_col_be)),
                                data = be_data, na.action = na.exclude), error = function(e) NULL)
+          } else if (input$be_design == "crossover_fixed_order") {
+            # Fixed-order crossover: all subjects received same sequence.
+            # Period and Treatment are confounded. Model: Subject + Treatment only.
+            # Equivalent to a paired t-test on log-transformed parameters.
+            fit <- tryCatch(
+              lm(as.formula(paste(".response ~", subj_col_be, "+", trt_col_be)),
+                 data = be_data, na.action = na.exclude),
+              error = function(e) NULL)
           } else if (use_mixed) {
             fixed_terms <- c()
             if (!is.null(seq_col)) fixed_terms <- c(fixed_terms, seq_col)

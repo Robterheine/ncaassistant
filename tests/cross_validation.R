@@ -17,8 +17,8 @@
 library(NonCompart)
 library(PowerTOST)
 
-source("/home/claude/pharmakinex/R/utils.R")
-source("/home/claude/pharmakinex/R/nca_helpers.R")
+source("/home/claude/pharmakinex_v2/R/utils.R")
+source("/home/claude/pharmakinex_v2/R/nca_helpers.R")
 
 pass_count <- 0
 fail_count <- 0
@@ -692,6 +692,128 @@ check("Summary: Geo Mean of CMAX correct",
       abs(summ$Geo_Mean[1] - exp(mean(log(c(10,20,30,40,50))))) < 1e-6,
       sprintf("(%.4f vs %.4f)", summ$Geo_Mean[1],
               exp(mean(log(c(10,20,30,40,50))))))
+
+
+# ============================================================================
+# NEW TESTS: BLQ Rule 6, Fixed-Order Crossover, Steady-State
+# ============================================================================
+
+# --- BLQ Rule 6 validation ---
+check("BLQ Rule 6: pre-first-quant → LLOQ/2, rest → 0", {
+  d <- data.frame(
+    Subject = rep("S1", 6),
+    Time = c(0, 0.5, 1, 2, 4, 8),
+    Conc = c(0.05, 0.08, 5.0, 3.0, 0.08, 0.05)  # LLOQ = 0.1
+  )
+  cm <- list(subject = "Subject", time = "Time", conc = "Conc")
+  result <- apply_blq_rules(d, cm, rule = "rule6", lloq = 0.1)
+  # First two are BLQ before first quantifiable (1.0h → 5.0): should be LLOQ/2 = 0.05
+  # Last two are BLQ after quantifiable phase: should be 0
+  all(result$Conc[1:2] == 0.05) &&  # LLOQ/2
+  result$Conc[3] == 5.0 &&          # unchanged
+  result$Conc[4] == 3.0 &&          # unchanged
+  result$Conc[5] == 0 &&            # post-quant BLQ → 0
+  result$Conc[6] == 0               # post-quant BLQ → 0
+})
+
+check("BLQ Rule 6: multi-subject independence", {
+  d <- data.frame(
+    Subject = c(rep("S1", 4), rep("S2", 4)),
+    Time = rep(c(0, 1, 2, 4), 2),
+    Conc = c(0.05, 10, 5, 0.05,   # S1: first and last BLQ
+             8, 6, 3, 0.05)        # S2: only last BLQ
+  )
+  cm <- list(subject = "Subject", time = "Time", conc = "Conc")
+  result <- apply_blq_rules(d, cm, rule = "rule6", lloq = 0.1)
+  result$Conc[1] == 0.05 &&  # S1 pre-quant → LLOQ/2
+  result$Conc[4] == 0 &&     # S1 post-quant → 0
+  result$Conc[5] == 8 &&     # S2 first is quantifiable, unchanged
+  result$Conc[8] == 0         # S2 post-quant → 0
+})
+
+# --- Fixed-order crossover (paired t-test equivalence) ---
+check("Fixed-order crossover: paired model gives correct CI", {
+  set.seed(42)
+  n <- 12
+  subj <- factor(rep(1:n, each = 2))
+  trt <- rep(c("R", "T"), n)
+  # Known GMR = exp(0.05) ≈ 1.051
+  log_pk <- 0.05 * (trt == "T") + rnorm(2*n, mean = 5, sd = 0.2) +
+            rep(rnorm(n, sd = 0.3), each = 2)
+  d <- data.frame(Subject = subj, Treatment = trt, .response = log_pk)
+  
+  # Model: Subject + Treatment (no Sequence, no Period)
+  fit <- lm(.response ~ Subject + Treatment, data = d)
+  coefs <- coef(fit)
+  trt_name <- "TreatmentT"
+  diff <- coefs[trt_name]
+  se <- summary(fit)$coefficients[trt_name, "Std. Error"]
+  dfe <- fit$df.residual
+  t_crit <- qt(0.95, dfe)
+  ci_lower <- exp(diff - t_crit * se) * 100
+  ci_upper <- exp(diff + t_crit * se) * 100
+  point_est <- exp(diff) * 100
+  
+  # Verify: equivalent to paired t-test
+  r_vals <- d$.response[d$Treatment == "R"]
+  t_vals <- d$.response[d$Treatment == "T"]
+  pt <- t.test(t_vals, r_vals, paired = TRUE, conf.level = 0.90)
+  pt_ci_lower <- exp(pt$conf.int[1]) * 100
+  pt_ci_upper <- exp(pt$conf.int[2]) * 100
+  
+  # Should match within rounding
+  abs(ci_lower - pt_ci_lower) < 0.1 && abs(ci_upper - pt_ci_upper) < 0.1
+})
+
+check("Fixed-order crossover: df = N-1", {
+  n <- 8
+  d <- data.frame(
+    Subject = factor(rep(1:n, each = 2)),
+    Treatment = rep(c("R", "T"), n),
+    .response = rnorm(2*n)
+  )
+  fit <- lm(.response ~ Subject + Treatment, data = d)
+  # df.residual should be N - 1 = 7 (2N obs - N subject params - 1 treatment param)
+  fit$df.residual == (n - 1)
+})
+
+# --- Steady-state: NonCompart SS=TRUE uses AUCtau for CL ---
+check("NonCompart SS=TRUE: CL/F changes proportionally to AUClast vs AUCinf", {
+  library(NonCompart)
+  t <- c(0, 0.5, 1, 2, 4, 8, 12)
+  conc <- c(5.0, 12.0, 10.0, 7.0, 3.5, 1.0, 0.3)
+  r_ss <- sNCA(t, conc, dose = 100, adm = "Extravascular", SS = TRUE)
+  r_sd <- sNCA(t, conc, dose = 100, adm = "Extravascular", SS = FALSE)
+  
+  clfo_ss <- as.numeric(r_ss["CLFO"])
+  clfo_sd <- as.numeric(r_sd["CLFO"])
+  auclst <- as.numeric(r_ss["AUCLST"])
+  aucifo <- as.numeric(r_ss["AUCIFO"])
+  
+  # SS CL/F should be proportional to 1/AUClast, SD CL/F to 1/AUCinf
+  # So: CLFO_SS / CLFO_SD = AUCIFO / AUCLST
+  ratio_cl <- clfo_ss / clfo_sd
+  ratio_auc <- aucifo / auclst
+  abs(ratio_cl - ratio_auc) < 1e-4
+})
+
+check("Steady-state: Vz/F uses AUClast proportionally when SS=TRUE", {
+  library(NonCompart)
+  t <- c(0, 0.5, 1, 2, 4, 8, 12)
+  conc <- c(5.0, 12.0, 10.0, 7.0, 3.5, 1.0, 0.3)
+  r_ss <- sNCA(t, conc, dose = 100, adm = "Extravascular", SS = TRUE)
+  r_sd <- sNCA(t, conc, dose = 100, adm = "Extravascular", SS = FALSE)
+  
+  vzfo_ss <- as.numeric(r_ss["VZFO"])
+  vzfo_sd <- as.numeric(r_sd["VZFO"])
+  auclst <- as.numeric(r_ss["AUCLST"])
+  aucifo <- as.numeric(r_ss["AUCIFO"])
+  
+  # Same lambda_z, so Vz ratio = AUCinf / AUClast
+  ratio_vz <- vzfo_ss / vzfo_sd
+  ratio_auc <- aucifo / auclst
+  abs(ratio_vz - ratio_auc) < 1e-4
+})
 
 
 # ============================================================================

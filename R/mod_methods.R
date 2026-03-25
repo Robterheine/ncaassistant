@@ -258,7 +258,21 @@ methods_ui <- function() {
         tags$p(class = "small text-muted",
                "Note: C", tags$sub("avg"), ", Fluctuation, and Swing were derived by the application ",
                "from AUC", tags$sub("\u03C4"), " and the observed concentration data. ",
-               "These parameters are not computed by the NonCompart package directly.")
+               "These parameters are not computed by the NonCompart package directly."),
+        
+        tags$h6(class = "fw-semibold mt-3", "AUC", tags$sub("\u03C4"), " vs. AUC", tags$sub("0\u2013\u221E"),
+                " at Steady State"),
+        tags$p(class = "small",
+               "At steady state, AUC", tags$sub("0\u2013t"), " (where t equals the last sampling time ",
+               "within the dosing interval) represents AUC", tags$sub("\u03C4"),
+               " and is the primary exposure measure. ",
+               "AUC", tags$sub("0\u2013\u221E"), " is not pharmacokinetically meaningful during repeated ",
+               "dosing because the extrapolation to infinity does not account for subsequent doses. ",
+               "Clearance at steady state was calculated as CL/F = Dose / AUC", tags$sub("\u03C4"),
+               " (not Dose / AUC", tags$sub("0\u2013\u221E"), "). ",
+               "AUC", tags$sub("0\u2013\u221E"), " and V", tags$sub("z"),
+               "/F (which depends on AUC", tags$sub("0\u2013\u221E"),
+               ") are hidden from the default display at steady state and should not be reported.")
       ),
       
       # ================================================================
@@ -298,7 +312,13 @@ methods_ui <- function() {
             tags$tr(tags$td(tags$strong("Rule 5")),
                     tags$td("BLQ concentrations before C", tags$sub("max"),
                             " were set to zero. BLQ concentrations after C", tags$sub("max"),
-                            " were treated as missing (excluded from analysis)."))
+                            " were treated as missing (excluded from analysis).")),
+            tags$tr(tags$td(tags$strong("Rule 6")),
+                    tags$td("BLQ concentrations occurring before the first quantifiable concentration ",
+                            "were replaced by LLOQ / 2. All subsequent BLQ concentrations were set to zero. ",
+                            "This rule is appropriate for drugs with an absorption lag, where the first ",
+                            "post-dose sample may be below LLOQ due to delayed absorption rather than ",
+                            "true absence of drug."))
           )
         ),
         
@@ -386,6 +406,24 @@ methods_ui <- function() {
           "The Power & Sample Size module ", tags$em("can"), " plan studies for these ",
           "approaches, but the BE analysis module applies standard ABE limits to all designs."
         ),
+        
+        tags$h6(class = "fw-semibold mt-3",
+                "Fixed-order crossover (all subjects same sequence)"),
+        tags$p(class = "small",
+               "In some relative bioavailability studies, all subjects receive the treatments in the ",
+               "same fixed order (e.g., all subjects receive Reference in period 1 and Test in period 2). ",
+               "This design lacks randomisation; Period and Treatment effects are fully confounded ",
+               "and cannot be separated statistically."),
+        tags$p(class = "small",
+               "The analysis was performed using a paired model with Subject and Treatment as fixed effects:"),
+        eq("ln(PK) = \u03BC + Subject + Treatment + \u03B5"),
+        tags$p(class = "small",
+               "This is equivalent to a paired t-test on the log-transformed PK parameters. ",
+               "The degrees of freedom equal N \u2212 1, where N is the number of subjects who ",
+               "completed both periods. ",
+               "Because period and treatment effects are confounded, an observed treatment difference ",
+               "may partly reflect a period effect (e.g., induction, carry-over, disease progression). ",
+               "Results should be interpreted with this limitation in mind."),
         
         tags$h6(class = "fw-semibold mt-3",
                 "Parallel-group design"),
@@ -634,6 +672,7 @@ methods_ui <- function() {
           style = "font-size: 0.88rem;",
           tags$p(
             "Bioequivalence was assessed in a [2-period, 2-sequence crossover (TR|RT) / ",
+            "fixed-order crossover (all subjects R then T) / ",
             "3-period crossover (TRT|RTR) / 4-period replicate crossover (TRTR|RTRT) / ",
             "parallel-group] study with [N] [healthy subjects / patients]. ",
             "PK parameters (C", tags$sub("max"),

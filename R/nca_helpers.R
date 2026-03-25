@@ -11,10 +11,12 @@
 #'   Rule 3: All BLQ set to Missing (NA)
 #'   Rule 4: All BLQ set to LLOQ/2
 #'   Rule 5: Pre-Cmax BLQ = 0; post-Cmax BLQ = Missing
+#'   Rule 6: Pre-first-quantifiable set to LLOQ/2; all other BLQ set to 0
+#'           (for drugs with absorption lag; used in ROSIE and similar studies)
 #'
 #' @param data Data frame with subject/time/concentration
 #' @param col_map Column mapping list
-#' @param rule Character: one of "rule1" through "rule5"
+#' @param rule Character: one of "rule1" through "rule6"
 #' @param lloq Numeric: lower limit of quantification
 #' @return Modified data frame
 apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
@@ -51,6 +53,32 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
       
       data[[conc_col]][intersect(pre_cmax,  which(data$.is_blq))] <- 0
       data[[conc_col]][intersect(post_cmax, which(data$.is_blq))] <- NA
+    }
+    
+  } else if (rule == "rule6") {
+    # Rule 6: Pre-first-quantifiable BLQ -> LLOQ/2; all other BLQ -> 0
+    # Appropriate for drugs with absorption lag where first samples may be BLQ
+    subjects <- unique(data[[subj_col]])
+    for (s in subjects) {
+      idx <- which(data[[subj_col]] == s)
+      sub <- data[idx, ]
+      quant_idx <- which(!sub$.is_blq & !is.na(sub[[conc_col]]))
+      
+      if (length(quant_idx) == 0) {
+        data[[conc_col]][idx[data$.is_blq[idx]]] <- lloq / 2
+        next
+      }
+      
+      first_quant <- min(quant_idx)
+      
+      # Before first quantifiable: set BLQ to LLOQ/2
+      if (first_quant > 1) {
+        pre <- idx[1:(first_quant - 1)]
+        data[[conc_col]][intersect(pre, which(data$.is_blq))] <- lloq / 2
+      }
+      # All other BLQ (during and after quantifiable phase): set to 0
+      from_quant <- idx[first_quant:length(idx)]
+      data[[conc_col]][intersect(from_quant, which(data$.is_blq))] <- 0
     }
     
   } else {

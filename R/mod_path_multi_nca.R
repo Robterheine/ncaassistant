@@ -146,6 +146,7 @@ path_multi_nca_ui <- function(id) {
               tags$p(class = "text-muted small",
                      "Mean, SD, CV%, median, range, geometric mean, and geometric CV% ",
                      "for key PK parameters across all subjects."),
+              uiOutput(ns("ss_note")),
               DTOutput(ns("summary_table")),
               hr(),
               plotlyOutput(ns("boxplot"), height = "350px")
@@ -331,6 +332,21 @@ path_multi_nca_server <- function(id, shared) {
                        type = "message")
     })
     
+    # Steady-state note
+    output$ss_note <- renderUI({
+      if (isTRUE(input$is_ss) && !is.null(nca_result())) {
+        tags$div(
+          class = "alert alert-info py-2 small",
+          icon("circle-info", class = "me-1"),
+          tags$strong("Steady-state analysis: "),
+          "AUC to Last Point represents the AUC within the dosing interval (AUC\u03C4). ",
+          "CL/F is calculated as Dose/AUC\u03C4, which is the correct formula at steady state. ",
+          "AUC to infinity is not pharmacokinetically meaningful during repeated dosing and is ",
+          "hidden from the default view (available under 'Show all parameters')."
+        )
+      }
+    })
+    
     # Status
     output$result_status <- renderUI({
       if (is.null(nca_result())) {
@@ -377,14 +393,25 @@ path_multi_nca_server <- function(id, shared) {
       display_df <- rename_nca_columns(nca_result())
       
       if (!isTRUE(input$show_all_params)) {
-        key_cols <- intersect(
-          c("Subject", "Treatment",
-            "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
-            "AUC to Last Point", "AUC to Infinity (observed)",
-            "Half-Life (h)", "Apparent Clearance (CL/F)",
-            "Apparent Volume (Vz/F)", "Adjusted R-squared",
-            "Points Used for Half-Life"),
-          names(display_df))
+        if (isTRUE(input$is_ss)) {
+          # Steady-state: show tau-relevant parameters, de-emphasise AUC∞
+          key_cols <- intersect(
+            c("Subject", "Treatment",
+              "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
+              "AUC to Last Point",
+              "Half-Life (h)", "Apparent Clearance (CL/F)",
+              "Adjusted R-squared"),
+            names(display_df))
+        } else {
+          key_cols <- intersect(
+            c("Subject", "Treatment",
+              "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
+              "AUC to Last Point", "AUC to Infinity (observed)",
+              "Half-Life (h)", "Apparent Clearance (CL/F)",
+              "Apparent Volume (Vz/F)", "Adjusted R-squared",
+              "Points Used for Half-Life"),
+            names(display_df))
+        }
         display_df <- display_df[, key_cols, drop = FALSE]
       }
       
@@ -399,11 +426,23 @@ path_multi_nca_server <- function(id, shared) {
     output$summary_table <- renderDT({
       req(nca_result())
       r <- nca_result()
-      key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"),
-                       names(r))
+      
+      if (isTRUE(input$is_ss)) {
+        # At steady state: AUC0-t = AUCtau, show CL/F (derived from AUCtau by NonCompart)
+        key <- intersect(c("CMAX","TMAX","AUCLST","LAMZHL","CLFO"), names(r))
+      } else {
+        key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r))
+      }
       if (length(key) == 0) return(NULL)
       summ <- summarize_pk_params(r, key)
       summ <- rename_summary_columns(summ)
+      
+      # At steady state, relabel AUC to Last Point as AUC within dosing interval
+      if (isTRUE(input$is_ss) && "Parameter" %in% names(summ)) {
+        summ$Parameter[summ$Parameter == "AUC to Last Point"] <-
+          "AUC Within Dosing Interval (AUC\u03C4)"
+      }
+      
       datatable(summ, options = list(scrollX = TRUE, dom = "t"),
                 rownames = FALSE, class = "compact stripe hover") %>%
         formatSignif(columns = 3:ncol(summ), digits = 4)
