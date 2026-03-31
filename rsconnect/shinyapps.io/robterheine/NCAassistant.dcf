@@ -5,7 +5,7 @@ account: robterheine
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 16955171
-bundleId: 11752967
+bundleId: 11758195
 url: https://robterheine.shinyapps.io/NCAassistant/
 version: 1
 asMultiple: FALSE

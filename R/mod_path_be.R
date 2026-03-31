@@ -589,6 +589,8 @@ path_be_server <- function(id, shared) {
     output$profile_plot <- renderPlotly({
       req(shared$pk_data, shared$col_map, shared$col_map$treatment)
       d <- shared$pk_data; cm <- shared$col_map
+      d <- d[!is.na(d[[cm$conc]]) & d[[cm$conc]] > 0, ]
+      if (nrow(d) == 0) return(plotly_empty())
       p <- ggplot(d, aes(x = .data[[cm$time]], y = .data[[cm$conc]],
                          color = factor(.data[[cm$treatment]]),
                          group = interaction(.data[[cm$subject]], .data[[cm$treatment]]))) +

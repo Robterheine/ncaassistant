@@ -360,6 +360,8 @@ path_multi_nca_server <- function(id, shared) {
     output$spaghetti_plot <- renderPlotly({
       req(shared$pk_data, shared$col_map)
       d <- shared$pk_data; cm <- shared$col_map
+      d <- d[!is.na(d[[cm$conc]]) & d[[cm$conc]] > 0, ]
+      if (nrow(d) == 0) return(plotly_empty())
       p <- ggplot(d, aes(x = .data[[cm$time]], y = .data[[cm$conc]],
                          group = .data[[cm$subject]])) +
         geom_line(alpha = 0.4, color = "#3498DB") +
@@ -373,6 +375,8 @@ path_multi_nca_server <- function(id, shared) {
     output$mean_plot <- renderPlotly({
       req(shared$pk_data, shared$col_map)
       d <- shared$pk_data; cm <- shared$col_map
+      d <- d[!is.na(d[[cm$conc]]) & !is.na(d[[cm$time]]), ]
+      if (nrow(d) == 0) return(plotly_empty())
       summ <- d %>%
         group_by(.data[[cm$time]]) %>%
         summarize(mean_c = mean(.data[[cm$conc]], na.rm = TRUE),
@@ -473,16 +477,22 @@ path_multi_nca_server <- function(id, shared) {
     output$grid_plot <- renderPlot({
       req(shared$pk_data, shared$col_map)
       d <- shared$pk_data; cm <- shared$col_map
+      # Filter out NA and zero concentrations for log scale
+      d <- d[!is.na(d[[cm$conc]]) & d[[cm$conc]] > 0, ]
+      if (nrow(d) == 0) return(NULL)
       subjects <- sort(unique(d[[cm$subject]]))
       if (length(subjects) > 36) subjects <- subjects[1:36]
       sub_d <- d[d[[cm$subject]] %in% subjects, ]
-      ggplot(sub_d, aes(x = .data[[cm$time]], y = .data[[cm$conc]])) +
-        geom_line(color = "#2C3E50", linewidth = 0.5) +
-        geom_point(size = 1, color = "#3498DB") +
-        facet_wrap(as.formula(paste("~", cm$subject)), scales = "free_y") +
-        scale_y_log10() +
-        theme_minimal(base_size = 9) +
-        labs(x = "Time", y = "Concentration (log)")
+      tryCatch(
+        ggplot(sub_d, aes(x = .data[[cm$time]], y = .data[[cm$conc]])) +
+          geom_line(color = "#2C3E50", linewidth = 0.5) +
+          geom_point(size = 1, color = "#3498DB") +
+          facet_wrap(as.formula(paste("~", cm$subject)), scales = "free_y") +
+          scale_y_log10() +
+          theme_minimal(base_size = 9) +
+          labs(x = "Time", y = "Concentration (log)"),
+        error = function(e) NULL
+      )
     }, res = 100)
     
     # Half-life inspector — helper to get selected profile's data

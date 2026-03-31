@@ -99,6 +99,12 @@ data_guide_ui <- function() {
             tags$tr(tags$td("2-period crossover (BE)"),
                     tags$td(tags$code("Subject"), ", ", tags$code("Period"), ", ", tags$code("Sequence"), ", ", tags$code("Treatment"), ", ", tags$code("Time"), ", ", tags$code("Concentration")),
                     tags$td("Bioequivalence")),
+            tags$tr(tags$td("Fixed-order crossover (BE)"),
+                    tags$td(tags$code("Subject"), ", ", tags$code("Period"), ", ", tags$code("Sequence"), ", ", tags$code("Treatment"), ", ", tags$code("Time"), ", ", tags$code("Concentration")),
+                    tags$td("Bioequivalence (fixed-order)")),
+            tags$tr(tags$td("3-period crossover (BE)"),
+                    tags$td(tags$code("Subject"), ", ", tags$code("Period"), ", ", tags$code("Sequence"), ", ", tags$code("Treatment"), ", ", tags$code("Time"), ", ", tags$code("Concentration")),
+                    tags$td("Bioequivalence")),
             tags$tr(tags$td("Replicate crossover (BE)"),
                     tags$td("Same as above"),
                     tags$td("Bioequivalence")),
@@ -371,7 +377,144 @@ data_guide_ui <- function() {
           "Sequence matches the treatment order (TR means Test-first, RT means Reference-first)",
           "Time resets to 0 at the start of each period",
           "Roughly equal numbers of subjects in each sequence group",
-          "Every subject appears in both periods (or is flagged as a dropout)"
+          "Every subject appears in both periods (or is flagged as a dropout)",
+          "If doses differ between subjects (e.g., weight-based dosing), add a Dose column"
+        ))
+      ),
+      
+      # ----------------------------------------------------------------
+      # SCENARIO 3b: Fixed-order crossover
+      # ----------------------------------------------------------------
+      nav_panel(
+        "Fixed-Order Crossover",
+        icon = icon("arrow-right"),
+        
+        tags$h5(class = "fw-bold mt-2", "Scenario 3b: Fixed-Order Crossover"),
+        tags$p("All subjects receive the treatments in the same fixed order ",
+               "(e.g., everyone gets Reference first, then Test after washout). ",
+               "This is used in some relative bioavailability studies where randomisation ",
+               "is not possible, for example when the test formulation was developed after ",
+               "the reference study was completed."),
+        
+        tags$div(
+          class = "alert alert-warning py-2 small",
+          tags$strong("Statistical limitation: "),
+          "Because all subjects follow the same order, the period effect ",
+          "(things that change between visits) cannot be separated from the treatment effect. ",
+          "The app uses a paired analysis (equivalent to a paired t-test). ",
+          "Results should be interpreted with this limitation in mind."
+        ),
+        
+        tags$h6(class = "fw-semibold", "What you need"),
+        tags$p(class = "small",
+               "The same six columns as a standard crossover. The only difference is that the ",
+               "Sequence column has a single value for all subjects (e.g., 'RT' if everyone ",
+               "received Reference first and Test second)."),
+        
+        ex_table(data.frame(
+          Subject   = c("S01","S01","S01","S01","S01","S01","S01","S01",
+                         "S02","S02","S02","S02","S02","S02","S02","S02"),
+          Treatment = c("Reference","Reference","Reference","Reference",
+                         "Test","Test","Test","Test",
+                         "Reference","Reference","Reference","Reference",
+                         "Test","Test","Test","Test"),
+          Period    = c(1,1,1,1,2,2,2,2, 1,1,1,1,2,2,2,2),
+          Sequence  = rep("RT", 16),
+          Time      = rep(c(0,1,4,24), 4),
+          Conc      = c(0,22.8,8.7,0.4, 0,24.5,9.1,0.5,
+                         0,20.1,7.9,0.3, 0,23.2,8.5,0.6)
+        )),
+        
+        tags$p(class = "small text-muted",
+               "Notice: all subjects have Sequence = 'RT'. Everyone received Reference in ",
+               "period 1 and Test in period 2. In the app, select ",
+               "'Fixed-order crossover (all subjects same sequence)' as the study design."),
+        
+        tags$h6(class = "fw-semibold mt-3", "Do I still need the Sequence column?"),
+        tags$p(class = "small",
+               "Yes. Include it even though it has only one value. The app uses it to detect ",
+               "that this is a fixed-order design and applies the correct paired analysis ",
+               "instead of the standard crossover ANOVA."),
+        
+        checklist(c(
+          "Six columns present: Subject, Treatment, Period, Sequence, Time, Concentration",
+          "Sequence has ONE value for all subjects (e.g., 'RT')",
+          "Treatment has exactly two levels (Test and Reference)",
+          "Time resets to 0 at the start of each period",
+          "In the app, select 'Fixed-order crossover' as the study design",
+          "If doses differ between subjects, add a Dose column"
+        ))
+      ),
+      
+      # ----------------------------------------------------------------
+      # SCENARIO 3c: 3-period crossover
+      # ----------------------------------------------------------------
+      nav_panel(
+        "3-Period Crossover",
+        icon = icon("rotate"),
+        
+        tags$h5(class = "fw-bold mt-2", "Scenario 3c: 3-Period Crossover"),
+        tags$p("Each subject receives treatments across three periods. Two common variants exist:"),
+        
+        tags$div(
+          class = "bg-light rounded p-3 mb-3 small",
+          tags$table(
+            class = "table table-sm table-borderless mb-0",
+            tags$tr(tags$td(class = "fw-bold", "2-sequence, 3-period"),
+                    tags$td("Sequences TRT and RTR. One treatment is given twice, ",
+                            "the other once. Provides extra within-subject replication.")),
+            tags$tr(tags$td(class = "fw-bold", "Williams design (3\u00D73\u00D73)"),
+                    tags$td("Sequences TRR, RTR, RRT (three sequences, three periods). ",
+                            "Both treatments appear at least once per subject. ",
+                            "Used for partial replicate designs."))
+          )
+        ),
+        
+        tags$h6(class = "fw-semibold", "Same six columns as the 2-period design"),
+        tags$p(class = "small",
+               "The data format is identical to Scenario 3, except Period goes up to 3."),
+        
+        tags$h6(class = "fw-semibold mt-3", "Example: TRT|RTR design"),
+        ex_table(data.frame(
+          Subject   = rep("S01", 6),
+          Treatment = c("Test","Ref","Test", "Test","Ref","Test"),
+          Period    = c(1,2,3, 1,2,3),
+          Sequence  = rep("TRT", 6),
+          Time      = rep(c(0, 4), 3),
+          Conc      = c(0,9.5, 0,8.8, 0,10.1)
+        )),
+        
+        tags$p(class = "small text-muted",
+               "Subject S01 is in the TRT sequence: Test in period 1, Reference in period 2, ",
+               "Test again in period 3. Shown with 2 time points per period for brevity."),
+        
+        tags$h6(class = "fw-semibold mt-3", "Example: Williams design (TRR|RTR|RRT)"),
+        ex_table(data.frame(
+          Subject   = c(rep("S01", 6), rep("S04", 6)),
+          Treatment = c("Test","Ref","Ref", "Test","Ref","Ref",
+                         "Ref","Test","Ref", "Ref","Test","Ref"),
+          Period    = rep(c(1,2,3), 4),
+          Sequence  = c(rep("TRR", 6), rep("RTR", 6)),
+          Time      = rep(c(0, 4), 6),
+          Conc      = c(0,9.5, 0,8.8, 0,9.0,
+                         0,8.5, 0,9.8, 0,8.3)
+        )),
+        
+        tags$p(class = "small text-muted",
+               "S01 is in sequence TRR, S04 in RTR. A third group would have sequence RRT."),
+        
+        tags$div(
+          class = "alert alert-info py-2 small",
+          tags$strong("In the app: "),
+          "Select '3-period crossover' as the study design in the Bioequivalence settings."
+        ),
+        
+        checklist(c(
+          "Six columns: Subject, Treatment, Period, Sequence, Time, Concentration",
+          "Period goes up to 3",
+          "Sequence accurately reflects the treatment order across all 3 periods",
+          "Time resets to 0 at the start of each period",
+          "If doses differ between subjects, add a Dose column"
         ))
       ),
       
@@ -418,7 +561,8 @@ data_guide_ui <- function() {
           "Same six columns as 2-period design",
           "Period goes up to 3 or 4 (depending on the design)",
           "Each treatment appears at least twice per subject (for 4-period designs)",
-          "Sequence accurately reflects the order across all periods"
+          "Sequence accurately reflects the order across all periods",
+          "If doses differ between subjects, add a Dose column"
         ))
       ),
       
@@ -458,7 +602,8 @@ data_guide_ui <- function() {
           "Each subject appears under only one treatment",
           "Treatment column present (Test or Reference)",
           "Period and Sequence columns are NOT needed",
-          "Approximately equal numbers of subjects per treatment group"
+          "Approximately equal numbers of subjects per treatment group",
+          "If doses differ between subjects, add a Dose column"
         ))
       ),
       
@@ -502,7 +647,8 @@ data_guide_ui <- function() {
           "Time is relative to the steady-state dose (time 0 = just before the dose)",
           "Pre-dose sample is present (it will NOT be zero — that's correct)",
           "Sampling covers one full dosing interval (e.g., 0 to 12h for a twice-daily drug, 0 to 24h for once-daily)",
-          "Tick 'Steady-state' in the app before running the analysis"
+          "Tick 'Steady-state' in the app before running the analysis",
+          "If doses differ between subjects (e.g., weight-based dosing), add a Dose column"
         ))
       ),
       
@@ -531,6 +677,15 @@ data_guide_ui <- function() {
                "The most common rule (and the default) is: BLQ samples before the first measurable ",
                "concentration are set to zero, and BLQ samples after the last measurable concentration ",
                "are excluded from the analysis. This matches what WinNonlin does by default."),
+        
+        tags$div(
+          class = "alert alert-warning py-2 small",
+          tags$strong("You must set LLOQ > 0 when your data contains BLQ entries. "),
+          "The LLOQ value is the number from your bioanalytical validation report ",
+          "(e.g., 0.5 ng/mL). If you leave LLOQ at 0, the app cannot process BLQ text entries ",
+          "and will show an error. The app tries to auto-detect the LLOQ from entries like ",
+          "'<0.5' and will pre-fill it for you — verify the value and click Process Data."
+        ),
         
         ex_table(data.frame(
           Subject = rep("S01", 8),

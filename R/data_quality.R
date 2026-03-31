@@ -136,11 +136,22 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
     
     if (n_blq_str > 0) {
       blq_examples <- unique(conc_char[blq_pattern])
-      add("WARNING", "Concentration",
-          paste(n_blq_str, "BLQ/text entries detected"),
-          paste0("Values found: ", paste(head(blq_examples, 5), collapse = ", "),
-                 " (", round(n_blq_str/n_rows*100, 1), "% of data)"),
-          "Set LLOQ > 0 and select a BLQ handling rule to process these.")
+      
+      if (lloq <= 0) {
+        # BLQ entries found but LLOQ not set — this is an error, not a warning
+        add("ERROR", "Concentration",
+            paste(n_blq_str, "BLQ/text entries detected but LLOQ is not set"),
+            paste0("Values found: ", paste(head(blq_examples, 5), collapse = ", "),
+                   " (", round(n_blq_str/n_rows*100, 1), "% of data)"),
+            "Set LLOQ to a value greater than 0, then click Process Data again.")
+      } else {
+        add("WARNING", "Concentration",
+            paste(n_blq_str, "BLQ/text entries detected"),
+            paste0("Values found: ", paste(head(blq_examples, 5), collapse = ", "),
+                   " (", round(n_blq_str/n_rows*100, 1), "% of data). ",
+                   "These will be processed using the selected BLQ rule (LLOQ = ", lloq, ")."),
+            "")
+      }
       
       # Try to auto-detect LLOQ from "<X" patterns
       lt_vals <- conc_char[grepl("^<", conc_char)]
@@ -299,11 +310,11 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
   }
   
   if (dup_count > 0) {
-    add("WARNING", "Time",
+    add("ERROR", "Time",
         paste(dup_count, "duplicate time points across",
               length(dup_subjects), "subjects"),
         paste0("Subjects: ", paste(head(dup_subjects, 5), collapse = ", ")),
-        "Duplicate times may cause issues. Check for replicate samples or data entry errors.")
+        "Remove duplicate time points or average replicate samples before analysis.")
   }
   
   # ===========================================================================

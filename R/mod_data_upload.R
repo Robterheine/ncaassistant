@@ -138,6 +138,18 @@ data_upload_server <- function(id, shared) {
     output$has_data <- reactive({ !is.null(raw_data()) })
     outputOptions(output, "has_data", suspendWhenHidden = FALSE)
     
+    # Reset all shared state when a new file is uploaded
+    observeEvent(input$file_upload, {
+      shared$qc_result   <- NULL
+      shared$pk_data      <- NULL
+      shared$col_map      <- NULL
+      shared$data_ready   <- FALSE
+      shared$nca_results  <- NULL
+      shared$nca_settings <- NULL
+      shared$raw_data     <- NULL
+      shared$study_info   <- NULL
+    }, priority = 10)  # high priority: runs before raw_data() updates
+    
     # Read raw data
     raw_data <- reactive({
       req(input$file_upload)
@@ -224,6 +236,24 @@ data_upload_server <- function(id, shared) {
       # Quality check
       qc <- run_data_quality_check(raw_data(), col_map, lloq = input$lloq)
       shared$qc_result <- qc
+      
+      # Auto-detect LLOQ from BLQ text entries if not set
+      if (input$lloq <= 0) {
+        conc_raw <- as.character(raw_data()[[col_map$conc]])
+        lt_vals <- conc_raw[grepl("^<", conc_raw)]
+        if (length(lt_vals) > 0) {
+          lt_nums <- suppressWarnings(as.numeric(gsub("^<\\s*", "", lt_vals)))
+          lt_nums <- lt_nums[!is.na(lt_nums)]
+          if (length(lt_nums) > 0) {
+            detected_lloq <- min(lt_nums)
+            updateNumericInput(session, "lloq", value = detected_lloq)
+            showNotification(
+              paste0("LLOQ auto-detected as ", detected_lloq,
+                     " from your BLQ entries. Click Process Data again to apply."),
+              type = "message", duration = 8)
+          }
+        }
+      }
       
       if (!qc$pass) {
         showNotification(
