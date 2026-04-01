@@ -136,7 +136,34 @@ path_multi_nca_ui <- function(id) {
               downloadButton(ns("dl_params_csv"), "Download as CSV",
                              class = "btn-outline-primary btn-sm mt-2"),
               downloadButton(ns("dl_params_xlsx"), "Download as Excel",
-                             class = "btn-outline-success btn-sm mt-2")
+                             class = "btn-outline-success btn-sm mt-2"),
+              hr(),
+              tags$details(
+                tags$summary(
+                  class = "fw-semibold small",
+                  style = "cursor: pointer;",
+                  icon("file-zipper", class = "me-1 text-primary"),
+                  "Download Complete Analysis Record"
+                ),
+                tags$div(
+                  class = "mt-2 small",
+                  tags$p(class = "text-muted",
+                         "Download a self-contained package with results, settings, ",
+                         "a standalone R reproducibility script, data integrity hash, ",
+                         "and analysis summary. Useful for regulatory submissions, ",
+                         "publication supplements, and audit trails."),
+                  layout_columns(
+                    col_widths = c(6, 6),
+                    textInput(ns("record_analyst"), "Analyst name (optional)",
+                              value = "", placeholder = "Your name"),
+                    textInput(ns("record_study"), "Study name (optional)",
+                              value = "", placeholder = "e.g., Phase I PK Study")
+                  ),
+                  downloadButton(ns("dl_record"), "Generate Analysis Record",
+                                 class = "btn-primary btn-sm w-100",
+                                 icon = icon("file-zipper"))
+                )
+              )
             ),
             
             # Summary stats
@@ -675,6 +702,72 @@ path_multi_nca_server <- function(id, shared) {
           writeData(wb, 2, rename_summary_columns(summarize_pk_params(r, key)))
         }
         saveWorkbook(wb, file, overwrite=TRUE)
+      }
+    )
+    
+    # Complete Analysis Record
+    output$dl_record <- downloadHandler(
+      filename = function() {
+        study <- if (nchar(input$record_study) > 0) 
+          gsub("[^A-Za-z0-9_-]", "_", input$record_study) else "NCA"
+        paste0("Analysis_Record_", study, "_", Sys.Date(), ".zip")
+      },
+      content = function(file) {
+        req(nca_result(), shared$col_map, shared$study_info)
+        
+        withProgress(message = "Generating analysis record...", value = 0.3, {
+          r <- nca_result()
+          key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r))
+          summ <- if (length(key) > 0) summarize_pk_params(r, key) else NULL
+          
+          settings <- shared$nca_settings
+          if (is.null(settings)) {
+            settings <- list(
+              admin_route = input$admin_route, dose = input$dose,
+              infusion_duration = 0, is_steady_state = isTRUE(input$is_ss),
+              dose_unit = input$dose_unit, time_unit = input$time_unit,
+              conc_unit = input$conc_unit, trap_method = input$trap_method,
+              r2adj_threshold = input$r2adj, n_obs = nrow(shared$pk_data)
+            )
+          }
+          settings$n_obs <- nrow(shared$pk_data)
+          
+          si <- shared$study_info
+          original_path <- NULL
+          original_name <- si$file_name
+          
+          # Find the original uploaded file
+          uploads <- list.files("/mnt/user-data/uploads", full.names = TRUE)
+          if (length(uploads) > 0) {
+            # Match by name or use most recent
+            match <- grep(tools::file_path_sans_ext(original_name), uploads, value = TRUE)
+            original_path <- if (length(match) > 0) match[1] else uploads[length(uploads)]
+          }
+          
+          # Fallback: save shared$raw_data to temp file
+          if (is.null(original_path) || !file.exists(original_path)) {
+            original_path <- file.path(tempdir(), original_name)
+            if (!is.null(shared$raw_data)) {
+              write.csv(shared$raw_data, original_path, row.names = FALSE)
+            }
+          }
+          
+          setProgress(0.6, message = "Building R script and summary...")
+          
+          create_analysis_record(
+            output_path    = file,
+            results        = r,
+            settings       = settings,
+            col_map        = shared$col_map,
+            original_file_path = original_path,
+            original_file_name = original_name,
+            blq_rule       = si$blq_rule,
+            lloq           = si$lloq,
+            analyst        = if (nchar(input$record_analyst) > 0) input$record_analyst else "Analyst",
+            study_name     = if (nchar(input$record_study) > 0) input$record_study else "Untitled Study",
+            summary_stats  = summ
+          )
+        })
       }
     )
   })

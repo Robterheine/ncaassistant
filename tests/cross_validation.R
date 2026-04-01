@@ -816,6 +816,84 @@ check("Steady-state: Vz/F uses AUClast proportionally when SS=TRUE", {
 })
 
 
+# --- Reproducibility script validation ---
+check("Reproducibility script: generates valid R code", {
+  source("/home/claude/pharmakinex_v2/R/export_record.R")
+  APP_VERSION <- "1.0"
+  
+  settings <- list(
+    admin_route = "extravascular", dose = 320,
+    infusion_duration = 0, is_steady_state = FALSE,
+    dose_unit = "mg", time_unit = "h", conc_unit = "ng/mL",
+    trap_method = "log", r2adj_threshold = 0.7
+  )
+  col_map <- list(subject = "Subject", time = "Time", conc = "conc")
+  
+  script <- generate_nca_script(settings, col_map, "theoph.csv", "rule1", 0)
+  
+  # Must parse without error
+  tryCatch({ parse(text = script); TRUE }, error = function(e) FALSE)
+})
+
+check("Reproducibility script: produces matching results", {
+  source("/home/claude/pharmakinex_v2/R/export_record.R")
+  APP_VERSION <- "1.0"
+  
+  # Write Theoph to temp CSV
+  tmp_dir <- tempdir()
+  tmp_csv <- file.path(tmp_dir, "theoph_test.csv")
+  write.csv(Theoph, tmp_csv, row.names = FALSE)
+  
+  # Run NCA directly
+  direct <- tblNCA(Theoph, "Subject", "Time", "conc", dose = 320,
+                   adm = "Extravascular", down = "Log", R2ADJ = 0.7)
+  
+  # Generate and run the script
+  settings <- list(
+    admin_route = "extravascular", dose = 320,
+    infusion_duration = 0, is_steady_state = FALSE,
+    dose_unit = "mg", time_unit = "h", conc_unit = "ng/mL",
+    trap_method = "log", r2adj_threshold = 0.7
+  )
+  col_map <- list(subject = "Subject", time = "Time", conc = "conc")
+  
+  script <- generate_nca_script(settings, col_map, "theoph_test.csv", "rule1", 0)
+  
+  # Execute in isolated environment
+  old_wd <- getwd()
+  setwd(tmp_dir)
+  env <- new.env()
+  tryCatch({
+    # Suppress cat output from script
+    invisible(capture.output(eval(parse(text = script), envir = env)))
+    reproduced <- read.csv(file.path(tmp_dir, "reproduced_results.csv"))
+    setwd(old_wd)
+    
+    # Compare key parameters
+    direct_cmax <- as.numeric(direct$CMAX)
+    reprod_cmax <- as.numeric(reproduced$CMAX)
+    direct_auc  <- as.numeric(direct$AUCLST)
+    reprod_auc  <- as.numeric(reproduced$AUCLST)
+    
+    all(abs(direct_cmax - reprod_cmax) < 0.001) &&
+    all(abs(direct_auc - reprod_auc) < 0.01)
+  }, error = function(e) {
+    setwd(old_wd)
+    FALSE
+  })
+})
+
+check("SHA-256 hash consistency", {
+  if (!requireNamespace("digest", quietly = TRUE)) return(TRUE)  # skip if no digest
+  tmp <- tempfile(fileext = ".csv")
+  write.csv(data.frame(x = 1:10), tmp, row.names = FALSE)
+  h1 <- digest::digest(file = tmp, algo = "sha256")
+  h2 <- digest::digest(file = tmp, algo = "sha256")
+  file.remove(tmp)
+  identical(h1, h2) && nchar(h1) == 64
+})
+
+
 # ============================================================================
 # SUMMARY
 # ============================================================================

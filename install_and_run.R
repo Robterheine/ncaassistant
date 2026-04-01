@@ -8,7 +8,7 @@
 
 cat("
 ======================================================
-  Non-Compartmental Analysis Assistant v1.0 RC1
+  Non-Compartmental Analysis Assistant v1.0
   Radboud Applied Pharmacometrics — Radboudumc
 ======================================================
 \n")
@@ -31,7 +31,9 @@ required_packages <- c(
   # PK analysis engines
   "NonCompart", "ncar", "PowerTOST",
   # Mixed effects for BE
-  "nlme"
+  "nlme",
+  # Export / reproducibility
+  "jsonlite", "digest"
 )
 
 # --- Install missing packages -----------------------------------------------

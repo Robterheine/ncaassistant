@@ -204,6 +204,32 @@ path_be_ui <- function(id) {
                            class = "btn-outline-success"),
             downloadButton(ns("dl_ci_csv"), "Download CI Table (CSV)",
                            class = "btn-outline-primary ms-2")
+          ),
+          
+          hr(),
+          tags$details(
+            tags$summary(
+              class = "fw-semibold small",
+              style = "cursor: pointer;",
+              icon("file-zipper", class = "me-1 text-primary"),
+              "Download Complete Analysis Record"
+            ),
+            tags$div(
+              class = "mt-2 small",
+              tags$p(class = "text-muted",
+                     "Self-contained package with NCA results, BE results, settings, ",
+                     "R reproducibility script, data integrity hash, and analysis summary."),
+              layout_columns(
+                col_widths = c(6, 6),
+                textInput(ns("record_analyst"), "Analyst name (optional)",
+                          value = "", placeholder = "Your name"),
+                textInput(ns("record_study"), "Study name (optional)",
+                          value = "", placeholder = "e.g., BE Study XYZ")
+              ),
+              downloadButton(ns("dl_record"), "Generate Analysis Record",
+                             class = "btn-primary btn-sm w-100",
+                             icon = icon("file-zipper"))
+            )
           )
         )
       )
@@ -628,6 +654,66 @@ path_be_server <- function(id, shared) {
       content = function(file) {
         req(be_result())
         write.csv(rename_be_columns(be_result()$ci_table), file, row.names=FALSE)
+      }
+    )
+    
+    # Complete Analysis Record
+    output$dl_record <- downloadHandler(
+      filename = function() {
+        study <- if (nchar(input$record_study) > 0)
+          gsub("[^A-Za-z0-9_-]", "_", input$record_study) else "BE"
+        paste0("Analysis_Record_", study, "_", Sys.Date(), ".zip")
+      },
+      content = function(file) {
+        req(be_nca_result(), be_result(), shared$col_map, shared$study_info)
+        
+        withProgress(message = "Generating analysis record...", value = 0.3, {
+          r <- be_nca_result()
+          
+          settings <- list(
+            admin_route     = input$admin_route,
+            dose            = input$dose,
+            infusion_duration = 0,
+            is_steady_state = FALSE,
+            dose_unit       = input$dose_unit,
+            time_unit       = input$time_unit,
+            conc_unit       = input$conc_unit,
+            trap_method     = input$trap_method,
+            r2adj_threshold = 0.7,
+            n_obs           = nrow(shared$pk_data)
+          )
+          
+          si <- shared$study_info
+          original_path <- NULL
+          original_name <- si$file_name
+          
+          uploads <- list.files("/mnt/user-data/uploads", full.names = TRUE)
+          if (length(uploads) > 0) {
+            match <- grep(tools::file_path_sans_ext(original_name), uploads, value = TRUE)
+            original_path <- if (length(match) > 0) match[1] else uploads[length(uploads)]
+          }
+          if (is.null(original_path) || !file.exists(original_path)) {
+            original_path <- file.path(tempdir(), original_name)
+            if (!is.null(shared$raw_data))
+              write.csv(shared$raw_data, original_path, row.names = FALSE)
+          }
+          
+          setProgress(0.6, message = "Building R script and summary...")
+          
+          create_analysis_record(
+            output_path    = file,
+            results        = r,
+            settings       = settings,
+            col_map        = shared$col_map,
+            original_file_path = original_path,
+            original_file_name = original_name,
+            blq_rule       = si$blq_rule,
+            lloq           = si$lloq,
+            analyst        = if (nchar(input$record_analyst) > 0) input$record_analyst else "Analyst",
+            study_name     = if (nchar(input$record_study) > 0) input$record_study else "Untitled Study",
+            be_results     = be_result()
+          )
+        })
       }
     )
   })

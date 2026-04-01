@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.0 RC1
+# Non-Compartmental Analysis Assistant v1.0
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # https://www.radboudumc.nl/en/research/research-groups/radboud-applied-pharmacometrics
@@ -12,7 +12,7 @@
 #   5. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.0 RC1"
+APP_VERSION <- "1.0"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 library(shiny)
@@ -35,6 +35,7 @@ library(nlme)
 source("R/utils.R")
 source("R/nca_helpers.R")
 source("R/data_quality.R")
+source("R/export_record.R")
 source("R/help_system.R")
 source("R/mod_data_upload.R")
 source("R/mod_path_power.R")
@@ -621,19 +622,22 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.0 RC1 \u2014 Release Candidate 1",
+            tags$h6(class = "fw-bold mb-1", "v1.0 \u2014 First Stable Release",
                     tags$span(class = "badge bg-primary ms-2", "current")),
             tags$p(class = "text-muted mb-1", "March 2026"),
             tags$ul(class = "mb-0",
-              tags$li("Publication-ready statistical methods page with full equations, example manuscript paragraphs, and citations reviewed by medical writer, biostatistician, and pharmacokineticist"),
-              tags$li("Plain-language parameter names throughout all result tables and exports"),
-              tags$li("Compact table layout: key parameters shown by default, expandable to all 37 columns"),
-              tags$li("Per-subject dose support: dose-escalation and weight-based dosing via Dose column"),
-              tags$li("Power curves and sensitivity analysis for all 6 analysis types"),
-              tags$li("Half-life recalculation with manual point adjustment in both single-subject and batch analysis"),
-              tags$li("Steady-state NCA with derived parameters (AUC\u03C4, Cavg, Cmin, fluctuation, swing)"),
-              tags$li("Responsive CSS for all screen sizes"),
-              tags$li("238 automated tests across 3 validation suites")
+              tags$li("Complete Analysis Record export: self-contained zip with results, standalone R reproducibility script, data integrity hash (SHA-256), analysis settings (JSON), and HTML summary document"),
+              tags$li("BLQ Rule 6 added (first BLQ \u2192 LLOQ/2, rest \u2192 zero) for drugs with absorption lag"),
+              tags$li("Fixed-order crossover design (all subjects same sequence) with paired analysis"),
+              tags$li("Steady-state display: AUC\u03C4 as primary parameter, AUC\u221E hidden, CL/F correctly derived from AUC\u03C4"),
+              tags$li("BLQ text entries with LLOQ=0 now block processing with auto-detection of LLOQ from '<X' entries"),
+              tags$li("Duplicate time points upgraded from warning to error"),
+              tags$li("State reset on new file upload (stale quality reports cleared)"),
+              tags$li("Plot crash fix: all log-scale plots filter NA/zero concentrations"),
+              tags$li("Data guide expanded: 10 scenario tabs covering all supported study designs"),
+              tags$li("Dose column mentioned in all relevant scenario checklists"),
+              tags$li("Expert-reviewed statistical methods page (medical writer, biostatistician, pharmacokineticist)"),
+              tags$li("250+ automated tests across 3 validation suites")
             )
           ),
           
