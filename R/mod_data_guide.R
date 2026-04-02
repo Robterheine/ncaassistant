@@ -74,6 +74,38 @@ data_guide_ui <- function() {
              "Find your study type below and follow the example.")
     ),
     
+    # Example datasets
+    card(
+      class = "mb-3",
+      card_header(icon("download"), " Example Datasets"),
+      card_body(
+        tags$p(class = "small",
+               "Download these example files to practice with the app or follow the ",
+               "worked examples in the user manual."),
+        layout_columns(
+          col_widths = c(6, 6),
+          tags$div(
+            tags$h6(class = "fw-semibold", "Theophylline PK Study"),
+            tags$p(class = "small text-muted",
+                   "12 subjects, single 320 mg oral dose, 11 time points per subject. ",
+                   "Columns: Subject, Wt, Dose, Time, conc. ",
+                   "Use with Analyze All Subjects (Batch NCA)."),
+            downloadButton("dl_example_theoph", "Download theoph.csv",
+                           class = "btn-outline-primary btn-sm")
+          ),
+          tags$div(
+            tags$h6(class = "fw-semibold", "Crossover BE Study"),
+            tags$p(class = "small text-muted",
+                   "6 subjects, 2\u00D72\u00D72 crossover design (Test vs Reference), ",
+                   "12 time points per period. ",
+                   "Use with Bioequivalence Testing."),
+            downloadButton("dl_example_be", "Download crossover_be.csv",
+                           class = "btn-outline-primary btn-sm")
+          )
+        )
+      )
+    ),
+    
     # Quick reference card
     card(
       card_header(icon("table-list"), " Quick Reference: Which Columns Do I Need?"),

@@ -689,6 +689,16 @@ server <- function(input, output, session) {
     )
   }
   
+  # === EXAMPLE DATASET DOWNLOADS ================================================
+  output$dl_example_theoph <- downloadHandler(
+    filename = function() "example_theoph.csv",
+    content = function(file) file.copy("data/example_theoph.csv", file)
+  )
+  output$dl_example_be <- downloadHandler(
+    filename = function() "example_be_crossover.csv",
+    content = function(file) file.copy("data/example_be_crossover.csv", file)
+  )
+  
   # === MODULE SERVERS ========================================================
   path_power_server("path_power", shared)
   path_data_server("path_data", shared)
