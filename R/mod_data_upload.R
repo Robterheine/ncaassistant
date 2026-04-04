@@ -14,6 +14,13 @@ data_upload_ui <- function(id) {
         "Upload PK Data", help_data_format
       ),
       card_body(
+        tags$p(class = "small text-muted mb-3",
+               icon("book-open", class = "me-1"),
+               "Not sure if your file is ready? Check the ",
+               tags$a(href = "#",
+                      onclick = "Shiny.setInputValue('nav_path', 'guide', {priority: 'event'}); return false;",
+                      "Data Preparation Guide"),
+               " for format instructions and example datasets."),
         layout_columns(
           col_widths = c(4, 8),
           
