@@ -45,7 +45,8 @@ path_single_nca_ui <- function(id) {
         card_body(
           tags$p(class = "text-muted small",
                  "Type your time points and matching concentrations below, ",
-                 "one value per line. Both columns must have the same number of lines."),
+                 "one value per line. Both columns must have the same number of lines. ",
+                 "Example values are shown \u2014 replace with your own data."),
           layout_columns(
             col_widths = c(5, 5, 2),
             textAreaInput(ns("manual_time"), "Time points",
@@ -60,7 +61,10 @@ path_single_nca_ui <- function(id) {
                      uiOutput(ns("manual_validation")),
                      actionButton(ns("btn_use_manual"), "Use This Data",
                                   class = "btn-warning w-100 mt-2",
-                                  icon = icon("check")))
+                                  icon = icon("check")),
+                     actionButton(ns("btn_clear_manual"), "Clear",
+                                  class = "btn-outline-secondary w-100 mt-1",
+                                  icon = icon("eraser")))
           )
         )
       )
@@ -292,6 +296,17 @@ path_single_nca_server <- function(id, shared) {
       local$time <- p$time; local$conc <- p$conc
       local$manual_ready <- TRUE
       showNotification(paste0(p$nt, " points loaded."), type = "message")
+    })
+    
+    # Clear manual data
+    observeEvent(input$btn_clear_manual, {
+      updateTextAreaInput(session, "manual_time", value = "")
+      updateTextAreaInput(session, "manual_conc", value = "")
+      local$time <- NULL
+      local$conc <- NULL
+      local$manual_ready <- FALSE
+      local$lz_override <- NULL
+      nca_res(NULL)
     })
     
     # Data gate (uploaded mode)

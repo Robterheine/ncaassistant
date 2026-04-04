@@ -228,20 +228,6 @@ server <- function(input, output, session) {
                tags$span(class = "ms-2", paste0("v", APP_VERSION)))
       ),
       
-      # Data Guide callout for first-time users
-      tags$div(
-        class = "alert alert-info d-flex align-items-center mt-3 mb-2 py-2",
-        style = "border-radius: 8px;",
-        icon("book-open", class = "fa-lg me-3 text-info"),
-        tags$div(
-          tags$strong("First time? "),
-          "Make sure your data file is formatted correctly before uploading. ",
-          tags$a(href = "#", onclick = "Shiny.setInputValue('nav_path', 'guide', {priority: 'event'}); return false;",
-                 "Open the Data Preparation Guide"),
-          " for instructions, example tables, and downloadable example datasets."
-        )
-      ),
-      
       # Pathway cards
       tags$div(
         class = "row g-3 mt-2",
@@ -397,18 +383,18 @@ server <- function(input, output, session) {
         class = "text-center mt-4 text-muted small",
         tags$p(
           icon("circle-info", class = "me-1"),
-          "New to PK analysis? Start with ",
+          "New to PK analysis? Check the ",
+          tags$a(href = "#", onclick = "Shiny.setInputValue('nav_path', 'guide', {priority: 'event'}); return false;",
+                 style = "text-decoration: underline; cursor: pointer;",
+                 "Data Preparation Guide"),
+          " first, then start with ",
           tags$strong("Upload & Check Data"),
-          ", then go to ",
-          tags$strong("All Subjects"),
-          " or ",
-          tags$strong("One Subject at a Time"),
           "."
         ),
         tags$p(
           "Look for the ",
           icon("circle-info", class = "text-info"),
-          " buttons throughout the app — they explain every setting in plain language."
+          " buttons throughout the app \u2014 they explain every setting in plain language."
         )
       )
     )
