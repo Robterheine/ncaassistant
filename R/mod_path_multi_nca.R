@@ -186,7 +186,13 @@ path_multi_nca_ui <- function(id) {
               tags$p(class = "text-muted small",
                      "One panel per subject on log scale. Check for consistent ",
                      "terminal slopes and unusual profiles."),
-              plotOutput(ns("grid_plot"), height = "800px")
+              layout_columns(
+                col_widths = c(4, 8),
+                selectInput(ns("grid_page"), "Subjects shown",
+                            choices = "All", selected = "All"),
+                tags$span()
+              ),
+              plotlyOutput(ns("grid_plot"), height = "700px")
             ),
             
             # Half-life review
@@ -500,27 +506,53 @@ path_multi_nca_server <- function(id, shared) {
       ggplotly(p)
     })
     
-    # Individual grid
-    output$grid_plot <- renderPlot({
+    # Individual grid — update page selector when data changes
+    observe({
+      req(shared$pk_data, shared$col_map)
+      subjects <- sort(unique(shared$pk_data[[shared$col_map$subject]]))
+      n <- length(subjects)
+      if (n <= 12) {
+        choices <- list("All subjects" = "all")
+      } else {
+        pages <- split(subjects, ceiling(seq_along(subjects) / 12))
+        choices <- c(list("All subjects (may be slow)" = "all"),
+                     setNames(seq_along(pages),
+                              sapply(pages, function(pg) paste0(pg[1], " \u2013 ", pg[length(pg)]))))
+      }
+      updateSelectInput(session, "grid_page", choices = choices,
+                        selected = if (n <= 12) "all" else "1")
+    })
+    
+    # Individual grid — plotly
+    output$grid_plot <- renderPlotly({
       req(shared$pk_data, shared$col_map)
       d <- shared$pk_data; cm <- shared$col_map
-      # Filter out NA and zero concentrations for log scale
       d <- d[!is.na(d[[cm$conc]]) & d[[cm$conc]] > 0, ]
-      if (nrow(d) == 0) return(NULL)
+      if (nrow(d) == 0) return(plotly_empty())
       subjects <- sort(unique(d[[cm$subject]]))
-      if (length(subjects) > 36) subjects <- subjects[1:36]
+      
+      # Paginate
+      sel <- input$grid_page
+      if (!is.null(sel) && sel != "all") {
+        pages <- split(subjects, ceiling(seq_along(subjects) / 12))
+        idx <- as.integer(sel)
+        if (!is.na(idx) && idx <= length(pages)) subjects <- pages[[idx]]
+      } else if (length(subjects) > 36) {
+        subjects <- subjects[1:36]
+      }
+      
       sub_d <- d[d[[cm$subject]] %in% subjects, ]
-      tryCatch(
-        ggplot(sub_d, aes(x = .data[[cm$time]], y = .data[[cm$conc]])) +
+      tryCatch({
+        p <- ggplot(sub_d, aes(x = .data[[cm$time]], y = .data[[cm$conc]])) +
           geom_line(color = "#2C3E50", linewidth = 0.5) +
-          geom_point(size = 1, color = "#3498DB") +
+          geom_point(size = 1.5, color = "#3498DB") +
           facet_wrap(as.formula(paste("~", cm$subject)), scales = "free_y") +
           scale_y_log10() +
           theme_minimal(base_size = 9) +
-          labs(x = "Time", y = "Concentration (log)"),
-        error = function(e) NULL
-      )
-    }, res = 100)
+          labs(x = "Time", y = "Concentration (log)")
+        ggplotly(p)
+      }, error = function(e) plotly_empty())
+    })
     
     # Half-life inspector — helper to get selected profile's data
     lz_sub_data <- reactive({

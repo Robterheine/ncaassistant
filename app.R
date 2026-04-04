@@ -228,6 +228,20 @@ server <- function(input, output, session) {
                tags$span(class = "ms-2", paste0("v", APP_VERSION)))
       ),
       
+      # Data Guide callout for first-time users
+      tags$div(
+        class = "alert alert-info d-flex align-items-center mt-3 mb-2 py-2",
+        style = "border-radius: 8px;",
+        icon("book-open", class = "fa-lg me-3 text-info"),
+        tags$div(
+          tags$strong("First time? "),
+          "Make sure your data file is formatted correctly before uploading. ",
+          tags$a(href = "#", onclick = "Shiny.setInputValue('nav_path', 'guide', {priority: 'event'}); return false;",
+                 "Open the Data Preparation Guide"),
+          " for instructions, example tables, and downloadable example datasets."
+        )
+      ),
+      
       # Pathway cards
       tags$div(
         class = "row g-3 mt-2",

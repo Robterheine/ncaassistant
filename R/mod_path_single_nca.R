@@ -158,7 +158,33 @@ path_single_nca_ui <- function(id) {
         )
       ),
       downloadButton(ns("dl_csv"), "Download results (CSV)",
-                     class = "btn-outline-primary btn-sm mt-2")
+                     class = "btn-outline-primary btn-sm mt-2"),
+      hr(),
+      tags$details(
+        tags$summary(
+          class = "fw-semibold small",
+          style = "cursor: pointer;",
+          icon("file-zipper", class = "me-1 text-primary"),
+          "Download Complete Analysis Record"
+        ),
+        tags$div(
+          class = "mt-2 small",
+          tags$p(class = "text-muted",
+                 "Self-contained package with results, settings, ",
+                 "a standalone R reproducibility script, data integrity hash, ",
+                 "and analysis summary."),
+          layout_columns(
+            col_widths = c(6, 6),
+            textInput(ns("record_analyst"), "Analyst name (optional)",
+                      value = "", placeholder = "Your name"),
+            textInput(ns("record_study"), "Study name (optional)",
+                      value = "", placeholder = "e.g., PK Study XYZ")
+          ),
+          downloadButton(ns("dl_record"), "Generate Analysis Record",
+                         class = "btn-primary btn-sm w-100",
+                         icon = icon("file-zipper"))
+        )
+      )
     )
   )
 }
@@ -653,6 +679,151 @@ path_single_nca_server <- function(id, shared) {
           )
           write.csv(df, file, row.names = FALSE)
         }
+      }
+    )
+    
+    # Complete Analysis Record for single subject
+    output$dl_record <- downloadHandler(
+      filename = function() {
+        study <- if (nchar(input$record_study) > 0) 
+          gsub("[^A-Za-z0-9_-]", "_", input$record_study) else "Single_NCA"
+        paste0("Analysis_Record_", study, "_", Sys.Date(), ".zip")
+      },
+      content = function(file) {
+        req(nca_res())
+        
+        withProgress(message = "Generating analysis record...", value = 0.3, {
+          r <- nca_res()
+          d <- tc()
+          
+          settings <- list(
+            admin_route = input$admin_route,
+            dose = input$dose,
+            infusion_duration = 0,
+            is_steady_state = isTRUE(input$is_ss),
+            dose_unit = input$dose_unit,
+            time_unit = input$time_unit,
+            conc_unit = input$conc_unit,
+            trap_method = input$trap_method,
+            r2adj_threshold = 0.7,
+            n_obs = length(d$time)
+          )
+          
+          subject_label <- if (!is.null(shared$pk_data) && !is.null(shared$col_map)) {
+            input$sel_profile %||% "Subject"
+          } else { "Manual Entry" }
+          
+          # Determine file source
+          has_file <- !is.null(shared$study_info) && !is.null(shared$study_info$file_name)
+          original_name <- if (has_file) shared$study_info$file_name else "manual_entry.csv"
+          
+          # Create temp directory for the record
+          tmp <- tempdir()
+          rec_dir <- file.path(tmp, "analysis_record")
+          if (dir.exists(rec_dir)) unlink(rec_dir, recursive = TRUE)
+          dir.create(rec_dir, recursive = TRUE)
+          
+          # 1. Results
+          tryCatch({
+            df <- data.frame(Parameter = sapply(names(r), friendly_name),
+                             Abbreviation = names(r), Value = as.character(r))
+            wb <- openxlsx::createWorkbook()
+            openxlsx::addWorksheet(wb, "NCA_Parameters")
+            openxlsx::writeData(wb, 1, df)
+            openxlsx::saveWorkbook(wb, file.path(rec_dir, "results.xlsx"), overwrite = TRUE)
+          }, error = function(e) warning(e$message))
+          
+          # 2. Settings JSON
+          tryCatch({
+            settings_export <- list(
+              app_version = tryCatch(get("APP_VERSION", envir = globalenv()), error = function(e) "?"),
+              r_version = R.version.string,
+              timestamp = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+              analyst = if (nchar(input$record_analyst) > 0) input$record_analyst else "Analyst",
+              study_name = if (nchar(input$record_study) > 0) input$record_study else "Untitled Study",
+              analysis_type = "Single-Subject NCA",
+              subject = subject_label,
+              input_file = original_name,
+              admin_route = settings$admin_route,
+              dose = settings$dose,
+              dose_unit = settings$dose_unit,
+              time_unit = settings$time_unit,
+              conc_unit = settings$conc_unit,
+              steady_state = settings$is_steady_state,
+              trap_method = settings$trap_method,
+              packages = list(NonCompart = tryCatch(as.character(packageVersion("NonCompart")), error = function(e) "?"))
+            )
+            writeLines(jsonlite::toJSON(settings_export, pretty = TRUE, auto_unbox = TRUE),
+                       file.path(rec_dir, "analysis_settings.json"))
+          }, error = function(e) warning(e$message))
+          
+          setProgress(0.6, message = "Building R script...")
+          
+          # 3. Reproducibility script
+          tryCatch({
+            script <- generate_single_nca_script(
+              time_vec = d$time, conc_vec = d$conc, settings = settings,
+              subject_label = subject_label,
+              file_name = if (has_file) original_name else NULL
+            )
+            writeLines(script, file.path(rec_dir, "reproduce_analysis.R"))
+          }, error = function(e) warning(e$message))
+          
+          # 4. Data integrity (if file exists)
+          if (has_file) {
+            tryCatch({
+              uploads <- list.files("/mnt/user-data/uploads", full.names = TRUE)
+              orig <- if (length(uploads) > 0) {
+                match <- grep(tools::file_path_sans_ext(original_name), uploads, value = TRUE)
+                if (length(match) > 0) match[1] else uploads[length(uploads)]
+              } else NULL
+              if (!is.null(orig) && file.exists(orig)) {
+                file_hash <- digest::digest(file = orig, algo = "sha256")
+                writeLines(paste0("Data Integrity Verification\n===========================\n\n",
+                                  "File name:    ", original_name, "\n",
+                                  "SHA-256 hash: ", file_hash, "\n",
+                                  "Computed at:  ", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), "\n"),
+                           file.path(rec_dir, "data_integrity.txt"))
+                file.copy(orig, file.path(rec_dir, original_name), overwrite = TRUE)
+              }
+            }, error = function(e) warning(e$message))
+          } else {
+            # Manual entry: save the data as CSV
+            tryCatch({
+              write.csv(data.frame(Time = d$time, Concentration = d$conc),
+                        file.path(rec_dir, "manual_entry.csv"), row.names = FALSE)
+            }, error = function(e) warning(e$message))
+          }
+          
+          # 5. Summary HTML
+          tryCatch({
+            analyst_name <- if (nchar(input$record_analyst) > 0) input$record_analyst else "Analyst"
+            study_name <- if (nchar(input$record_study) > 0) input$record_study else "Untitled Study"
+            file_hash <- if (has_file) tryCatch({
+              uploads <- list.files("/mnt/user-data/uploads", full.names = TRUE)
+              orig <- if (length(uploads) > 0) uploads[length(uploads)] else ""
+              if (file.exists(orig)) digest::digest(file = orig, algo = "sha256") else "not computed"
+            }, error = function(e) "not computed") else "N/A (manual entry)"
+            
+            col_map <- list(subject = "Subject", time = "Time", conc = "Concentration")
+            html <- generate_summary_html(settings, col_map, original_name,
+                                           file_hash, "rule1", 0, analyst_name,
+                                           study_name, 1, length(d$time),
+                                           "Single-Subject NCA")
+            writeLines(html, file.path(rec_dir, "analysis_summary.html"))
+          }, error = function(e) warning(e$message))
+          
+          # Create zip
+          files_to_zip <- list.files(rec_dir, full.names = TRUE)
+          old_wd <- setwd(rec_dir)
+          on.exit(setwd(old_wd), add = TRUE)
+          tryCatch(
+            utils::zip(file, files = basename(files_to_zip), flags = "-j"),
+            error = function(e) system2("zip", args = c("-j", shQuote(file),
+                                         shQuote(basename(files_to_zip)))))
+          setwd(old_wd)
+          unlink(rec_dir, recursive = TRUE)
+        })
       }
     )
   })

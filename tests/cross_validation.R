@@ -893,6 +893,60 @@ check("SHA-256 hash consistency", {
   identical(h1, h2) && nchar(h1) == 64
 })
 
+check("Single-subject script: generates valid R code", {
+  source("/home/claude/pharmakinex_v2/R/export_record.R")
+  APP_VERSION <- "1.0"
+  
+  settings <- list(
+    admin_route = "extravascular", dose = 320,
+    infusion_duration = 0, is_steady_state = FALSE,
+    dose_unit = "mg", time_unit = "h", conc_unit = "mg/L",
+    trap_method = "log"
+  )
+  
+  script <- generate_single_nca_script(
+    time_vec = Theoph$Time[Theoph$Subject == 1],
+    conc_vec = Theoph$conc[Theoph$Subject == 1],
+    settings = settings, subject_label = "Subject 1"
+  )
+  tryCatch({ parse(text = script); TRUE }, error = function(e) FALSE)
+})
+
+check("Single-subject script: produces matching results", {
+  source("/home/claude/pharmakinex_v2/R/export_record.R")
+  APP_VERSION <- "1.0"
+  
+  s1 <- Theoph[Theoph$Subject == 1, ]
+  t_vec <- s1$Time; c_vec <- s1$conc
+  
+  direct <- sNCA(t_vec, c_vec, dose = 320, adm = "Extravascular",
+                 down = "Log", R2ADJ = 0.7)
+  
+  settings <- list(
+    admin_route = "extravascular", dose = 320,
+    infusion_duration = 0, is_steady_state = FALSE,
+    dose_unit = "mg", time_unit = "h", conc_unit = "mg/L",
+    trap_method = "log"
+  )
+  
+  script <- generate_single_nca_script(t_vec, c_vec, settings, "S1")
+  
+  tmp_dir <- tempdir()
+  old_wd <- getwd(); setwd(tmp_dir)
+  tryCatch({
+    invisible(capture.output(eval(parse(text = script), envir = new.env())))
+    reproduced <- read.csv(file.path(tmp_dir, "reproduced_results.csv"))
+    setwd(old_wd)
+    
+    get_val <- function(df, param) {
+      as.numeric(df$Value[df$Parameter == param])
+    }
+    
+    abs(as.numeric(direct["CMAX"]) - get_val(reproduced, "CMAX")) < 0.001 &&
+    abs(as.numeric(direct["AUCLST"]) - get_val(reproduced, "AUCLST")) < 0.01
+  }, error = function(e) { setwd(old_wd); FALSE })
+})
+
 
 # ============================================================================
 # SUMMARY
