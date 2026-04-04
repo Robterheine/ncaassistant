@@ -292,7 +292,8 @@ data_upload_server <- function(id, shared) {
         design    = design,
         lloq      = input$lloq,
         blq_rule  = input$blq_rule,
-        file_name = input$file_upload$name
+        file_name = input$file_upload$name,
+        file_path = input$file_upload$datapath
       )
       
       showNotification(

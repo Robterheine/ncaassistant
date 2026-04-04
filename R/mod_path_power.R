@@ -215,6 +215,18 @@ path_power_server <- function(id, shared) {
     calc_result <- reactiveVal(NULL)
     
     observeEvent(input$btn_calc, {
+      # Validate inputs
+      cv <- input$cv
+      if (is.null(cv) || is.na(cv) || cv <= 0) {
+        showNotification("CV must be greater than 0.", type = "error", duration = 5); return()
+      }
+      if (is.null(input$theta0) || is.na(input$theta0) || input$theta0 <= 0) {
+        showNotification("Expected GMR (theta0) must be greater than 0.", type = "error", duration = 5); return()
+      }
+      if (is.null(input$alpha) || is.na(input$alpha) || input$alpha <= 0 || input$alpha >= 1) {
+        showNotification("Alpha must be between 0 and 1.", type = "error", duration = 5); return()
+      }
+      
       withProgress(message = "Calculating...", value = 0.5, {
         cv_wr <- if (!is.null(input$cv_wr)) input$cv_wr else input$cv
         result <- tryCatch({

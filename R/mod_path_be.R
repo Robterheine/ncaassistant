@@ -325,6 +325,14 @@ path_be_server <- function(id, shared) {
       cm <- shared$col_map
       use_data_dose <- (input$dose_source == "from_data" && !is.null(cm$dose))
       
+      if (!use_data_dose) {
+        if (is.null(input$dose) || is.na(input$dose) || input$dose <= 0) {
+          showNotification("Please enter a valid dose (greater than 0).",
+                           type = "error", duration = 5)
+          return()
+        }
+      }
+      
       withProgress(message = "Step 1: Running NCA...", value = 0.3, {
         
         # Run NCA
@@ -393,6 +401,16 @@ path_be_server <- function(id, shared) {
         
         be_data[[trt_col_be]] <- factor(be_data[[trt_col_be]])
         trt_levels <- levels(be_data[[trt_col_be]])
+        
+        if (length(trt_levels) != 2) {
+          showNotification(
+            paste0("Treatment column must have exactly 2 levels (found ",
+                   length(trt_levels), ": ", paste(trt_levels, collapse = ", "),
+                   "). Bioequivalence compares two formulations."),
+            type = "error", duration = 10)
+          return()
+        }
+        
         if ("Reference" %in% trt_levels)
           be_data[[trt_col_be]] <- relevel(be_data[[trt_col_be]], ref = "Reference")
         trt_levels <- levels(be_data[[trt_col_be]])
@@ -684,14 +702,9 @@ path_be_server <- function(id, shared) {
           )
           
           si <- shared$study_info
-          original_path <- NULL
           original_name <- si$file_name
+          original_path <- si$file_path
           
-          uploads <- list.files("/mnt/user-data/uploads", full.names = TRUE)
-          if (length(uploads) > 0) {
-            match <- grep(tools::file_path_sans_ext(original_name), uploads, value = TRUE)
-            original_path <- if (length(match) > 0) match[1] else uploads[length(uploads)]
-          }
           if (is.null(original_path) || !file.exists(original_path)) {
             original_path <- file.path(tempdir(), original_name)
             if (!is.null(shared$raw_data))

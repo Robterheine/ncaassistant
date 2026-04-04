@@ -311,6 +311,14 @@ path_multi_nca_server <- function(id, shared) {
       use_data_dose <- (input$dose_source == "from_data" &&
                         !is.null(shared$col_map$dose))
       
+      if (!use_data_dose) {
+        if (is.null(input$dose) || is.na(input$dose) || input$dose <= 0) {
+          showNotification("Please enter a valid dose (greater than 0).",
+                           type = "error", duration = 5)
+          return()
+        }
+      }
+      
       settings <- list(
         admin_route       = input$admin_route,
         dose              = if (use_data_dose) NA else input$dose,
@@ -351,6 +359,7 @@ path_multi_nca_server <- function(id, shared) {
         nca_result(result)
         shared$nca_results  <- result
         shared$nca_settings <- settings
+        gc()  # Free NCA intermediates
       })
       
       # Update half-life profile selector
@@ -765,16 +774,8 @@ path_multi_nca_server <- function(id, shared) {
           settings$n_obs <- nrow(shared$pk_data)
           
           si <- shared$study_info
-          original_path <- NULL
           original_name <- si$file_name
-          
-          # Find the original uploaded file
-          uploads <- list.files("/mnt/user-data/uploads", full.names = TRUE)
-          if (length(uploads) > 0) {
-            # Match by name or use most recent
-            match <- grep(tools::file_path_sans_ext(original_name), uploads, value = TRUE)
-            original_path <- if (length(match) > 0) match[1] else uploads[length(uploads)]
-          }
+          original_path <- si$file_path
           
           # Fallback: save shared$raw_data to temp file
           if (is.null(original_path) || !file.exists(original_path)) {

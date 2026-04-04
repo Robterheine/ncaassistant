@@ -411,6 +411,13 @@ path_single_nca_server <- function(id, shared) {
     observeEvent(input$run_nca, {
       local$lz_override <- NULL  # reset manual override on fresh NCA
       d <- tc(); req(length(d$time) >= 2)
+      
+      if (is.null(input$dose) || is.na(input$dose) || input$dose <= 0) {
+        showNotification("Please enter a valid dose (greater than 0).",
+                         type = "error", duration = 5)
+        return()
+      }
+      
       adm <- switch(input$admin_route, "extravascular"="Extravascular",
                      "iv_bolus"="Bolus", "iv_infusion"="Infusion")
       down <- switch(input$trap_method, "linear"="Linear", "log"="Log")
@@ -787,11 +794,7 @@ path_single_nca_server <- function(id, shared) {
           # 4. Data integrity (if file exists)
           if (has_file) {
             tryCatch({
-              uploads <- list.files("/mnt/user-data/uploads", full.names = TRUE)
-              orig <- if (length(uploads) > 0) {
-                match <- grep(tools::file_path_sans_ext(original_name), uploads, value = TRUE)
-                if (length(match) > 0) match[1] else uploads[length(uploads)]
-              } else NULL
+              orig <- shared$study_info$file_path
               if (!is.null(orig) && file.exists(orig)) {
                 file_hash <- digest::digest(file = orig, algo = "sha256")
                 writeLines(paste0("Data Integrity Verification\n===========================\n\n",
@@ -815,9 +818,8 @@ path_single_nca_server <- function(id, shared) {
             analyst_name <- if (nchar(input$record_analyst) > 0) input$record_analyst else "Analyst"
             study_name <- if (nchar(input$record_study) > 0) input$record_study else "Untitled Study"
             file_hash <- if (has_file) tryCatch({
-              uploads <- list.files("/mnt/user-data/uploads", full.names = TRUE)
-              orig <- if (length(uploads) > 0) uploads[length(uploads)] else ""
-              if (file.exists(orig)) digest::digest(file = orig, algo = "sha256") else "not computed"
+              orig <- shared$study_info$file_path
+              if (!is.null(orig) && file.exists(orig)) digest::digest(file = orig, algo = "sha256") else "not computed"
             }, error = function(e) "not computed") else "N/A (manual entry)"
             
             col_map <- list(subject = "Subject", time = "Time", conc = "Concentration")
