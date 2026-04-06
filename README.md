@@ -39,13 +39,26 @@ Both the Batch NCA and Bioequivalence paths can generate a **Complete Analysis R
 
 ---
 
+## Requirements
+
+- R ≥ 4.1.0
+- [renv](https://rstudio.github.io/renv/) (installed automatically on first launch)
+
+---
+
 ## Quick Start
 
 ### Option A: Run locally
 
+Clone the repository and restore the package environment:
+
 ```r
-source("install_and_run.R")
+# install.packages("renv")  # only if not already installed
+renv::restore()
+shiny::runApp()
 ```
+
+`renv::restore()` reads the lockfile and installs the exact package versions used in development. This runs once; subsequent launches only need `shiny::runApp()`.
 
 ### Option B: shinyapps.io
 
