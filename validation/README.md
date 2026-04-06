@@ -9,6 +9,8 @@ This folder contains the validation package for NCA Assistant v1.0, following a 
 | `NCA_Assistant_URS_v1.0.docx` | User Requirement Specification — 44 requirements across 7 categories, with FMEA risk assessment, supplier assessment, and change control procedures |
 | `NCA_Assistant_IQOQPQ_v1.0.docx` | Installation, Operational, and Performance Qualification protocol — 94 pre-filled test cases with sign-off pages |
 | `iq_oq_pq_validation.R` | Automated test script that executes all programmatically verifiable IQ/OQ/PQ test cases |
+| `package_risk_assessment.md` | Package risk assessment following the R Validation Hub (pharmaR) framework — classifies all dependencies, documents risk rationale |
+| `package_risk_assessment.R` | Script to generate quantitative risk scores using `{riskmetric}` |
 
 ## How to Validate
 
@@ -53,6 +55,25 @@ The URS and IQ/OQ/PQ are provided as editable Word documents. If your organisati
 - Add SOPs for electronic signature management if required by your regulatory framework
 
 If you modify the URS requirements, update the corresponding OQ/PQ test cases and the automated test script to maintain traceability.
+
+## R Validation Hub (pharmaR) Framework
+
+The `package_risk_assessment.md` document applies the industry-standard R Validation Hub framework to NCA Assistant's dependencies. This framework, described in the [pharmaR white paper](https://pharmar.org/white-paper/), is the consensus approach used by pharmaceutical companies to assess R packages for regulated use.
+
+Key findings:
+
+- NCA Assistant itself is the only "Intended for Use" system — all R packages are Imports whose accuracy is verified through the app's test suites
+- nlme qualifies as low risk (R Recommended package, Trusted Resource)
+- Tidyverse packages qualify as low risk (commercially backed by Posit, Trusted Resource candidate)
+- NonCompart and PowerTOST are validated through 52 cross-validation tests against analytical ground truth and published reference values
+
+To generate quantitative risk scores using `{riskmetric}`:
+
+```r
+Rscript validation/package_risk_assessment.R
+```
+
+This produces `validation/package_risk_scores.csv` for inclusion in audit documentation.
 
 ## Revalidation
 
