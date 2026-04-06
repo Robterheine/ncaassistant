@@ -4,8 +4,6 @@
 
 A freely available, open-source Shiny application for pharmacokinetic non-compartmental analysis (NCA), bioequivalence testing, and study planning. Developed by the [Radboud Applied Pharmacometrics](https://www.radboudumc.nl/en/research/research-groups/radboud-applied-pharmacometrics) research group at Radboudumc, Nijmegen, The Netherlands.
 
-Built for pharmacokinetic scientists at the start of their career. Every setting has a plain-language explanation. No abbreviations without context.
-
 ---
 
 ## What It Does
