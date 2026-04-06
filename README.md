@@ -70,6 +70,14 @@ Available at [robterheine.shinyapps.io/NCAassistant](https://robterheine.shinyap
 
 250+ automated tests across 3 suites. NCA engine validated against Certara Phoenix WinNonlin® (Kim et al., 2018). Reproducibility script tested by generating, executing, and comparing results against direct NonCompart output.
 
+A draft validation package is available in [`validation/`](validation/), following a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles:
+
+- **User Requirement Specification (URS)** — 44 requirements across 7 categories, with FMEA risk assessment, supplier assessment for key packages, ALCOA+ data integrity framework, and change control procedures
+- **IQ/OQ/PQ Protocol** — 94 pre-filled test cases (11 IQ, 78 OQ, 5 PQ) with sign-off pages and deviation handling
+- **Automated IQ/OQ/PQ test script** ([`tests/iq_oq_pq_validation.R`](tests/iq_oq_pq_validation.R)) — executes all programmatically verifiable test cases, keyed to protocol IDs
+
+These documents are provided as drafts. Organisations adopting NCA Assistant for regulated use should review, adapt, and sign off the documents according to their own quality management system. See [`validation/README.md`](validation/README.md) for instructions.
+
 ---
 
 ## Citation
