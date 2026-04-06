@@ -21,9 +21,9 @@
 library(NonCompart)
 library(PowerTOST)
 
-source("/home/claude/pharmakinex_v2/R/utils.R")
-source("/home/claude/pharmakinex_v2/R/nca_helpers.R")
-source("/home/claude/pharmakinex_v2/R/data_quality.R")
+source("R/utils.R")
+source("R/nca_helpers.R")
+source("R/data_quality.R")
 
 pass_count <- 0
 fail_count <- 0
@@ -59,7 +59,7 @@ cat("================================================================\n\n")
 cat("=== A: Column Auto-Detection ===\n\n")
 
 # Source the auto-detect function
-source("/home/claude/pharmakinex_v2/R/mod_data_upload.R")
+source("R/mod_data_upload.R")
 
 # Test various real-world column naming conventions
 test_cases <- list(

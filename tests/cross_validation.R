@@ -17,8 +17,8 @@
 library(NonCompart)
 library(PowerTOST)
 
-source("/home/claude/pharmakinex_v2/R/utils.R")
-source("/home/claude/pharmakinex_v2/R/nca_helpers.R")
+source("R/utils.R")
+source("R/nca_helpers.R")
 
 pass_count <- 0
 fail_count <- 0
@@ -818,7 +818,7 @@ check("Steady-state: Vz/F uses AUClast proportionally when SS=TRUE", {
 
 # --- Reproducibility script validation ---
 check("Reproducibility script: generates valid R code", {
-  source("/home/claude/pharmakinex_v2/R/export_record.R")
+  source("R/export_record.R")
   APP_VERSION <- "1.0"
   
   settings <- list(
@@ -836,7 +836,7 @@ check("Reproducibility script: generates valid R code", {
 })
 
 check("Reproducibility script: produces matching results", {
-  source("/home/claude/pharmakinex_v2/R/export_record.R")
+  source("R/export_record.R")
   APP_VERSION <- "1.0"
   
   # Write Theoph to temp CSV
@@ -894,7 +894,7 @@ check("SHA-256 hash consistency", {
 })
 
 check("Single-subject script: generates valid R code", {
-  source("/home/claude/pharmakinex_v2/R/export_record.R")
+  source("R/export_record.R")
   APP_VERSION <- "1.0"
   
   settings <- list(
@@ -913,7 +913,7 @@ check("Single-subject script: generates valid R code", {
 })
 
 check("Single-subject script: produces matching results", {
-  source("/home/claude/pharmakinex_v2/R/export_record.R")
+  source("R/export_record.R")
   APP_VERSION <- "1.0"
   
   s1 <- Theoph[Theoph$Subject == 1, ]

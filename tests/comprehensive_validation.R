@@ -21,9 +21,9 @@ library(NonCompart)
 library(PowerTOST)
 library(dplyr)
 
-source("/home/claude/pharmakinex_v2/R/utils.R")
-source("/home/claude/pharmakinex_v2/R/nca_helpers.R")
-source("/home/claude/pharmakinex_v2/R/data_quality.R")
+source("R/utils.R")
+source("R/nca_helpers.R")
+source("R/data_quality.R")
 
 pass <- 0; fail <- 0; total <- 0
 
@@ -592,7 +592,7 @@ chk("I2: R version available",
 cat("\n=== J: Label Consistency Audit ===\n\n")
 
 # Read all module files and check for unexplained abbreviations
-module_files <- list.files("/home/claude/pharmakinex_v2/R/", pattern="mod_path_.*\\.R$",
+module_files <- list.files("R/", pattern="mod_path_.*\\.R$",
                            full.names=TRUE)
 all_content <- paste(sapply(module_files, readLines), collapse="\n")
 
@@ -622,7 +622,7 @@ chk("J1: No unexplained abbreviations in dropdown choices",
 has_shiny <- requireNamespace("shiny", quietly = TRUE)
 if (has_shiny) {
   library(shiny)
-  source("/home/claude/pharmakinex_v2/R/help_system.R")
+  source("R/help_system.R")
   help_objects <- c("help_data_format", "help_column_mapping", "help_lloq",
                     "help_blq_rules", "help_what_is_nca", "help_admin_route",
                     "help_trapezoidal", "help_lambda_z", "help_r2adj",
@@ -735,7 +735,7 @@ rplots <- list.files(pattern = "^Rplots.*[.]pdf$")
 if (length(rplots) > 0) invisible(file.remove(rplots))
 
 # C13: No double-namespaced conditionalPanels (ns() in condition + ns=ns param)
-module_files <- list.files("/home/claude/pharmakinex_v2/R/", pattern="\\.R$", full.names=TRUE)
+module_files <- list.files("R/", pattern="\\.R$", full.names=TRUE)
 double_ns <- 0
 for (f in module_files) {
   lines <- readLines(f)
@@ -752,7 +752,7 @@ chk("C13: No double-namespaced conditionalPanels", double_ns == 0,
     if (double_ns > 0) sprintf("(%d found)", double_ns) else "")
 
 # C14: Manual entry uses proper Shiny inputs (not raw tags$textarea)
-single_nca_code <- readLines("/home/claude/pharmakinex_v2/R/mod_path_single_nca.R")
+single_nca_code <- readLines("R/mod_path_single_nca.R")
 raw_textarea <- grep("tags\\$textarea.*manual_", single_nca_code)
 proper_input <- grep("textAreaInput.*manual_", single_nca_code)
 chk("C14: Manual entry uses textAreaInput (not raw tags$textarea)",
