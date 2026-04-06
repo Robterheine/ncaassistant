@@ -78,6 +78,8 @@ A draft validation package is available in [`validation/`](validation/), followi
 
 These documents are provided as drafts. Organisations adopting NCA Assistant for regulated use should review, adapt, and sign off the documents according to their own quality management system. See [`validation/README.md`](validation/README.md) for instructions.
 
+Full documentation of every individual test (what it verifies, how it works, and why it matters) is available in [`tests/TEST_DOCUMENTATION.md`](tests/TEST_DOCUMENTATION.md).
+
 ---
 
 ## Citation
