@@ -419,6 +419,17 @@ path_be_server <- function(id, shared) {
         if (is.null(params) || length(params) == 0)
           params <- intersect(c("CMAX","AUCLST","AUCIFO"), names(nca_res))
         
+        # Warn if design selection may not match the data
+        if (!is.null(seq_col) && length(unique(be_data[[seq_col]])) < 2 &&
+            input$be_design %in% c("crossover_2x2", "crossover_3period", "replicate_2x2x4")) {
+          showNotification(
+            paste0("Your data has only one sequence level ('",
+                   unique(be_data[[seq_col]])[1],
+                   "'). This looks like a fixed-order crossover. ",
+                   "Consider selecting 'Fixed-order crossover' as the study design."),
+            type = "warning", duration = 10)
+        }
+        
         alpha <- 1 - input$ci_level / 100
         ci_results <- list()
         anova_results <- list()
@@ -477,7 +488,7 @@ path_be_server <- function(id, shared) {
           
           if (is.null(fit)) { ci_results[[param]] <- data.frame(Parameter=param, Point_Est=NA, CI_Lower=NA, CI_Upper=NA, Bioequivalent=NA, stringsAsFactors=FALSE); next }
           
-          anova_results[[param]] <- anova(fit)
+          anova_results[[param]] <- tryCatch(anova(fit), error = function(e) NULL)
           
           is_lme <- inherits(fit, "lme")
           trt_coef_name <- paste0(trt_col_be, trt_levels[2])
@@ -485,19 +496,44 @@ path_be_server <- function(id, shared) {
           n1 <- sum(be_data[[trt_col_be]] == trt_levels[1] & !is.na(be_data$.response))
           n2 <- sum(be_data[[trt_col_be]] == trt_levels[2] & !is.na(be_data$.response))
           
-          if (is_lme) {
-            coefs <- nlme::fixef(fit); se_tbl <- summary(fit)$tTable; mse <- summary(fit)$sigma^2
-            if (trt_coef_name %in% names(coefs)) {
-              diff <- coefs[trt_coef_name]; se_diff <- se_tbl[trt_coef_name,"Std.Error"]; dfe <- se_tbl[trt_coef_name,"DF"]
-            } else { diff <- NA; se_diff <- NA; dfe <- NA }
-          } else {
-            coefs <- coef(fit); mse <- summary(fit)$sigma^2; dfe <- fit$df.residual; se_tbl <- summary(fit)$coefficients
-            if (trt_coef_name %in% names(coefs)) {
-              diff <- coefs[trt_coef_name]; se_diff <- se_tbl[trt_coef_name,"Std. Error"]
-            } else { diff <- NA; se_diff <- NA }
+          coef_result <- tryCatch({
+            if (is_lme) {
+              coefs <- nlme::fixef(fit); se_tbl <- summary(fit)$tTable; mse <- summary(fit)$sigma^2
+              if (trt_coef_name %in% names(coefs) && !is.na(coefs[trt_coef_name])) {
+                list(diff = coefs[trt_coef_name], se = se_tbl[trt_coef_name,"Std.Error"],
+                     dfe = se_tbl[trt_coef_name,"DF"], mse = mse)
+              } else { NULL }
+            } else {
+              coefs <- coef(fit); mse <- summary(fit)$sigma^2; dfe <- fit$df.residual
+              se_tbl <- summary(fit)$coefficients
+              if (trt_coef_name %in% names(coefs) && !is.na(coefs[trt_coef_name])) {
+                list(diff = coefs[trt_coef_name], se = se_tbl[trt_coef_name,"Std. Error"],
+                     dfe = dfe, mse = mse)
+              } else { NULL }
+            }
+          }, error = function(e) NULL)
+          
+          if (is.null(coef_result)) {
+            # Provide specific guidance based on the likely cause
+            reason <- if (!is.null(seq_col) && length(unique(be_data[[seq_col]])) < 2) {
+              "All subjects have the same sequence \u2014 try selecting 'Fixed-order crossover' as the study design."
+            } else if (!is.null(per_col) && length(unique(be_data[[per_col]])) < 2) {
+              "Only one period found \u2014 try selecting 'Parallel groups' as the study design."
+            } else {
+              "The statistical model could not estimate the treatment effect. Check that the study design selection matches your data."
+            }
+            showNotification(
+              paste0("Could not compute BE results for ", friendly_name(param), ": ", reason),
+              type = "error", duration = 12)
+            ci_results[[param]] <- data.frame(
+              Parameter=param, Point_Est=NA, CI_Lower=NA, CI_Upper=NA,
+              Bioequivalent=reason,
+              stringsAsFactors=FALSE)
+            next
           }
           
-          if (is.na(diff)) { ci_results[[param]] <- data.frame(Parameter=param, Point_Est=NA, CI_Lower=NA, CI_Upper=NA, Bioequivalent=NA, stringsAsFactors=FALSE); next }
+          diff <- coef_result$diff; se_diff <- coef_result$se
+          dfe <- coef_result$dfe; mse <- coef_result$mse
           
           t_crit <- qt(1 - alpha/2, dfe)
           ci_lo <- diff - t_crit * se_diff

@@ -298,16 +298,48 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
   # 6. TIME ORDERING & DUPLICATES
   # ===========================================================================
   
-  # Check for duplicate time points per subject
+  # Check for duplicate time points per subject (per treatment/period in crossover)
   dup_count <- 0
   dup_subjects <- c()
+  
+  # In crossover data, the same time point is expected across periods/treatments.
+  # Check duplicates within each Subject+Treatment or Subject+Period combination.
+  has_trt <- !is.null(col_map$treatment) && col_map$treatment %in% names(data)
+  has_per <- !is.null(col_map$period) && col_map$period %in% names(data)
+  
   for (s in subjects) {
-    s_times <- time_num[data[[subj_col]] == s & !is.na(time_num)]
-    if (any(duplicated(s_times))) {
-      dup_count <- dup_count + sum(duplicated(s_times))
-      dup_subjects <- c(dup_subjects, s)
+    s_idx <- data[[subj_col]] == s & !is.na(time_num)
+    
+    if (has_trt) {
+      # Group by treatment within subject
+      groups <- unique(data[[col_map$treatment]][s_idx])
+      for (g in groups) {
+        g_times <- time_num[s_idx & data[[col_map$treatment]] == g]
+        if (any(duplicated(g_times))) {
+          dup_count <- dup_count + sum(duplicated(g_times))
+          dup_subjects <- c(dup_subjects, s)
+        }
+      }
+    } else if (has_per) {
+      # Group by period within subject
+      groups <- unique(data[[col_map$period]][s_idx])
+      for (g in groups) {
+        g_times <- time_num[s_idx & data[[col_map$period]] == g]
+        if (any(duplicated(g_times))) {
+          dup_count <- dup_count + sum(duplicated(g_times))
+          dup_subjects <- c(dup_subjects, s)
+        }
+      }
+    } else {
+      # No treatment/period: check per subject only
+      s_times <- time_num[s_idx]
+      if (any(duplicated(s_times))) {
+        dup_count <- dup_count + sum(duplicated(s_times))
+        dup_subjects <- c(dup_subjects, s)
+      }
     }
   }
+  dup_subjects <- unique(dup_subjects)
   
   if (dup_count > 0) {
     add("ERROR", "Time",
