@@ -319,6 +319,13 @@ path_multi_nca_server <- function(id, shared) {
         }
       }
       
+      if (input$admin_route == "iv_infusion" &&
+          (is.null(input$inf_dur) || is.na(input$inf_dur) || input$inf_dur <= 0)) {
+        showNotification("Please enter the infusion duration (greater than 0) for IV infusion.",
+                         type = "error", duration = 5)
+        return()
+      }
+      
       settings <- list(
         admin_route       = input$admin_route,
         dose              = if (use_data_dose) NA else input$dose,
@@ -594,6 +601,7 @@ path_multi_nca_server <- function(id, shared) {
     
     output$lz_plot <- renderPlotly({
       sd <- lz_sub_data(); req(length(sd$time) >= 3)
+      tryCatch({
       lz <- if (!is.null(lz_state$override)) lz_state$override
             else estimate_lambda_z(sd$time, sd$conc, 0.7)
       df <- data.frame(
@@ -633,6 +641,7 @@ path_multi_nca_server <- function(id, shared) {
       }
       ggplotly(p, tooltip = "text") %>%
         layout(margin = list(b = 40))
+    }, error = function(e) plotly_empty())
     })
     
     # Populate checkboxes when profile changes
@@ -671,10 +680,27 @@ path_multi_nca_server <- function(id, shared) {
       }
       fit <- lm(log(c_sel) ~ t_sel)
       lz_new <- -coef(fit)[2]; int_new <- coef(fit)[1]
-      hl_new <- log(2) / lz_new; n_pts <- length(t_sel)
+      n_pts <- length(t_sel)
+      
+      # Guard: negative lambda_z
+      if (is.na(lz_new) || lz_new <= 0) {
+        showNotification(
+          "The selected points have an ascending or flat slope \u2014 select points from the descending part of the curve.",
+          type = "error", duration = 10)
+        return()
+      }
+      
+      hl_new <- log(2) / lz_new
       ss_res <- sum(residuals(fit)^2)
       ss_tot <- sum((log(c_sel) - mean(log(c_sel)))^2)
-      r2adj <- 1 - (1 - (1 - ss_res/ss_tot)) * (n_pts - 1) / (n_pts - 2)
+      r2 <- if (ss_tot > 0) 1 - ss_res / ss_tot else NA
+      r2adj <- if (n_pts >= 3 && !is.na(r2)) {
+        1 - (1 - r2) * (n_pts - 1) / (n_pts - 2)
+      } else { NA }
+      if (n_pts == 2) {
+        showNotification("Half-life computed from 2 points (R\u00B2 not available).",
+                         type = "warning", duration = 8)
+      }
       
       lz_state$override <- list(
         lambda_z = as.numeric(lz_new), half_life = as.numeric(hl_new),
@@ -716,8 +742,10 @@ path_multi_nca_server <- function(id, shared) {
       }
       
       showNotification(
-        sprintf("Recalculated: t\u00BD = %.3f h (R\u00B2 = %.4f, %d pts)",
-                hl_new, r2adj, n_pts),
+        sprintf("Recalculated: t\u00BD = %.3f h (%s, %d pts)",
+                hl_new,
+                if (!is.na(r2adj)) sprintf("R\u00B2 = %.4f", r2adj) else "R\u00B2 = N/A",
+                n_pts),
         type = "message", duration = 5)
     })
     

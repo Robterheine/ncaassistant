@@ -396,14 +396,20 @@ path_single_nca_server <- function(id, shared) {
     output$profile_plot <- renderPlotly({
       d <- tc(); req(length(d$time) > 0)
       df <- data.frame(Time = d$time, Conc = d$conc)
-      p <- ggplot(df, aes(Time, Conc)) +
-        geom_line(color = "#2C3E50", linewidth = 0.8) +
-        geom_point(color = "#E74C3C", size = 3) +
-        labs(x = paste0("Time (", input$time_unit, ")"),
-             y = paste0("Concentration (", input$conc_unit, ")"),
-             title = d$label) + theme_minimal(base_size = 12)
-      if (input$y_scale == "log") p <- p + scale_y_log10()
-      ggplotly(p, dynamicTicks = TRUE)
+      if (input$y_scale == "log") {
+        df <- df[!is.na(df$Conc) & df$Conc > 0, ]
+        if (nrow(df) == 0) return(plotly_empty())
+      }
+      tryCatch({
+        p <- ggplot(df, aes(Time, Conc)) +
+          geom_line(color = "#2C3E50", linewidth = 0.8) +
+          geom_point(color = "#E74C3C", size = 3) +
+          labs(x = paste0("Time (", input$time_unit, ")"),
+               y = paste0("Concentration (", input$conc_unit, ")"),
+               title = d$label) + theme_minimal(base_size = 12)
+        if (input$y_scale == "log") p <- p + scale_y_log10()
+        ggplotly(p, dynamicTicks = TRUE)
+      }, error = function(e) plotly_empty())
     })
     
     # NCA
@@ -518,6 +524,7 @@ path_single_nca_server <- function(id, shared) {
     
     output$lz_plot <- renderPlotly({
       d <- tc(); req(length(d$time) >= 3)
+      tryCatch({
       lz <- if (!is.null(local$lz_override)) local$lz_override
             else estimate_lambda_z(d$time, d$conc, 0.7)
       df <- data.frame(
@@ -563,6 +570,7 @@ path_single_nca_server <- function(id, shared) {
       
       ggplotly(p, tooltip = "text") %>%
         layout(margin = list(b = 40))
+    }, error = function(e) plotly_empty())
     })
     
     observe({
@@ -615,14 +623,32 @@ path_single_nca_server <- function(id, shared) {
       fit <- lm(log(c_sel) ~ t_sel)
       lambda_z_new <- -coef(fit)[2]
       intercept_new <- coef(fit)[1]
-      half_life_new <- log(2) / lambda_z_new
       n_pts <- length(t_sel)
       
-      # R² adjusted
+      # Guard: negative lambda_z means ascending slope — not a terminal phase
+      if (is.na(lambda_z_new) || lambda_z_new <= 0) {
+        showNotification(
+          "The selected points have an ascending or flat slope \u2014 they do not represent a terminal elimination phase. Select points from the descending part of the curve.",
+          type = "error", duration = 10)
+        return()
+      }
+      
+      half_life_new <- log(2) / lambda_z_new
+      
+      # R² adjusted (requires at least 3 points; with 2, R² is always 1.0)
       ss_res <- sum(residuals(fit)^2)
       ss_tot <- sum((log(c_sel) - mean(log(c_sel)))^2)
-      r2 <- 1 - ss_res / ss_tot
-      r2adj <- 1 - (1 - r2) * (n_pts - 1) / (n_pts - 2)
+      r2 <- if (ss_tot > 0) 1 - ss_res / ss_tot else NA
+      r2adj <- if (n_pts >= 3 && !is.na(r2)) {
+        1 - (1 - r2) * (n_pts - 1) / (n_pts - 2)
+      } else {
+        NA
+      }
+      if (n_pts == 2) {
+        showNotification(
+          "Half-life computed from 2 points (R\u00B2 not available \u2014 at least 3 points needed for validation).",
+          type = "warning", duration = 8)
+      }
       
       # Store override
       local$lz_override <- list(
@@ -684,14 +710,17 @@ path_single_nca_server <- function(id, shared) {
       }
       
       showNotification(
-        sprintf("Recalculated: t\u00BD = %.3f h (R\u00B2 = %.4f, %d points)",
-                half_life_new, r2adj, n_pts),
+        sprintf("Recalculated: t\u00BD = %.3f h (%s, %d points)",
+                half_life_new,
+                if (!is.na(r2adj)) sprintf("R\u00B2 = %.4f", r2adj) else "R\u00B2 = N/A",
+                n_pts),
         type = "message", duration = 5)
     })
     
     output$dl_csv <- downloadHandler(
       filename = function() paste0("NCA_single_", Sys.Date(), ".csv"),
       content = function(file) {
+        req(nca_res())
         r <- nca_res()
         if (!is.null(r)) {
           df <- data.frame(

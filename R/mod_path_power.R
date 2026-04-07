@@ -253,6 +253,11 @@ path_power_server <- function(id, shared) {
             )
           } else {
             # Power calculation — compute power at given N
+            if (is.null(input$n_subjects) || is.na(input$n_subjects) || input$n_subjects < 4) {
+              showNotification("At least 4 subjects are needed for a power calculation.",
+                               type = "error", duration = 5)
+              NULL
+            } else {
             pwr <- compute_power(input$n_subjects, input$analysis_type,
                                  input$alpha, input$theta0, input$theta1,
                                  input$theta2, input$cv, cv_wr, input$design)
@@ -264,6 +269,7 @@ path_power_server <- function(id, shared) {
               data.frame(Design = input$design, n = input$n_subjects,
                          power = pwr, CV = input$cv)
             }
+            }  # end n_subjects guard
           }
         }, error = function(e) {
           showNotification(paste("Error:", e$message), type = "error", duration = 8)
