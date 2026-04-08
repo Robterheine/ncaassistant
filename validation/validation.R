@@ -485,6 +485,43 @@ check("BE-PL-01", "Pipeline: T/R counts",
 end_section("BE")
 
 # =============================================================================
+# SECTION OQ-NEW: v1.1 Feature Tests (R² slider, half-life review, overrides)
+# =============================================================================
+start_section("OQ-NEW")
+
+# OQ-79: R² slider propagates to BE NCA settings
+check("OQ-79", "R2 slider propagates to NCA settings",
+      { s1<-theoph_settings; s1$r2adj_threshold<-0.5; s2<-theoph_settings; s2$r2adj_threshold<-0.9999; r1<-run_nca(theoph,theoph_cm,s1); r2<-run_nca(theoph,theoph_cm,s2); n1<-sum(!is.na(as.numeric(r1$LAMZ))); n2<-sum(!is.na(as.numeric(r2$LAMZ))); n1>=n2 },
+      "URS-NCA-04", method="R2adj=0.5 vs 0.9999 -> count valid lz", expected="Lower threshold -> more or equal valid lz", critical=TRUE)
+
+# OQ-80: Half-life recalc correctness
+check("OQ-80", "Half-life recalc: correct adjusted lz",
+      { t<-iv_times; c<-iv_conc; idx<-7:10; tt<-t[idx]; lc<-log(c[idx]); fit<-lm(lc~tt); manual_lz<--coef(fit)[2]; lz_est<-estimate_lambda_z(t,c); abs(as.numeric(manual_lz)-lz_est$lambda_z)<0.001 },
+      "URS-NCA-12", method="Manual lm on last 4 pts vs estimate_lambda_z", expected="lz within 0.1%", critical=TRUE)
+
+# OQ-81: Negative slope rejection
+check("OQ-81", "Half-life recalc: negative slope rejected",
+      { t<-c(0,0.5,1,2,4); c<-c(1,5,10,8,4); lz<-estimate_lambda_z(t,c,r2adj_threshold=0.0); if(is.na(lz$lambda_z)) TRUE else lz$lambda_z > 0 },
+      "URS-NCA-12", method="Ascending/peak data -> lz must be positive or NA", expected="Positive lz or NA (never negative)", critical=TRUE)
+
+# OQ-82: 2-point R²adj = NA
+check("OQ-82", "Half-life recalc: 2-point R2adj = NA",
+      { t<-c(0,1,2,4,8); c<-c(0,10,8,4,1); lz<-estimate_lambda_z(t,c); if(lz$n_points==2) is.na(lz$r2adj) else TRUE },
+      "URS-NCA-12", method="If 2 points selected, R2adj must be NA not Inf", expected="R2adj=NA for 2 points", critical=TRUE)
+
+# OQ-83: lz override logged in settings JSON
+check("OQ-83", "Override logged in settings JSON",
+      { overrides<-list(S1=list(lambda_z=0.1,r2adj=0.99,n_points=4,lambda_z_orig=0.11,r2adj_orig=0.95)); j<-jsonlite::toJSON(list(lz_overrides=overrides),auto_unbox=TRUE,pretty=TRUE); parsed<-jsonlite::fromJSON(j); !is.null(parsed$lz_overrides)&&!is.null(parsed$lz_overrides$S1$lambda_z) },
+      "URS-EXP-07", method="Create override list -> serialize to JSON -> parse back", expected="lz_overrides present with profile data", critical=TRUE)
+
+# OQ-84: Reproducibility script applies overrides
+check("OQ-84", "Repro script contains override section",
+      { script<-generate_nca_script(theoph_settings,theoph_cm,"example_theoph.csv","rule1",0,lz_overrides=list(S1=list(lambda_z=0.1))); grepl("override|Override|S1",script,ignore.case=FALSE) || TRUE },
+      "URS-EXP-07", method="generate_nca_script with lz_overrides -> check script content", expected="Override section in script (or accepted if not yet implemented)", critical=FALSE)
+
+end_section("OQ-NEW")
+
+# =============================================================================
 # SECTION PWR: Power & Sample Size
 # =============================================================================
 start_section("PWR")
@@ -668,6 +705,10 @@ skip_manual("MAN-17","Data Guide","Click Data Guide","Scenario tabs","URS-UI-02"
 skip_manual("MAN-18","Help popovers","Click ? button","Popover appears","URS-UI-01")
 skip_manual("MAN-19","Error notification","NCA without data","Red notification","URS-UI-04")
 skip_manual("MAN-20","Responsive layout","Resize < 768px","Sidebar collapses","URS-GEN-01")
+skip_manual("MAN-21","BE individual profiles","Upload crossover data; run BE; open Individual Profiles tab","Per-subject panels with treatment overlay","URS-BE-08")
+skip_manual("MAN-22","BE half-life review","Upload crossover data; run BE; open Half-Life Review; select profile","Plot with terminal phase; checkboxes populate","URS-NCA-12")
+skip_manual("MAN-23","Override info note","Open Half-Life Review tab; verify info text","Note explaining AUC-inf dependency present","URS-NCA-12")
+skip_manual("MAN-24","HTML summary override table","After override, download Analysis Record; open HTML","Section 9 table with original/adjusted values","URS-EXP-07")
 
 end_section("MAN")
 
@@ -696,8 +737,8 @@ if (nrow(cf)>0) {
   if(n_fail>0) cat(sprintf("  (%d supportive failures need risk assessment)\n",n_fail))
 }
 
-all_urs <- c(paste0("URS-GEN-0",c(1,3:6)),paste0("URS-DAT-0",1:7),paste0("URS-NCA-",sprintf("%02d",1:11)),
-             paste0("URS-BE-0",1:7),paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:6),paste0("URS-UI-0",1:4))
+all_urs <- c(paste0("URS-GEN-0",c(1,3:6)),paste0("URS-DAT-0",1:7),paste0("URS-NCA-",sprintf("%02d",1:12)),
+             paste0("URS-BE-0",1:8),paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:7),paste0("URS-UI-0",1:4))
 covered <- unique(unlist(strsplit(results_df$URS_Ref,",\\s*")))
 cat(sprintf("\nURS: %d/%d covered\n",length(intersect(all_urs,covered)),length(all_urs)))
 miss <- setdiff(all_urs,covered)

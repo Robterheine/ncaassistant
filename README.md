@@ -70,7 +70,7 @@ Available at [robterheine.shinyapps.io/NCAassistant](https://robterheine.shinyap
 
 ## Validation
 
-A draft validation package is available in [`validation/`](validation/), following a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles, to be adapted for the user situation and requirements.
+A consolidated validation package is available in [`validation/`](validation/), following a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles.
 
 **Single validation script** — run from the project root:
 
@@ -78,13 +78,13 @@ A draft validation package is available in [`validation/`](validation/), followi
 Rscript validation/validation.R
 ```
 
-This executes ~155 automated tests and generates a self-contained PDF report with environment details, SHA-256 file integrity hashes, per-section results, URS traceability, and the complete script source code as an appendix.
+This executes ~169 automated tests and generates a self-contained PDF report with environment details, SHA-256 file integrity hashes, per-section results, URS traceability, and the complete script source code as an appendix.
 
 **Validation deliverables:**
 
-- **User Requirement Specification** ([`validation/NCA_Assistant_URS_v1.0.docx`](validation/NCA_Assistant_URS_v1.0.docx)) — 46 requirements across 7 categories, with FMEA risk assessment (including Detectability per ICH Q9), supplier assessment, ALCOA+ data integrity framework, and change control procedures
-- **IQ/OQ/PQ Protocol** ([`validation/NCA_Assistant_IQOQPQ_v1.2.docx`](validation/NCA_Assistant_IQOQPQ_v1.2.docx)) — every automated and manual test listed individually with method, expected result, URS cross-reference, and criticality classification
-- **Consolidated test script** ([`validation/validation.R`](validation/validation.R)) — ~155 automated tests + 20 manual test definitions, covering IQ, data handling, NCA accuracy, bioequivalence, power/sample size, export/reproducibility, and usability
+- **User Requirement Specification** ([`validation/NCA_Assistant_URS_v1.1.docx`](validation/NCA_Assistant_URS_v1.1.docx)) — 49 requirements across 7 categories, with FMEA risk assessment (including Detectability per ICH Q9), supplier assessment, ALCOA+ data integrity framework, and change control procedures
+- **IQ/OQ/PQ Protocol** ([`validation/NCA_Assistant_IQOQPQ_v1.3.docx`](validation/NCA_Assistant_IQOQPQ_v1.3.docx)) — every automated and manual test listed individually with method, expected result, URS cross-reference, and criticality classification
+- **Consolidated test script** ([`validation/validation.R`](validation/validation.R)) — ~169 automated tests + 24 manual test definitions, covering IQ, data handling, NCA accuracy, bioequivalence, power/sample size, export/reproducibility, and usability
 
 NCA accuracy validated against analytical ground truth (mono-exponential IV bolus) and R's built-in Theoph and Indometh datasets. Every test is classified CRITICAL (failure blocks qualification) or SUPPORTIVE (failure requires risk assessment).
 

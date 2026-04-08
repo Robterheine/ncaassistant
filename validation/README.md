@@ -4,9 +4,9 @@
 
 | File | Description |
 |------|-------------|
-| `validation.R` | Consolidated validation script (~155 automated tests + 20 manual test definitions) |
-| `NCA_Assistant_URS_v1.0.docx` | User Requirement Specification (46 requirements) |
-| `NCA_Assistant_IQOQPQ_v1.2.docx` | IQ/OQ/PQ Protocol with every test listed individually |
+| `validation.R` | Consolidated validation script (~169 automated tests + 24 manual test definitions) |
+| `NCA_Assistant_URS_v1.1.docx` | User Requirement Specification (49 requirements) |
+| `NCA_Assistant_IQOQPQ_v1.3.docx` | IQ/OQ/PQ Protocol with every test listed individually |
 | `package_risk_assessment.R` | Supplier package risk assessment script |
 | `package_risk_assessment.md` | Supplier package risk assessment report |
 
