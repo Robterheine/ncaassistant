@@ -120,7 +120,7 @@
 "EXP-DT-01","Determinism: NCA","CRITICAL","URS-EXP-01","PASS","Run NCA twice","Identical","","EXP"
 "EXP-DT-02","Determinism: summary","CRITICAL","URS-EXP-01","PASS","Summary twice","Identical","","EXP"
 "EXP-VR-01","APP_VERSION queryable","CRITICAL","URS-EXP-06","PASS","APP_VERSION from app.R","Non-empty","","EXP"
-"EXP-VR-02","APP_VERSION is 1.0","SUPPORTIVE","URS-EXP-06","PASS","=='1.0'","1.0","","EXP"
+"EXP-VR-02","APP_VERSION is 1.0","SUPPORTIVE","URS-EXP-06","FAIL","=='1.0'","1.0"," | condition was FALSE/errored","EXP"
 "EXP-VR-03","Package versions","CRITICAL","URS-EXP-06","PASS","packageVersion","All return strings","","EXP"
 "EXP-SH-01","SHA-256 computable","CRITICAL","URS-EXP-04","PASS","digest SHA-256","64-char hex","","EXP"
 "EXP-RS-01","Repro script: valid R","CRITICAL","URS-EXP-02","PASS","generate_nca_script->parse","Valid R","","EXP"

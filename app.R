@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.0
+# Non-Compartmental Analysis Assistant v1.1
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # https://www.radboudumc.nl/en/research/research-groups/radboud-applied-pharmacometrics
@@ -12,7 +12,7 @@
 #   5. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.0"
+APP_VERSION <- "1.1"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 library(shiny)
@@ -624,8 +624,26 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.0 \u2014 First Stable Release",
+            tags$h6(class = "fw-bold mb-1", "v1.1",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "April 2026"),
+            tags$ul(class = "mb-0",
+              tags$li("Bioequivalence module: configurable R\u00B2 threshold for half-life estimation (was hardcoded to 0.70)"),
+              tags$li("Bioequivalence module: half-life review with interactive point selection, \u03BBz plot, and recalculation"),
+              tags$li("Bioequivalence module: individual profiles tab (per-subject panels with Test vs Reference overlay, paginated)"),
+              tags$li("Lambda-z override audit trail in Complete Analysis Record (both batch NCA and BE): overrides logged in settings JSON, applied in reproducibility script, and displayed in HTML summary"),
+              tags$li("Design mismatch detection: warns when single-sequence data is used with a multi-sequence crossover design"),
+              tags$li("Defensive fixes: log-scale plot crash with zero concentrations, R\u00B2adj division by zero with 2 points, negative \u03BBz rejection, infusion duration validation"),
+              tags$li("Forest plot rendering fix (overlapping axis labels)"),
+              tags$li("Crossover-aware duplicate time check (no longer flags time = 0 across periods)"),
+              tags$li("Three original test suites (249 tests) replaced by consolidated validation script (183 tests) aligned with IQ/OQ/PQ protocol"),
+              tags$li("Draft validation package available on GitHub: URS, IQ/OQ/PQ protocol, automated validation script, package risk assessment per pharmaR framework")
+            )
+          ),
+          
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.0 \u2014 First Stable Release"),
             tags$p(class = "text-muted mb-1", "April 2026"),
             tags$ul(class = "mb-0",
               tags$li("Complete Analysis Record export in all three analysis paths: self-contained zip with results, standalone R reproducibility script, data integrity hash (SHA-256), analysis settings (JSON), and HTML summary document"),

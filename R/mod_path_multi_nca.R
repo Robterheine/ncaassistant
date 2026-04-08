@@ -238,7 +238,7 @@ path_multi_nca_server <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     
-    lz_state <- reactiveValues(override = NULL)
+    lz_state <- reactiveValues(override = NULL, overrides_log = list())
     
     # Reset override when profile changes
     observeEvent(input$lz_profile, { lz_state$override <- NULL }, ignoreInit = TRUE)
@@ -708,6 +708,18 @@ path_multi_nca_server <- function(id, shared) {
         n_points = n_pts, time_used = t_sel, message = "User-selected"
       )
       
+      # Log the override for audit trail
+      sel <- input$lz_profile
+      orig_lz <- estimate_lambda_z(sd$time, sd$conc, input$r2adj)
+      lz_state$overrides_log[[sel]] <- list(
+        profile = sel,
+        original_lambda_z = if (!is.na(orig_lz$lambda_z)) as.numeric(orig_lz$lambda_z) else NA,
+        adjusted_lambda_z = as.numeric(lz_new),
+        original_r2adj = if (!is.na(orig_lz$r2adj)) as.numeric(orig_lz$r2adj) else NA,
+        adjusted_r2adj = if (!is.na(r2adj)) as.numeric(r2adj) else NA,
+        points_used = n_pts
+      )
+      
       # Update this profile's row in the NCA results table
       r <- nca_result()
       if (!is.null(r)) {
@@ -826,7 +838,8 @@ path_multi_nca_server <- function(id, shared) {
             lloq           = si$lloq,
             analyst        = if (nchar(input$record_analyst) > 0) input$record_analyst else "Analyst",
             study_name     = if (nchar(input$record_study) > 0) input$record_study else "Untitled Study",
-            summary_stats  = summ
+            summary_stats  = summ,
+            lz_overrides   = if (length(lz_state$overrides_log) > 0) lz_state$overrides_log else NULL
           )
         })
       }

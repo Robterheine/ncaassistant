@@ -65,7 +65,10 @@ path_be_ui <- function(id) {
               selectInput(ns("trap_method"),
                           tagList("Trapezoidal method", help_trapezoidal),
                           choices = c("Linear-up / Log-down (recommended)" = "log",
-                                      "Linear-up / Linear-down" = "linear"))
+                                      "Linear-up / Linear-down" = "linear")),
+              sliderInput(ns("r2adj_be"),
+                          tagList("Minimum R\u00B2 for half-life estimation", help_r2adj),
+                          min = 0.5, max = 1, value = 0.7, step = 0.05)
             )
           ),
           
@@ -194,6 +197,46 @@ path_be_ui <- function(id) {
               "Concentration-Time Profiles",
               icon = icon("chart-line"),
               plotlyOutput(ns("profile_plot"), height = "450px")
+            ),
+            
+            nav_panel(
+              "Individual Profiles",
+              icon = icon("grip"),
+              tags$p(class = "text-muted small",
+                     "One panel per subject. Test and Reference overlaid in different colours."),
+              layout_columns(
+                col_widths = c(4, 8),
+                selectInput(ns("be_grid_page"), "Subjects shown",
+                            choices = "All", selected = "All"),
+                tags$span()
+              ),
+              plotlyOutput(ns("be_grid_plot"), height = "700px")
+            ),
+            
+            nav_panel(
+              tagList("Half-Life Review", help_lambda_z),
+              icon = icon("magnifying-glass-chart"),
+              tags$p(class = "text-muted small",
+                     "Review and adjust the terminal phase regression for individual profiles. ",
+                     "Adjustments affect AUC\u221E, CL/F, and Vz/F. If your BE comparison uses ",
+                     "only Cmax and AUClast, changes here will not affect the confidence intervals."),
+              layout_columns(
+                col_widths = c(6, 6),
+                selectInput(ns("lz_profile"), "Profile:", choices = NULL),
+                tags$div(
+                  style = "padding-top: 1.7rem;",
+                  uiOutput(ns("lz_status"))
+                )
+              ),
+              plotlyOutput(ns("lz_plot"), height = "400px"),
+              tags$div(
+                class = "mt-2",
+                tags$h6("Select terminal phase points:"),
+                checkboxGroupInput(ns("lz_points"), NULL, choices = NULL, inline = TRUE),
+                actionButton(ns("lz_recalc"), "Recalculate",
+                             class = "btn-warning btn-sm",
+                             icon = icon("refresh"))
+              )
             )
           ),
           
@@ -345,7 +388,7 @@ path_be_server <- function(id, shared) {
           time_unit = input$time_unit,
           conc_unit = input$conc_unit,
           trap_method = input$trap_method,
-          r2adj_threshold = 0.7,
+          r2adj_threshold = input$r2adj_be,
           mw = 0, partial_aucs = NULL
         )
         
@@ -614,10 +657,13 @@ path_be_server <- function(id, shared) {
         geom_point(aes(color = Bioequivalent), size = 4) +
         scale_color_manual(values = c("YES" = "#18BC9C", "NO" = "#E74C3C")) +
         labs(x = paste0("Geometric Mean Ratio (%) with ", input$ci_level, "% CI"),
-             y = NULL) +
+             y = NULL, color = NULL) +
         theme_minimal(base_size = 12) +
-        theme(legend.position = "bottom", panel.grid.major.y = element_blank())
-      ggplotly(p)
+        theme(legend.position = "none", panel.grid.major.y = element_blank())
+      ggplotly(p, tooltip = c("x", "y")) %>%
+        layout(margin = list(b = 60),
+               xaxis = list(title = paste0("Geometric Mean Ratio (%) with ",
+                                           input$ci_level, "% CI")))
     })
     
     # NCA table
@@ -681,6 +727,259 @@ path_be_server <- function(id, shared) {
       ggplotly(p) %>% layout(legend = list(orientation="h", y=-0.15))
     })
     
+    # --- Individual Profiles Grid (per subject, coloured by treatment) ---
+    observe({
+      req(shared$pk_data, shared$col_map)
+      subjects <- sort(unique(shared$pk_data[[shared$col_map$subject]]))
+      n <- length(subjects)
+      if (n <= 12) {
+        choices <- list("All subjects" = "all")
+      } else {
+        pages <- split(subjects, ceiling(seq_along(subjects) / 12))
+        choices <- c(list("All subjects (may be slow)" = "all"),
+                     setNames(seq_along(pages),
+                              sapply(pages, function(pg) paste0(pg[1], " \u2013 ", pg[length(pg)]))))
+      }
+      updateSelectInput(session, "be_grid_page", choices = choices,
+                        selected = if (n <= 12) "all" else "1")
+    })
+    
+    output$be_grid_plot <- renderPlotly({
+      req(shared$pk_data, shared$col_map, shared$col_map$treatment)
+      d <- shared$pk_data; cm <- shared$col_map
+      d <- d[!is.na(d[[cm$conc]]) & d[[cm$conc]] > 0, ]
+      if (nrow(d) == 0) return(plotly_empty())
+      subjects <- sort(unique(d[[cm$subject]]))
+      
+      sel <- input$be_grid_page
+      if (!is.null(sel) && sel != "all") {
+        pages <- split(subjects, ceiling(seq_along(subjects) / 12))
+        idx <- as.integer(sel)
+        if (!is.na(idx) && idx <= length(pages)) subjects <- pages[[idx]]
+      } else if (length(subjects) > 36) {
+        subjects <- subjects[1:36]
+      }
+      
+      sub_d <- d[d[[cm$subject]] %in% subjects, ]
+      tryCatch({
+        p <- ggplot(sub_d, aes(x = .data[[cm$time]], y = .data[[cm$conc]],
+                               color = factor(.data[[cm$treatment]]))) +
+          geom_line(linewidth = 0.5) +
+          geom_point(size = 1.5) +
+          facet_wrap(as.formula(paste("~", cm$subject)), scales = "free_y") +
+          scale_y_log10() +
+          scale_color_brewer(palette = "Set1") +
+          theme_minimal(base_size = 9) +
+          labs(x = "Time", y = "Concentration (log)", color = "Treatment") +
+          theme(legend.position = "bottom")
+        ggplotly(p) %>% layout(legend = list(orientation = "h", y = -0.1))
+      }, error = function(e) plotly_empty())
+    })
+    
+    # --- Half-Life Review for BE ---
+    lz_state <- reactiveValues(override = NULL, overrides_log = list())
+    
+    # Update profile selector after NCA runs
+    observe({
+      req(be_nca_result())
+      r <- be_nca_result()
+      if ("Subject" %in% names(r) && "Treatment" %in% names(r)) {
+        choices <- paste(r$Subject, "|", r$Treatment)
+      } else {
+        choices <- r[[1]]
+      }
+      updateSelectInput(session, "lz_profile", choices = choices)
+    })
+    
+    # Reset override when profile changes
+    observeEvent(input$lz_profile, { lz_state$override <- NULL }, ignoreInit = TRUE)
+    
+    # Get data for selected profile
+    lz_sub_data <- reactive({
+      req(input$lz_profile, shared$pk_data, shared$col_map)
+      d <- shared$pk_data; cm <- shared$col_map; sel <- input$lz_profile
+      if (grepl(" \\| ", sel)) {
+        parts <- strsplit(sel, " \\| ")[[1]]
+        sub_d <- d[d[[cm$subject]] == trimws(parts[1]) &
+                     d[[cm$treatment]] == trimws(parts[2]), ]
+      } else { sub_d <- d[d[[cm$subject]] == sel, ] }
+      sub_d <- sub_d[order(sub_d[[cm$time]]), ]
+      list(time = sub_d[[cm$time]], conc = sub_d[[cm$conc]])
+    })
+    
+    # Half-life status
+    output$lz_status <- renderUI({
+      sd <- lz_sub_data(); req(length(sd$time) >= 3)
+      lz <- if (!is.null(lz_state$override)) lz_state$override
+            else estimate_lambda_z(sd$time, sd$conc, input$r2adj_be)
+      if (is.na(lz$lambda_z)) {
+        badge <- tags$span(class = "badge bg-warning", "Not estimable")
+        return(tags$div(tags$small("Half-life could not be estimated"), badge))
+      }
+      badge <- if (!is.null(lz_state$override))
+        tags$span(class = "badge bg-info ms-1", "User-adjusted") else NULL
+      tags$div(
+        tags$small(paste0("Half-life: ", signif(lz$half_life, 4), " h | R\u00B2: ",
+                          if (!is.na(lz$r2adj)) signif(lz$r2adj, 4) else "N/A",
+                          " | ", lz$n_points, " points")),
+        badge)
+    })
+    
+    # Half-life plot
+    output$lz_plot <- renderPlotly({
+      sd <- lz_sub_data(); req(length(sd$time) >= 3)
+      tryCatch({
+        lz <- if (!is.null(lz_state$override)) lz_state$override
+              else estimate_lambda_z(sd$time, sd$conc, input$r2adj_be)
+        df <- data.frame(Time = sd$time,
+                         ln_Conc = ifelse(sd$conc > 0, log(sd$conc), NA),
+                         Conc = sd$conc, used = FALSE)
+        if (length(lz$time_used) > 0) {
+          for (i in seq_along(lz$time_used)) {
+            m <- which(abs(sd$time - lz$time_used[i]) < 1e-10)
+            if (length(m) > 0) df$used[m[1]] <- TRUE
+          }
+        }
+        df$Status <- ifelse(df$used, "Used for half-life", "Not used")
+        df <- df[!is.na(df$ln_Conc), ]
+        df$tooltip <- paste0("Time: ", round(df$Time, 2), " h\n",
+                             "Conc: ", signif(df$Conc, 4), "\n",
+                             "ln(Conc): ", round(df$ln_Conc, 3))
+        p <- ggplot(df, aes(x = Time, y = ln_Conc, color = Status, text = tooltip)) +
+          geom_point(size = 3.5, alpha = 0.85) +
+          scale_color_manual(values = c("Used for half-life" = "#E74C3C",
+                                        "Not used" = "#BDC3C7")) +
+          theme_minimal(base_size = 11) +
+          labs(x = "Time", y = "ln(Concentration)") +
+          theme(legend.position = "none")
+        if (!is.na(lz$lambda_z)) {
+          tr <- range(lz$time_used)
+          tp <- seq(tr[1], tr[2] * 1.05, length.out = 30)
+          line_df <- data.frame(Time = tp, ln_Conc = lz$intercept - lz$lambda_z * tp)
+          p <- p + geom_line(data = line_df, aes(x = Time, y = ln_Conc),
+                             inherit.aes = FALSE, color = "#E74C3C",
+                             linetype = "dashed", linewidth = 0.7)
+        }
+        ggplotly(p, tooltip = "text") %>% layout(margin = list(b = 40))
+      }, error = function(e) plotly_empty())
+    })
+    
+    # Populate checkboxes
+    observe({
+      sd <- lz_sub_data(); req(length(sd$time) >= 3)
+      valid <- !is.na(sd$conc) & sd$conc > 0
+      cmax_t <- sd$time[which.max(sd$conc)]
+      term <- valid & sd$time > cmax_t
+      if (any(term)) {
+        term_idx <- which(term)
+        ch <- setNames(
+          as.character(term_idx),
+          paste0("t=", round(sd$time[term_idx], 2), "  C=", round(sd$conc[term_idx], 3))
+        )
+        lz <- if (!is.null(lz_state$override)) lz_state$override
+              else estimate_lambda_z(sd$time, sd$conc, input$r2adj_be)
+        sel <- if (length(lz$time_used) > 0) {
+          as.character(term_idx[sd$time[term_idx] %in% lz$time_used])
+        } else NULL
+        updateCheckboxGroupInput(session, "lz_points", choices = ch,
+                                 selected = sel, inline = TRUE)
+      }
+    })
+    
+    # Recalculate handler
+    observeEvent(input$lz_recalc, {
+      sd <- lz_sub_data(); req(length(sd$time) >= 2)
+      sel_idx <- as.integer(input$lz_points)
+      if (length(sel_idx) < 2) {
+        showNotification("Select at least 2 points.", type = "warning"); return()
+      }
+      t_sel <- sd$time[sel_idx]; c_sel <- sd$conc[sel_idx]
+      valid <- c_sel > 0 & !is.na(c_sel)
+      t_sel <- t_sel[valid]; c_sel <- c_sel[valid]
+      if (length(t_sel) < 2) {
+        showNotification("Need 2+ points with positive concentration.", type = "warning"); return()
+      }
+      fit <- lm(log(c_sel) ~ t_sel)
+      lz_new <- -coef(fit)[2]; int_new <- coef(fit)[1]
+      n_pts <- length(t_sel)
+      
+      if (is.na(lz_new) || lz_new <= 0) {
+        showNotification("The selected points have an ascending or flat slope \u2014 select points from the descending part of the curve.",
+                         type = "error", duration = 10)
+        return()
+      }
+      
+      hl_new <- log(2) / lz_new
+      ss_res <- sum(residuals(fit)^2)
+      ss_tot <- sum((log(c_sel) - mean(log(c_sel)))^2)
+      r2 <- if (ss_tot > 0) 1 - ss_res / ss_tot else NA
+      r2adj <- if (n_pts >= 3 && !is.na(r2)) {
+        1 - (1 - r2) * (n_pts - 1) / (n_pts - 2)
+      } else { NA }
+      if (n_pts == 2) {
+        showNotification("Half-life computed from 2 points (R\u00B2 not available).",
+                         type = "warning", duration = 8)
+      }
+      
+      # Get original λz for audit logging
+      orig_lz <- estimate_lambda_z(sd$time, sd$conc, input$r2adj_be)
+      
+      lz_state$override <- list(
+        lambda_z = as.numeric(lz_new), half_life = as.numeric(hl_new),
+        intercept = as.numeric(int_new), r2adj = as.numeric(r2adj),
+        n_points = n_pts, time_used = t_sel, message = "User-selected"
+      )
+      
+      # Log the override for audit trail
+      sel <- input$lz_profile
+      lz_state$overrides_log[[sel]] <- list(
+        profile = sel,
+        original_lambda_z = if (!is.na(orig_lz$lambda_z)) as.numeric(orig_lz$lambda_z) else NA,
+        adjusted_lambda_z = as.numeric(lz_new),
+        original_r2adj = if (!is.na(orig_lz$r2adj)) as.numeric(orig_lz$r2adj) else NA,
+        adjusted_r2adj = if (!is.na(r2adj)) as.numeric(r2adj) else NA,
+        points_used = length(t_sel)
+      )
+      
+      # Update NCA results
+      r <- be_nca_result()
+      if (!is.null(r)) {
+        if (grepl(" \\| ", sel)) {
+          parts <- strsplit(sel, " \\| ")[[1]]
+          row_idx <- which(r$Subject == trimws(parts[1]) & r$Treatment == trimws(parts[2]))
+        } else {
+          row_idx <- which(r[[1]] == sel)
+        }
+        if (length(row_idx) == 1) {
+          r$LAMZ[row_idx]    <- lz_new
+          r$LAMZHL[row_idx]  <- hl_new
+          if ("R2ADJ" %in% names(r)) r$R2ADJ[row_idx] <- r2adj
+          if ("LAMZNPT" %in% names(r)) r$LAMZNPT[row_idx] <- n_pts
+          auclst <- as.numeric(r$AUCLST[row_idx])
+          clast  <- as.numeric(r$CLST[row_idx])
+          if (!is.na(clast) && lz_new > 0) {
+            aucifo <- auclst + clast / lz_new
+            r$AUCIFO[row_idx] <- aucifo
+            if ("CLFO" %in% names(r)) {
+              dose_col <- if ("DOSE" %in% names(r)) as.numeric(r$DOSE[row_idx]) else NA
+              dose_val <- if (!is.na(dose_col)) dose_col else input$dose
+              if (is.null(dose_val)) dose_val <- 100
+              r$CLFO[row_idx] <- dose_val / aucifo
+              r$VZFO[row_idx] <- dose_val / (aucifo * lz_new)
+            }
+          }
+          be_nca_result(r)
+          shared$nca_results <- r
+        }
+      }
+      
+      showNotification(
+        paste0("Recalculated: t\u00BD = ", signif(hl_new, 4), " h (",
+               if (!is.na(r2adj)) paste0("R\u00B2 = ", signif(r2adj, 4)) else "R\u00B2 = N/A",
+               ", ", n_pts, " pts). Click 'Run Complete BE Analysis' again to update confidence intervals."),
+        type = "message", duration = 10)
+    })
+    
     # Downloads
     output$dl_be_xlsx <- downloadHandler(
       filename = function() paste0("BE_report_", Sys.Date(), ".xlsx"),
@@ -733,7 +1032,7 @@ path_be_server <- function(id, shared) {
             time_unit       = input$time_unit,
             conc_unit       = input$conc_unit,
             trap_method     = input$trap_method,
-            r2adj_threshold = 0.7,
+            r2adj_threshold = input$r2adj_be,
             n_obs           = nrow(shared$pk_data)
           )
           
@@ -760,7 +1059,8 @@ path_be_server <- function(id, shared) {
             lloq           = si$lloq,
             analyst        = if (nchar(input$record_analyst) > 0) input$record_analyst else "Analyst",
             study_name     = if (nchar(input$record_study) > 0) input$record_study else "Untitled Study",
-            be_results     = be_result()
+            be_results     = be_result(),
+            lz_overrides   = if (length(lz_state$overrides_log) > 0) lz_state$overrides_log else NULL
           )
         })
       }
