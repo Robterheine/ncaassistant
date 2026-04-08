@@ -82,8 +82,8 @@ This executes ~169 automated tests and generates a self-contained PDF report wit
 
 **Validation deliverables:**
 
-- **User Requirement Specification** ([`validation/NCA_Assistant_URS_v1.1.docx`](validation/NCA_Assistant_URS_v1.1.docx)) — 49 requirements across 7 categories, with FMEA risk assessment (including Detectability per ICH Q9), supplier assessment, ALCOA+ data integrity framework, and change control procedures
-- **IQ/OQ/PQ Protocol** ([`validation/NCA_Assistant_IQOQPQ_v1.3.docx`](validation/NCA_Assistant_IQOQPQ_v1.3.docx)) — every automated and manual test listed individually with method, expected result, URS cross-reference, and criticality classification
+- **User Requirement Specification** ([`validation/NCA_Assistant_URS.docx`](validation/NCA_Assistant_URS.docx)) — 49 requirements across 7 categories, with FMEA risk assessment (including Detectability per ICH Q9), supplier assessment, ALCOA+ data integrity framework, and change control procedures
+- **IQ/OQ/PQ Protocol** ([`validation/NCA_Assistant_IQOQPQ.docx`](validation/NCA_Assistant_IQOQPQ.docx)) — every automated and manual test listed individually with method, expected result, URS cross-reference, and criticality classification
 - **Consolidated test script** ([`validation/validation.R`](validation/validation.R)) — ~169 automated tests + 24 manual test definitions, covering IQ, data handling, NCA accuracy, bioequivalence, power/sample size, export/reproducibility, and usability
 
 NCA accuracy validated against analytical ground truth (mono-exponential IV bolus) and R's built-in Theoph and Indometh datasets. Every test is classified CRITICAL (failure blocks qualification) or SUPPORTIVE (failure requires risk assessment).
