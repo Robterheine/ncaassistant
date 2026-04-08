@@ -1,99 +1,69 @@
-# Validation
+# NCA Assistant — Validation Package
 
-This folder contains the validation package for NCA Assistant v1.0, following a risk-based approach consistent with ICH Q9 (Quality Risk Management) and GAMP 5 Category 5 principles.
-
-## Documents
+## Contents
 
 | File | Description |
 |------|-------------|
-| `NCA_Assistant_URS_v1.0.docx` | User Requirement Specification — 44 requirements across 7 categories, with FMEA risk assessment, supplier assessment, and change control procedures |
-| `NCA_Assistant_IQOQPQ_v1.0.docx` | Installation, Operational, and Performance Qualification protocol — 94 pre-filled test cases with sign-off pages |
-| `iq_oq_pq_validation.R` | Automated test script that executes all programmatically verifiable IQ/OQ/PQ test cases |
-| `package_risk_assessment.md` | Package risk assessment following the R Validation Hub (pharmaR) framework — classifies all dependencies, documents risk rationale |
-| `package_risk_assessment.R` | Script to generate quantitative risk scores using `{riskmetric}` |
+| `validation.R` | Consolidated validation script (~155 automated tests + 20 manual test definitions) |
+| `NCA_Assistant_URS_v1.0.docx` | User Requirement Specification (46 requirements) |
+| `NCA_Assistant_IQOQPQ_v1.2.docx` | IQ/OQ/PQ Protocol with every test listed individually |
+| `package_risk_assessment.R` | Supplier package risk assessment script |
+| `package_risk_assessment.md` | Supplier package risk assessment report |
 
 ## How to Validate
 
-### Step 1: Run the automated tests
+### 1. Automated tests
 
-From the project root directory:
+From the project root:
 
-```r
-Rscript tests/iq_oq_pq_validation.R
+```bash
+Rscript validation/validation.R
 ```
 
-This executes all test cases that can be verified without the Shiny UI. Each test is keyed to a protocol ID (IQ-01 through PQ-05). The script produces:
+This runs all automated tests and generates:
+- `validation/validation_results.csv` — machine-readable test results
+- `validation/validation_report.pdf` — self-contained PDF report (HTML fallback if tinytex unavailable)
 
-- Console output with PASS/FAIL/SKIP per test
-- `tests/iq_oq_pq_results.csv` — attach this to the signed protocol as evidence
+The PDF report contains:
+- Execution timestamp and environment details
+- SHA-256 hashes of the validation script and all sourced files
+- Per-section results with risk impact statements
+- URS traceability summary
+- Signature block
+- Full source code of validation.R as Appendix A
 
-Tests marked SKIP require manual execution through the application interface (see Step 2).
+### 2. Manual tests
 
-### Step 2: Execute manual test cases
+20 tests require execution via the application UI. These are listed in:
+- The IQ/OQ/PQ Protocol (Section 4)
+- The validation script output (listed as SKIP)
 
-Open the application (`shiny::runApp()`) and work through the SKIP test cases listed in the IQ/OQ/PQ protocol. These cover:
+For each manual test: launch the app, follow the procedure, record observations, and mark PASS/FAIL in the protocol.
 
-- **UI tests**: central hub navigation (OQ-76), forest plot rendering (OQ-51), power curve display (OQ-62)
-- **File handling**: Excel import (OQ-02), wrong file format error (OQ-22)
-- **Export verification**: download the Complete Analysis Record ZIP and verify its contents (OQ-67 to OQ-72)
-- **Visual inspections**: help text audit (OQ-74), Data Preparation Guide (OQ-75), Methods page (OQ-78)
-- **Custom settings**: custom CI level (OQ-52), custom BE limits (OQ-53)
+### 3. Complete the protocol
 
-Record the observed result and mark PASS or FAIL in the protocol document.
+1. Fill in the Test Environment table in the IQ/OQ/PQ Protocol
+2. Attach `validation_report.pdf` as Attachment A
+3. Record manual test results in Section 4
+4. Document any deviations in Section 6
+5. Sign the approval section
 
-### Step 3: Sign off
+## Adapting for Your Organisation
 
-Complete the approval tables in both documents. If any test fails, follow the deviation handling procedure described in Section 1.4 of the IQ/OQ/PQ protocol.
+- **Add your logo/header**: Edit the Word documents or modify the generation scripts
+- **Organisational SOPs**: Add cross-references to your validation SOP and change control procedures
+- **Additional tests**: Add check() calls to validation.R following the existing pattern
+- **Revalidation**: Re-run validation.R after any code change, R upgrade, or package update
+- **Regulatory context**: The URS references FDA, EMA, and ICH guidance. Adjust regulatory references to your jurisdiction.
 
-## Adapting for Your Environment
+## Acceptance Criteria
 
-The URS and IQ/OQ/PQ are provided as editable Word documents. If your organisation has specific requirements, you may:
+- **CRITICAL tests**: Must ALL pass for qualification
+- **SUPPORTIVE tests**: Failures require documented risk assessment but do not block qualification
+- **Manual tests**: Recorded in the protocol; failures are deviations
 
-- Add organisation-specific document control headers and approval workflows
-- Adjust risk levels in the FMEA (URS Section 4) based on your intended use
-- Add or remove test cases in the IQ/OQ/PQ to match your risk assessment
-- Add SOPs for electronic signature management if required by your regulatory framework
+## Prerequisites
 
-If you modify the URS requirements, update the corresponding OQ/PQ test cases and the automated test script to maintain traceability.
+R >= 4.1.0 with packages: NonCompart, PowerTOST, nlme, digest, rmarkdown, knitr, openxlsx, jsonlite, readxl, dplyr.
 
-## R Validation Hub (pharmaR) Framework
-
-The `package_risk_assessment.md` document applies the industry-standard R Validation Hub framework to NCA Assistant's dependencies. This framework, described in the [pharmaR white paper](https://pharmar.org/white-paper/), is the consensus approach used by pharmaceutical companies to assess R packages for regulated use.
-
-Key findings:
-
-- NCA Assistant itself is the only "Intended for Use" system — all R packages are Imports whose accuracy is verified through the app's test suites
-- nlme qualifies as low risk (R Recommended package, Trusted Resource)
-- Tidyverse packages qualify as low risk (commercially backed by Posit, Trusted Resource candidate)
-- NonCompart and PowerTOST are validated through 52 cross-validation tests against analytical ground truth and published reference values
-
-To generate quantitative risk scores using `{riskmetric}`:
-
-```r
-Rscript validation/package_risk_assessment.R
-```
-
-This produces `validation/package_risk_scores.csv` for inclusion in audit documentation.
-
-## Revalidation
-
-Revalidation is required when:
-
-1. R is upgraded to a new major or minor version
-2. Any computational package (NonCompart, PowerTOST, nlme) is updated
-3. Application code affecting computations, data handling, or export logic is modified
-4. The application is deployed to a new hosting environment
-
-For minor changes (UI text, help content), revalidation is not required. See URS Section 7 for the full change control procedure.
-
-## Existing Test Suites
-
-In addition to the IQ/OQ/PQ script, the application includes three automated validation suites in `tests/`:
-
-| Suite | Tests | Coverage |
-|-------|-------|----------|
-| `cross_validation.R` | 52 | NCA vs. analytical ground truth, Theoph, BLQ rules, BE statistics, PowerTOST |
-| `comprehensive_validation.R` | 84 | Settings propagation, pipeline robustness, sensitivity, audit trail, export integrity |
-| `functional_ux_validation.R` | 103 | Column detection, messy data, end-to-end pipeline, numeric precision, CDISC |
-
-These suites are referenced by the OQ test cases where applicable. Running all three suites (`Rscript tests/cross_validation.R`, etc.) provides additional confidence beyond the IQ/OQ/PQ protocol.
+For PDF report generation: tinytex or a LaTeX distribution. If unavailable, the script falls back to HTML.

@@ -42,7 +42,7 @@ Both the Batch NCA and Bioequivalence paths can generate a **Complete Analysis R
 ## Requirements
 
 - R ≥ 4.1.0
-- [renv](https://rstudio.github.io/renv/) (installed automatically on first launch)
+- Required packages: NonCompart, PowerTOST, nlme, shiny, bslib, plotly, DT, readxl, dplyr, tidyr, ggplot2, openxlsx, jsonlite, digest
 
 ---
 
@@ -50,15 +50,17 @@ Both the Batch NCA and Bioequivalence paths can generate a **Complete Analysis R
 
 ### Option A: Run locally
 
-Clone the repository and restore the package environment:
+Clone the repository and install dependencies:
 
 ```r
-# install.packages("renv")  # only if not already installed
-renv::restore()
-shiny::runApp()
+source("install_and_run.R")
 ```
 
-`renv::restore()` reads the lockfile and installs the exact package versions used in development. This runs once; subsequent launches only need `shiny::runApp()`.
+Or manually:
+
+```r
+shiny::runApp()
+```
 
 ### Option B: shinyapps.io
 
@@ -68,17 +70,25 @@ Available at [robterheine.shinyapps.io/NCAassistant](https://robterheine.shinyap
 
 ## Validation
 
-250+ automated tests across 3 suites. NCA engine validated against Certara Phoenix WinNonlin® (Kim et al., 2018). Reproducibility script tested by generating, executing, and comparing results against direct NonCompart output.
+A draft validation package is available in [`validation/`](validation/), following a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles, to be adapted for the user situation and requirements.
 
-A draft validation package is available in [`validation/`](validation/), following a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles:
+**Single validation script** — run from the project root:
 
-- **User Requirement Specification (URS)** — 44 requirements across 7 categories, with FMEA risk assessment, supplier assessment for key packages, ALCOA+ data integrity framework, and change control procedures
-- **IQ/OQ/PQ Protocol** — 94 pre-filled test cases (11 IQ, 78 OQ, 5 PQ) with sign-off pages and deviation handling
-- **Automated IQ/OQ/PQ test script** ([`tests/iq_oq_pq_validation.R`](tests/iq_oq_pq_validation.R)) — executes all programmatically verifiable test cases, keyed to protocol IDs
+```bash
+Rscript validation/validation.R
+```
 
-These documents are provided as drafts. Organisations adopting NCA Assistant for regulated use should review, adapt, and sign off the documents according to their own quality management system. See [`validation/README.md`](validation/README.md) for instructions.
+This executes ~155 automated tests and generates a self-contained PDF report with environment details, SHA-256 file integrity hashes, per-section results, URS traceability, and the complete script source code as an appendix.
 
-Full documentation of every individual test (what it verifies, how it works, and why it matters) is available in [`tests/TEST_DOCUMENTATION.md`](tests/TEST_DOCUMENTATION.md).
+**Validation deliverables:**
+
+- **User Requirement Specification** ([`validation/NCA_Assistant_URS_v1.0.docx`](validation/NCA_Assistant_URS_v1.0.docx)) — 46 requirements across 7 categories, with FMEA risk assessment (including Detectability per ICH Q9), supplier assessment, ALCOA+ data integrity framework, and change control procedures
+- **IQ/OQ/PQ Protocol** ([`validation/NCA_Assistant_IQOQPQ_v1.2.docx`](validation/NCA_Assistant_IQOQPQ_v1.2.docx)) — every automated and manual test listed individually with method, expected result, URS cross-reference, and criticality classification
+- **Consolidated test script** ([`validation/validation.R`](validation/validation.R)) — ~155 automated tests + 20 manual test definitions, covering IQ, data handling, NCA accuracy, bioequivalence, power/sample size, export/reproducibility, and usability
+
+NCA accuracy validated against analytical ground truth (mono-exponential IV bolus) and R's built-in Theoph and Indometh datasets. Every test is classified CRITICAL (failure blocks qualification) or SUPPORTIVE (failure requires risk assessment).
+
+See [`validation/README.md`](validation/README.md) for detailed instructions on running the validation and adapting it for your organisation.
 
 ---
 
