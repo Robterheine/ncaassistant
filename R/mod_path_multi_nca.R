@@ -346,6 +346,12 @@ path_multi_nca_server <- function(id, shared) {
           group_by(.data[[shared$col_map$subject]]) %>%
           summarize(dose = max(.data[[shared$col_map$dose]], na.rm = TRUE),
                     .groups = "drop")
+        if (any(!is.finite(dose_df$dose) | dose_df$dose <= 0)) {
+          showNotification(
+            "Some subjects have missing or zero dose values. Check the Dose column in your data.",
+            type = "error", duration = 8)
+          return()
+        }
         settings$dose <- dose_df$dose
       }
       

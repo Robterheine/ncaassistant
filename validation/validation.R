@@ -516,8 +516,8 @@ check("OQ-83", "Override logged in settings JSON",
 
 # OQ-84: Reproducibility script applies overrides
 check("OQ-84", "Repro script contains override section",
-      { script<-generate_nca_script(theoph_settings,theoph_cm,"example_theoph.csv","rule1",0,lz_overrides=list(S1=list(lambda_z=0.1))); grepl("override|Override|S1",script,ignore.case=FALSE) || TRUE },
-      "URS-EXP-07", method="generate_nca_script with lz_overrides -> check script content", expected="Override section in script (or accepted if not yet implemented)", critical=FALSE)
+      { ov<-list("S1"=list(profile="S1",original_lambda_z=0.08,adjusted_lambda_z=0.1,original_r2adj=0.95,adjusted_r2adj=0.99,points_used=4)); script<-generate_nca_script(theoph_settings,theoph_cm,"example_theoph.csv","rule1",0,lz_overrides=ov); grepl("override|Override|S1",script,ignore.case=TRUE) },
+      "URS-EXP-07", method="generate_nca_script with lz_overrides -> check script content", expected="Override section in script", critical=FALSE)
 
 end_section("OQ-NEW")
 
@@ -574,7 +574,7 @@ check("EXP-DT-02", "Determinism: summary", { s1<-summarize_pk_params(theoph_resu
       "URS-EXP-01", method="Summary twice", expected="Identical", critical=TRUE)
 check("EXP-VR-01", "APP_VERSION queryable", nchar(APP_VERSION)>0&&APP_VERSION!="unknown",
       "URS-EXP-06", method="APP_VERSION from app.R", expected="Non-empty", critical=TRUE)
-check("EXP-VR-02", "APP_VERSION is 1.0", APP_VERSION=="1.0",
+check("EXP-VR-02", "APP_VERSION is 1.1", APP_VERSION=="1.1",
       "URS-EXP-06", method="=='1.0'", expected="1.0", critical=FALSE)
 check("EXP-VR-03", "Package versions", { v<-sapply(c("NonCompart","PowerTOST","nlme"),function(p)as.character(packageVersion(p))); all(nchar(v)>0) },
       "URS-EXP-06", method="packageVersion", expected="All return strings", critical=TRUE)

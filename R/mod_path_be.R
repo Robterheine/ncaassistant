@@ -376,6 +376,26 @@ path_be_server <- function(id, shared) {
         }
       }
       
+      # Validate acceptance limits
+      if (is.null(input$be_lower) || is.na(input$be_lower) ||
+          is.null(input$be_upper) || is.na(input$be_upper)) {
+        showNotification("Please enter both acceptance limits (lower and upper).",
+                         type = "error", duration = 5)
+        return()
+      }
+      if (input$be_lower >= input$be_upper) {
+        showNotification("Lower acceptance limit must be less than upper (e.g., 80 and 125).",
+                         type = "error", duration = 5)
+        return()
+      }
+      
+      # Validate IV infusion duration
+      if (input$admin_route == "iv_infusion") {
+        showNotification("IV infusion is not supported in the BE module. Select Oral/IM/SC or IV Bolus.",
+                         type = "error", duration = 8)
+        return()
+      }
+      
       withProgress(message = "Step 1: Running NCA...", value = 0.3, {
         
         # Run NCA
@@ -397,6 +417,12 @@ path_be_server <- function(id, shared) {
             group_by(.data[[cm$subject]]) %>%
             summarize(dose = max(.data[[cm$dose]], na.rm = TRUE),
                       .groups = "drop")
+          if (any(!is.finite(dose_df$dose) | dose_df$dose <= 0)) {
+            showNotification(
+              "Some subjects have missing or zero dose values. Check the Dose column in your data.",
+              type = "error", duration = 8)
+            return()
+          }
           settings$dose <- dose_df$dose
         }
         
