@@ -1,18 +1,20 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.1
+# Non-Compartmental Analysis Assistant v1.2
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
+# Designed by Rob ter Heine
 # https://www.radboudumc.nl/en/research/research-groups/radboud-applied-pharmacometrics
 #
-# 5 workflow paths:
+# 6 workflow paths:
 #   1. Plan a Study (Power & Sample Size)
 #   2. Upload & Check Data
-#   3. Analyze One Subject at a Time (Single-Subject NCA)
-#   4. Analyze All Subjects (Batch NCA)
-#   5. Bioequivalence Testing
+#   3. Visualize Data (NEW in v1.2)
+#   4. Analyze One Subject at a Time (Single-Subject NCA)
+#   5. Analyze All Subjects (Batch NCA)
+#   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.1"
+APP_VERSION <- "1.2"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 library(shiny)
@@ -43,6 +45,7 @@ source("R/mod_path_data.R")
 source("R/mod_path_single_nca.R")
 source("R/mod_path_multi_nca.R")
 source("R/mod_path_be.R")
+source("R/mod_path_viz.R")
 source("R/mod_data_guide.R")
 source("R/mod_methods.R")
 
@@ -140,7 +143,10 @@ server <- function(input, output, session) {
     nca_settings = NULL,
     
     # BE results
-    be_results   = NULL
+    be_results   = NULL,
+    
+    # Visualization settings (written by viz module, read by export_record)
+    viz_settings = NULL
   )
   
   # === NAVIGATION ============================================================
@@ -155,6 +161,7 @@ server <- function(input, output, session) {
     path_names <- c(
       power      = "Plan a Study (Power & Sample Size)",
       data       = "Upload & Check Data",
+      viz        = "Visualize Data",
       single_nca = "Analyze One Subject at a Time",
       multi_nca  = "Analyze All Subjects",
       be         = "Bioequivalence Testing",
@@ -198,6 +205,7 @@ server <- function(input, output, session) {
       "home"       = hub_ui(),
       "power"      = path_power_ui("path_power"),
       "data"       = path_data_ui("path_data"),
+      "viz"        = path_viz_ui("path_viz"),
       "single_nca" = path_single_nca_ui("path_single_nca"),
       "multi_nca"  = path_multi_nca_ui("path_multi_nca"),
       "be"         = path_be_ui("path_be"),
@@ -222,19 +230,19 @@ server <- function(input, output, session) {
                 "Non-Compartmental Analysis Assistant"),
         tags$p(class = "text-white opacity-75 mb-1",
                "Pharmacokinetic analysis made accessible. ",
-               "Choose what you'd like to do."),
+               "Choose what you\u2019d like to do."),
         tags$p(class = "text-white-50 mb-0", style = "font-size: 0.8rem;",
-               "Radboud Applied Pharmacometrics — Radboudumc, Nijmegen",
+               "Radboud Applied Pharmacometrics \u2014 Radboudumc, Nijmegen",
                tags$span(class = "ms-2", paste0("v", APP_VERSION)))
       ),
       
-      # Pathway cards
+      # ---- Row 1: Plan | Upload | Visualize --------------------------------
       tags$div(
         class = "row g-3 mt-2",
         
         # --- Card 1: Power & Sample Size ---
         tags$div(
-          class = "col-md-6",
+          class = "col-md-4",
           tags$div(
             class = "card h-100 border-0 shadow-sm hub-card",
             style = "cursor: pointer; transition: transform 0.15s;",
@@ -245,7 +253,7 @@ server <- function(input, output, session) {
                 class = "d-flex align-items-center mb-3",
                 tags$div(
                   class = "rounded-circle bg-info bg-opacity-10 d-flex align-items-center justify-content-center me-3",
-                  style = "width: 56px; height: 56px;",
+                  style = "width: 52px; height: 52px;",
                   icon("calculator", class = "fa-lg text-info")
                 ),
                 tags$div(
@@ -266,7 +274,7 @@ server <- function(input, output, session) {
         
         # --- Card 2: Upload & Check Data ---
         tags$div(
-          class = "col-md-6",
+          class = "col-md-4",
           tags$div(
             class = "card h-100 border-0 shadow-sm hub-card",
             style = "cursor: pointer; transition: transform 0.15s;",
@@ -277,7 +285,7 @@ server <- function(input, output, session) {
                 class = "d-flex align-items-center mb-3",
                 tags$div(
                   class = "rounded-circle bg-success bg-opacity-10 d-flex align-items-center justify-content-center me-3",
-                  style = "width: 56px; height: 56px;",
+                  style = "width: 52px; height: 52px;",
                   icon("file-import", class = "fa-lg text-success")
                 ),
                 tags$div(
@@ -296,7 +304,44 @@ server <- function(input, output, session) {
           )
         ),
         
-        # --- Card 3: Single Subject NCA ---
+        # --- Card 3: Visualize Data (NEW v1.2) ---
+        tags$div(
+          class = "col-md-4",
+          tags$div(
+            class = "card h-100 border-0 shadow-sm hub-card viz-hub-card",
+            style = "cursor: pointer; transition: transform 0.15s;",
+            onclick = "Shiny.setInputValue('nav_path', 'viz', {priority: 'event'});",
+            tags$div(
+              class = "card-body p-4",
+              tags$div(
+                class = "d-flex align-items-center mb-3",
+                tags$div(
+                  class = "rounded-circle d-flex align-items-center justify-content-center me-3",
+                  style = "width: 52px; height: 52px; background: rgba(142,68,173,0.1);",
+                  icon("chart-line", class = "fa-lg", style = "color: #8E44AD;")
+                ),
+                tags$div(
+                  tags$h5(class = "fw-bold mb-1", "3. Visualize Data"),
+                  tags$span(class = "badge", style = "background: #8E44AD;", "Explore your data")
+                )
+              ),
+              tags$p(class = "text-muted mb-2",
+                     "Create publication-ready concentration-time plots: ",
+                     "individual spaghetti plots and geometric mean summary curves ",
+                     "with error bars."),
+              tags$p(class = "small text-muted mb-0",
+                     icon("check-circle", class = "text-success me-1"),
+                     "Export to PNG, PDF, or SVG at journal-submission resolution.")
+            )
+          )
+        )
+      ),
+      
+      # ---- Row 2: Single NCA | Batch NCA | BE ------------------------------
+      tags$div(
+        class = "row g-3 mt-1",
+        
+        # --- Card 4: Single Subject NCA ---
         tags$div(
           class = "col-md-4",
           tags$div(
@@ -312,7 +357,7 @@ server <- function(input, output, session) {
                   style = "width: 48px; height: 48px;",
                   icon("user", class = "fa-lg text-warning")
                 ),
-                tags$h5(class = "fw-bold mb-0", "3. One Subject at a Time")
+                tags$h5(class = "fw-bold mb-0", "4. One Subject at a Time")
               ),
               tags$p(class = "text-muted mb-2",
                      "Inspect and analyze PK profiles subject by subject. ",
@@ -323,7 +368,7 @@ server <- function(input, output, session) {
           )
         ),
         
-        # --- Card 4: Batch NCA ---
+        # --- Card 5: Batch NCA ---
         tags$div(
           class = "col-md-4",
           tags$div(
@@ -339,7 +384,7 @@ server <- function(input, output, session) {
                   style = "width: 48px; height: 48px;",
                   icon("users", class = "fa-lg text-primary")
                 ),
-                tags$h5(class = "fw-bold mb-0", "4. All Subjects (Batch)")
+                tags$h5(class = "fw-bold mb-0", "5. All Subjects (Batch)")
               ),
               tags$p(class = "text-muted mb-2",
                      "Run PK analysis on all subjects at once. ",
@@ -350,7 +395,7 @@ server <- function(input, output, session) {
           )
         ),
         
-        # --- Card 5: Bioequivalence ---
+        # --- Card 6: Bioequivalence ---
         tags$div(
           class = "col-md-4",
           tags$div(
@@ -366,7 +411,7 @@ server <- function(input, output, session) {
                   style = "width: 48px; height: 48px;",
                   icon("arrows-left-right", class = "fa-lg text-danger")
                 ),
-                tags$h5(class = "fw-bold mb-0", "5. Bioequivalence")
+                tags$h5(class = "fw-bold mb-0", "6. Bioequivalence")
               ),
               tags$p(class = "text-muted mb-2",
                      "Compare two formulations (Test vs. Reference). ",
@@ -598,7 +643,9 @@ server <- function(input, output, session) {
         card_header(icon("scale-balanced"), " License & Credits"),
         card_body(
           tags$p(
-            "This application was developed by the ",
+            "This application was designed and developed by ",
+            tags$strong("Rob ter Heine"),
+            " (hospital pharmacist-clinical pharmacologist, Radboudumc) and the ",
             tags$a(href = "https://www.radboudumc.nl/en/research/research-groups/radboud-applied-pharmacometrics",
                    target = "_blank",
                    "Radboud Applied Pharmacometrics"),
@@ -624,8 +671,27 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.1",
+            tags$h6(class = "fw-bold mb-1", "v1.2",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "April 2026"),
+            tags$ul(class = "mb-0",
+              tags$li("New workflow path: Visualize Data (path 3) \u2014 publication-ready concentration-time plots"),
+              tags$li("Spaghetti plot: individual PK profiles with flexible colour-by options (Subject, Treatment, Period, Sequence)"),
+              tags$li("Summary plot: geometric mean \u00b1 geometric CV% with optional arithmetic mean \u00b1 SD; treatment overlay for crossover/BE data"),
+              tags$li("Export to PNG, PDF, or SVG with user-defined dimensions (2\u201320 inches) and resolution (150/300/600 DPI)"),
+              tags$li("Log\u2081\u2080 Y-axis toggle on all plots; zero/BLQ observations excluded from geometric mean with visible count note"),
+              tags$li("Dose-normalized display (C/Dose) when a Dose column is mapped"),
+              tags$li("Three colour palettes: default (app palette), Okabe-Ito colorblind-safe, grayscale"),
+              tags$li("Visualization settings appended to Complete Analysis Record JSON when downloaded in the same session"),
+              tags$li("Hub restructured from 2+3 to 3+3 card grid; workflow paths renumbered 1\u20136"),
+              tags$li("App designed by Rob ter Heine, Radboud Applied Pharmacometrics"),
+              tags$li("Version bump to 1.2; validation suite updated with URS-VIZ-01 through URS-VIZ-08 (supportive class)")
+            )
+          ),
+          
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.1"),
             tags$p(class = "text-muted mb-1", "April 2026"),
             tags$ul(class = "mb-0",
               tags$li("Bioequivalence module: configurable R\u00B2 threshold for half-life estimation (was hardcoded to 0.70)"),
@@ -731,6 +797,7 @@ server <- function(input, output, session) {
   path_single_nca_server("path_single_nca", shared)
   path_multi_nca_server("path_multi_nca", shared)
   path_be_server("path_be", shared)
+  path_viz_server("path_viz", shared)
 }
 
 shinyApp(ui = ui, server = server)

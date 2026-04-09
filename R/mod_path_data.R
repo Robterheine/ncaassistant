@@ -75,40 +75,54 @@ path_data_server <- function(id, shared) {
           card_body(
             class = "py-3",
             layout_columns(
-              col_widths = c(4, 4, 4),
+              col_widths = c(3, 3, 3, 3),
               
               tags$div(
-                class = "text-center p-3",
+                class = "text-center p-2",
+                tags$div(class = "mb-2",
+                         icon("chart-line", class = "fa-2x",
+                              style = "color: #8E44AD;")),
+                tags$h6("Visualize Data"),
+                tags$p(class = "text-muted small",
+                       "Plot individual profiles and geometric mean curves. Export for manuscripts."),
+                actionButton(ns("goto_viz"), "Visualize Data",
+                             class = "btn-outline-secondary btn-sm",
+                             style = "border-color: #8E44AD; color: #8E44AD;",
+                             onclick = "Shiny.setInputValue('nav_path', 'viz', {priority: 'event'});")
+              ),
+              
+              tags$div(
+                class = "text-center p-2",
                 tags$div(class = "mb-2",
                          icon("user", class = "fa-2x text-warning")),
                 tags$h6("Analyze One Subject"),
                 tags$p(class = "text-muted small",
                        "Review profiles one at a time. Good for QC and dose-escalation."),
-                actionButton(ns("goto_single"), "Go to Single Subject",
+                actionButton(ns("goto_single"), "Single Subject",
                              class = "btn-outline-warning btn-sm",
                              onclick = "Shiny.setInputValue('nav_path', 'single_nca', {priority: 'event'});")
               ),
               
               tags$div(
-                class = "text-center p-3",
+                class = "text-center p-2",
                 tags$div(class = "mb-2",
                          icon("users", class = "fa-2x text-primary")),
                 tags$h6("Analyze All Subjects"),
                 tags$p(class = "text-muted small",
                        "Batch NCA on all subjects. Get summary statistics and export."),
-                actionButton(ns("goto_multi"), "Go to Batch Analysis",
+                actionButton(ns("goto_multi"), "Batch Analysis",
                              class = "btn-outline-primary btn-sm",
                              onclick = "Shiny.setInputValue('nav_path', 'multi_nca', {priority: 'event'});")
               ),
               
               tags$div(
-                class = "text-center p-3",
+                class = "text-center p-2",
                 tags$div(class = "mb-2",
                          icon("arrows-left-right", class = "fa-2x text-danger")),
                 tags$h6("Bioequivalence"),
                 tags$p(class = "text-muted small",
                        "Compare Test vs. Reference formulations with 90% CI."),
-                actionButton(ns("goto_be"), "Go to Bioequivalence",
+                actionButton(ns("goto_be"), "Bioequivalence",
                              class = "btn-outline-danger btn-sm",
                              onclick = "Shiny.setInputValue('nav_path', 'be', {priority: 'event'});")
               )

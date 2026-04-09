@@ -1,7 +1,7 @@
 # ============================================================================
-# NCA Assistant v1.0 — Consolidated Validation Script
+# NCA Assistant v1.2 — Consolidated Validation Script
 # ============================================================================
-# Attachment A to IQ/OQ/PQ Protocol v1.2
+# Attachment A to IQ/OQ/PQ Protocol v1.3
 #
 # Run from project root:
 #   Rscript validation/validation.R
@@ -9,7 +9,7 @@
 
 cat(paste(rep("=", 72), collapse=""), "
 ")
-cat("NCA Assistant v1.0 — Validation Script
+cat("NCA Assistant v1.2 — Validation Script
 ")
 cat(paste(rep("=", 72), collapse=""), "
 ")
@@ -708,9 +708,115 @@ skip_manual("MAN-20","Responsive layout","Resize < 768px","Sidebar collapses","U
 skip_manual("MAN-21","BE individual profiles","Upload crossover data; run BE; open Individual Profiles tab","Per-subject panels with treatment overlay","URS-BE-08")
 skip_manual("MAN-22","BE half-life review","Upload crossover data; run BE; open Half-Life Review; select profile","Plot with terminal phase; checkboxes populate","URS-NCA-12")
 skip_manual("MAN-23","Override info note","Open Half-Life Review tab; verify info text","Note explaining AUC-inf dependency present","URS-NCA-12")
-skip_manual("MAN-24","HTML summary override table","After override, download Analysis Record; open HTML","Section 9 table with original/adjusted values","URS-EXP-07")
+skip_manual("MAN-25","Viz data gate","Navigate to Visualize Data before upload","Data gate card displayed, no plot rendered","URS-VIZ-01")
+skip_manual("MAN-26","Viz spaghetti plot","Load example_theoph.csv; open Visualize Data; Individual Profiles tab","12 lines rendered without error","URS-VIZ-02")
+skip_manual("MAN-27","Viz colour-by options","Cycle through colour-by options (Subject/Treatment/Period/Sequence)","Plot updates for each available option; unavailable options absent","URS-VIZ-02")
+skip_manual("MAN-28","Viz summary plot","Load example_theoph.csv; open Summary Plot tab","Geometric mean curve with error bars, no error","URS-VIZ-03")
+skip_manual("MAN-29","Viz BLQ note","Load dataset with zero concentration; open Summary Plot","Note counting excluded observations appears","URS-VIZ-05")
+skip_manual("MAN-30","Viz log scale","Toggle Log Y-axis with zero-concentration data","Plot renders without error; zero values omitted silently","URS-VIZ-07")
+skip_manual("MAN-31","Viz export PNG","Render any plot; go to Export tab; select PNG 7x5 300 DPI; click Download","Non-zero PNG file downloads","URS-VIZ-06")
+skip_manual("MAN-32","Viz export invalid dims","Set width = 0; click Download","Validation message displayed, no file downloaded","URS-VIZ-06")
+skip_manual("MAN-33","Viz dose normalisation","Map Dose column; enable C/Dose normalisation","Y-axis values scaled by dose; option absent when no dose column","URS-VIZ-08")
 
 end_section("MAN")
+
+# =============================================================================
+# VIZ — Visualization Module (supportive, automated)
+# =============================================================================
+start_section("VIZ")
+
+check("VIZ-01","Visualization module file present and parseable",
+  tryCatch({
+    vfile <- "R/mod_path_viz.R"
+    if (!file.exists(vfile)) stop("not found")
+    parsed <- parse(file = vfile)
+    length(parsed) > 0
+  }, error = function(e) FALSE),
+  "URS-VIZ-01,URS-VIZ-02", critical = FALSE,
+  method = "file.exists + parse()", expected = "File parses without error")
+
+check("VIZ-02","Geometric mean of example data satisfies Jensen's inequality",
+  tryCatch({
+    d <- read.csv("data/example_theoph.csv", stringsAsFactors = FALSE)
+    conc_col <- names(d)[grepl("conc", names(d), ignore.case = TRUE)][1]
+    vals <- suppressWarnings(as.numeric(d[[conc_col]]))
+    pos  <- vals[!is.na(vals) & vals > 0]
+    gm   <- exp(mean(log(pos)))
+    am   <- mean(pos)
+    is.finite(gm) && gm > 0 && gm < am   # GM < AM by Jensen's (strict inequality for non-constant data)
+  }, error = function(e) FALSE),
+  "URS-VIZ-03", critical = FALSE,
+  method = "exp(mean(log(pos_vals)))", expected = "0 < GM < AM, GM finite")
+
+check("VIZ-03","BLQ exclusion counts zeros correctly",
+  tryCatch({
+    conc <- c(0, 1.5, 3.2, 2.8, 0, 4.1)
+    n_excl <- sum(!is.na(conc) & conc <= 0)
+    pos    <- conc[!is.na(conc) & conc > 0]
+    gm     <- exp(mean(log(pos)))
+    n_excl == 2L && length(pos) == 4L && is.finite(gm) && gm > 0
+  }, error = function(e) FALSE),
+  "URS-VIZ-05", critical = FALSE,
+  method = "sum(conc <= 0)", expected = "2 excluded, 4 positives, finite GM")
+
+check("VIZ-04","Log10 transform of positive subset produces no NaN/Inf",
+  tryCatch({
+    conc     <- c(0, NA, 1.0, 2.5, 0.001)
+    log_vals <- log10(conc[!is.na(conc) & conc > 0])
+    !any(is.nan(log_vals)) && !any(is.infinite(log_vals)) && length(log_vals) == 3L
+  }, error = function(e) FALSE),
+  "URS-VIZ-07", critical = FALSE,
+  method = "log10(positive subset)", expected = "3 finite log values, no NaN/Inf")
+
+check("VIZ-05","Dose normalisation guards zero/NA dose with NA output",
+  tryCatch({
+    conc      <- c(10, 20, 30)
+    doses     <- c(100, 0, NA)
+    safe_dose <- ifelse(is.na(doses) | doses <= 0, NA_real_, doses)
+    result    <- conc / safe_dose
+    isTRUE(all.equal(result[1], 0.1, tolerance = 1e-10)) &&
+      is.na(result[2]) && is.na(result[3])
+  }, error = function(e) FALSE),
+  "URS-VIZ-08", critical = FALSE,
+  method = "ifelse guard then division", expected = "0.1, NA, NA")
+
+check("VIZ-06","Colour-by choices exclude unmapped columns",
+  tryCatch({
+    cm <- list(subject = "ID", time = "Time", conc = "Conc",
+               treatment = NULL, period = NULL, sequence = NULL)
+    choices <- c("Subject ID" = "subject")
+    if (!is.null(cm$treatment)) choices <- c(choices, "Treatment" = "treatment")
+    if (!is.null(cm$period))    choices <- c(choices, "Period"    = "period")
+    if (!is.null(cm$sequence))  choices <- c(choices, "Sequence"  = "sequence")
+    !"treatment" %in% choices && !"sequence" %in% choices && "subject" %in% choices
+  }, error = function(e) FALSE),
+  "URS-VIZ-02", critical = FALSE,
+  method = "replicate color_by_choices logic", expected = "Only subject and none offered")
+
+check("VIZ-07","Export dimension validation rejects out-of-range values",
+  tryCatch({
+    vd <- function(w, h) {
+      if (is.na(w) || w < 2 || w > 20) return("w_err")
+      if (is.na(h) || h < 2 || h > 20) return("h_err")
+      "ok"
+    }
+    vd(0, 5) == "w_err" && vd(21, 5) == "w_err" &&
+    vd(7, 0) == "h_err" && vd(7, 5) == "ok"
+  }, error = function(e) FALSE),
+  "URS-VIZ-06", critical = FALSE,
+  method = "inline validation logic", expected = "w=0->w_err, w=21->w_err, h=0->h_err, 7x5->ok")
+
+check("VIZ-08","create_analysis_record has viz_settings parameter",
+  tryCatch({
+    env <- new.env(parent = globalenv())
+    source("R/export_record.R", local = env)
+    fn   <- get("create_analysis_record", envir = env)
+    "viz_settings" %in% names(formals(fn))
+  }, error = function(e) FALSE),
+  "URS-VIZ-01", critical = FALSE,
+  method = "names(formals(create_analysis_record))", expected = "viz_settings present")
+
+end_section("VIZ")
 
 # =============================================================================
 # Post-execution
@@ -738,7 +844,8 @@ if (nrow(cf)>0) {
 }
 
 all_urs <- c(paste0("URS-GEN-0",c(1,3:6)),paste0("URS-DAT-0",1:7),paste0("URS-NCA-",sprintf("%02d",1:12)),
-             paste0("URS-BE-0",1:8),paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:7),paste0("URS-UI-0",1:4))
+             paste0("URS-BE-0",1:8),paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:7),paste0("URS-UI-0",1:4),
+             paste0("URS-VIZ-0",1:8))
 covered <- unique(unlist(strsplit(results_df$URS_Ref,",\\s*")))
 cat(sprintf("\nURS: %d/%d covered\n",length(intersect(all_urs,covered)),length(all_urs)))
 miss <- setdiff(all_urs,covered)

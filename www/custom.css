@@ -244,6 +244,17 @@ table.dataTable.compact td {
   border-radius: 8px;
 }
 
+/* --- Visualization hub card accent --------------------------------------- */
+.viz-hub-card:hover {
+  box-shadow: 0 6px 20px rgba(142, 68, 173, 0.15) !important;
+}
+
+/* --- Visualization download button ready state --------------------------- */
+.btn-success.btn-lg {
+  background-color: #18BC9C;
+  border-color: #18BC9C;
+}
+
 /* --- Breadcrumb bar ------------------------------------------------------ */
 .breadcrumb-bar a {
   text-decoration: none;
@@ -279,6 +290,19 @@ table.dataTable.compact td {
 /* Ensure card bodies don't overflow */
 .card-body {
   overflow-x: auto;
+}
+
+/* --- Viz sidebar: allow selectize dropdowns to overflow card boundaries --- */
+/* The summary statistic dropdown was clipped by overflow:auto on .card-body  */
+.bslib-sidebar-layout .sidebar .card-body {
+  overflow: visible;
+}
+
+/* Force selectize dropdowns to always open downward (never auto-flip up)    */
+.selectize-dropdown {
+  position: absolute !important;
+  top: 100% !important;
+  bottom: auto !important;
 }
 
 /* Sidebar layout: prevent result area from being squeezed */

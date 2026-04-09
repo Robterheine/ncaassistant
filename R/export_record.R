@@ -608,7 +608,8 @@ create_analysis_record <- function(output_path, results, settings, col_map,
                                     study_name = "Untitled Study",
                                     summary_stats = NULL,
                                     be_results = NULL,
-                                    lz_overrides = NULL) {
+                                    lz_overrides = NULL,
+                                    viz_settings = NULL) {
   
   # Create temp directory
   tmp <- tempdir()
@@ -675,6 +676,9 @@ create_analysis_record <- function(output_path, results, settings, col_map,
     )
     if (!is.null(lz_overrides) && length(lz_overrides) > 0) {
       settings_export$lz_overrides <- lz_overrides
+    }
+    if (!is.null(viz_settings) && length(viz_settings) > 0) {
+      settings_export$visualization <- viz_settings
     }
     writeLines(jsonlite::toJSON(settings_export, pretty = TRUE, auto_unbox = TRUE),
                file.path(rec_dir, "analysis_settings.json"))

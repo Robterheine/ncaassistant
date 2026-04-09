@@ -1086,7 +1086,8 @@ path_be_server <- function(id, shared) {
             analyst        = if (nchar(input$record_analyst) > 0) input$record_analyst else "Analyst",
             study_name     = if (nchar(input$record_study) > 0) input$record_study else "Untitled Study",
             be_results     = be_result(),
-            lz_overrides   = if (length(lz_state$overrides_log) > 0) lz_state$overrides_log else NULL
+            lz_overrides   = if (length(lz_state$overrides_log) > 0) lz_state$overrides_log else NULL,
+            viz_settings   = shared$viz_settings
           )
         })
       }
