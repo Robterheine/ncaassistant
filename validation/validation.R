@@ -1,7 +1,7 @@
 # ============================================================================
 # NCA Assistant v1.2 — Consolidated Validation Script
 # ============================================================================
-# Attachment A to IQ/OQ/PQ Protocol v1.3
+# Attachment A to IQ/OQ/PQ Protocol
 #
 # Run from project root:
 #   Rscript validation/validation.R
@@ -574,8 +574,8 @@ check("EXP-DT-02", "Determinism: summary", { s1<-summarize_pk_params(theoph_resu
       "URS-EXP-01", method="Summary twice", expected="Identical", critical=TRUE)
 check("EXP-VR-01", "APP_VERSION queryable", nchar(APP_VERSION)>0&&APP_VERSION!="unknown",
       "URS-EXP-06", method="APP_VERSION from app.R", expected="Non-empty", critical=TRUE)
-check("EXP-VR-02", "APP_VERSION is 1.1", APP_VERSION=="1.1",
-      "URS-EXP-06", method="=='1.0'", expected="1.0", critical=FALSE)
+check("EXP-VR-02", "APP_VERSION is 1.2", APP_VERSION=="1.2",
+      "URS-EXP-06", method="=='1.2'", expected="1.2", critical=FALSE)
 check("EXP-VR-03", "Package versions", { v<-sapply(c("NonCompart","PowerTOST","nlme"),function(p)as.character(packageVersion(p))); all(nchar(v)>0) },
       "URS-EXP-06", method="packageVersion", expected="All return strings", critical=TRUE)
 check("EXP-SH-01", "SHA-256 computable", nchar(digest(file="validation/validation.R",algo="sha256"))==64,
@@ -815,6 +815,11 @@ check("VIZ-08","create_analysis_record has viz_settings parameter",
   }, error = function(e) FALSE),
   "URS-VIZ-01", critical = FALSE,
   method = "names(formals(create_analysis_record))", expected = "viz_settings present")
+
+check("VIZ-09","Treatment overlay: crossover data has multiple treatments",
+  { xo<-read.csv("data/example_be_crossover.csv",stringsAsFactors=FALSE); length(unique(xo$Treatment))>=2 },
+  "URS-VIZ-04", critical = FALSE,
+  method = "Crossover example has >=2 treatment levels for overlay", expected = ">=2 treatments")
 
 end_section("VIZ")
 
