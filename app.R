@@ -231,8 +231,7 @@ server <- function(input, output, session) {
         tags$p(class = "text-white opacity-75 mb-1",
                "Pharmacokinetic analysis made accessible."),
         tags$p(class = "text-white-50 mb-0", style = "font-size: 0.8rem;",
-               "Developed by Rob ter Heine, Radboud Applied Pharmacometrics",
-               tags$span(class = "ms-2", paste0("v", APP_VERSION)))
+               "Rob ter Heine, Radboud Applied Pharmacometrics")
       ),
       
       # ---- Row 1: Plan | Upload | Visualize --------------------------------
