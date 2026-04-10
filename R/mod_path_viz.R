@@ -592,9 +592,12 @@ path_viz_server <- function(id, shared) {
           pos <- vals[!is.na(vals)]
           am  <- if (length(pos) > 0) mean(pos) else NA_real_
           s   <- if (length(pos) > 1) sd(pos)   else NA_real_
+          lo_raw <- if (!is.na(am) && !is.na(s)) am - s else NA_real_
           row <- data.frame(.time = grp_combos$.time[i],
                             .center = am,
-                            .lo     = if (!is.na(am) && !is.na(s)) am - s else NA_real_,
+                            # Clamp lower bar to a small positive value so
+                            # log scale doesn't crash when SD > mean
+                            .lo     = if (!is.na(lo_raw)) max(lo_raw, 1e-10) else NA_real_,
                             .hi     = if (!is.na(am) && !is.na(s)) am + s else NA_real_,
                             stringsAsFactors = FALSE)
         }
