@@ -508,11 +508,17 @@ render_quality_report <- function(qc_result) {
   finding_items <- lapply(seq_len(nrow(qc_result$findings)), function(i) {
     f <- qc_result$findings[i, ]
     
-    icon_cls <- switch(f$Severity,
-                       "ERROR"   = "circle-xmark text-danger",
-                       "WARNING" = "triangle-exclamation text-warning",
-                       "INFO"    = "circle-info text-info",
-                       "OK"      = "circle-check text-success")
+    icon_name <- switch(f$Severity,
+                       "ERROR"   = "circle-xmark",
+                       "WARNING" = "triangle-exclamation",
+                       "INFO"    = "circle-info",
+                       "OK"      = "circle-check")
+    
+    icon_class <- switch(f$Severity,
+                       "ERROR"   = "text-danger",
+                       "WARNING" = "text-warning",
+                       "INFO"    = "text-info",
+                       "OK"      = "text-success")
     
     border_cls <- switch(f$Severity,
                          "ERROR"   = "border-danger",
@@ -527,7 +533,7 @@ render_quality_report <- function(qc_result) {
       tags$div(
         class = "me-2 mt-1",
         style = "min-width: 20px;",
-        icon(icon_cls)
+        icon(icon_name, class = icon_class)
       ),
       tags$div(
         class = "flex-grow-1",

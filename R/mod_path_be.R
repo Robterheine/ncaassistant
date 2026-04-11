@@ -68,7 +68,10 @@ path_be_ui <- function(id) {
                                       "Linear-up / Linear-down" = "linear")),
               sliderInput(ns("r2adj_be"),
                           tagList("Minimum R\u00B2 for half-life estimation", help_r2adj),
-                          min = 0.5, max = 1, value = 0.7, step = 0.05)
+                          min = 0.5, max = 1, value = 0.7, step = 0.05),
+              checkboxInput(ns("is_ss"),
+                            tagList("Steady-state (drug given repeatedly)", help_steady_state),
+                            value = FALSE)
             )
           ),
           
@@ -155,6 +158,7 @@ path_be_ui <- function(id) {
         # --- Results ---------------------------------------------------------
         tagList(
           uiOutput(ns("be_status")),
+          uiOutput(ns("ss_note")),
           
           navset_card_tab(
             title = "Bioequivalence Results",
@@ -341,7 +345,14 @@ path_be_server <- function(id, shared) {
       r <- be_nca_result()
       available <- intersect(
         c("CMAX","AUCLST","AUCIFO","AUCIFP","TMAX","LAMZHL"), names(r))
-      default <- intersect(c("CMAX","AUCLST","AUCIFO"), available)
+      # At steady state, AUCLST = AUCτ and is the correct primary parameter.
+      # AUCIFO is not pharmacokinetically meaningful at steady state,
+      # so exclude it from the default selection.
+      default <- if (isTRUE(input$is_ss)) {
+        intersect(c("CMAX","AUCLST"), available)
+      } else {
+        intersect(c("CMAX","AUCLST","AUCIFO"), available)
+      }
       updateCheckboxGroupInput(session, "be_params",
                                choiceNames = unname(sapply(available, friendly_name)),
                                choiceValues = available,
@@ -403,7 +414,7 @@ path_be_server <- function(id, shared) {
           admin_route = input$admin_route,
           dose = if (use_data_dose) NA else input$dose,
           infusion_duration = 0,
-          is_steady_state = FALSE,
+          is_steady_state = isTRUE(input$is_ss),
           dose_unit = input$dose_unit,
           time_unit = input$time_unit,
           conc_unit = input$conc_unit,
@@ -644,7 +655,22 @@ path_be_server <- function(id, shared) {
                        tags$h5("Configure settings and click 'Run Complete BE Analysis'")))
       }
     })
-    
+
+    # Steady-state note — shown in results area when SS is active
+    output$ss_note <- renderUI({
+      if (!isTRUE(input$is_ss) || is.null(be_result())) return(NULL)
+      tags$div(
+        class = "alert alert-info py-2 small mb-2",
+        icon("circle-info", class = "me-1"),
+        tags$strong("Steady-state analysis: "),
+        "AUC to Last Point (AUCLST) represents the AUC within the dosing interval (AUC\u03C4). ",
+        "CL/F is calculated as Dose/AUC\u03C4, which is the correct formula at steady state. ",
+        "AUC to infinity is not pharmacokinetically meaningful during repeated dosing and has ",
+        "been removed from the default parameter selection. ",
+        "The primary BE parameters are Cmax and AUC\u03C4 (shown as AUC to Last Point)."
+      )
+    })
+
     # CI table
     output$ci_table <- renderDT({
       req(be_result())
@@ -678,8 +704,9 @@ path_be_server <- function(id, shared) {
         geom_vline(xintercept = 100, color = "grey50") +
         geom_vline(xintercept = c(ci$BE_Lower[1], ci$BE_Upper[1]),
                    color = "#E74C3C", linetype = "dashed") +
-        geom_errorbarh(aes(xmin = CI_Lower, xmax = CI_Upper),
-                       height = 0.25, linewidth = 0.8) +
+        geom_errorbar(aes(xmin = CI_Lower, xmax = CI_Upper),
+                      width = 0.25, linewidth = 0.8,
+                      orientation = "y") +
         geom_point(aes(color = Bioequivalent), size = 4) +
         scale_color_manual(values = c("YES" = "#18BC9C", "NO" = "#E74C3C")) +
         labs(x = paste0("Geometric Mean Ratio (%) with ", input$ci_level, "% CI"),
@@ -1053,7 +1080,7 @@ path_be_server <- function(id, shared) {
             admin_route     = input$admin_route,
             dose            = input$dose,
             infusion_duration = 0,
-            is_steady_state = FALSE,
+            is_steady_state = isTRUE(input$is_ss),
             dose_unit       = input$dose_unit,
             time_unit       = input$time_unit,
             conc_unit       = input$conc_unit,

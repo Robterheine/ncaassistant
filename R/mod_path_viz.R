@@ -779,13 +779,16 @@ path_viz_server <- function(id, shared) {
       req(shared$data_ready)
       tryCatch({
         p  <- build_spaghetti_gg()
-        pl <- ggplotly(p, tooltip = c("x", "y", "colour")) %>%
-          layout(legend = list(
-            orientation = "v",
-            bgcolor     = "rgba(255,255,255,0.85)",
-            bordercolor = "#dee2e6",
-            borderwidth = 1
-          ))
+        # suppressWarnings: log10 of zero/negative produces expected Inf warning
+        pl <- suppressWarnings(
+          ggplotly(p, tooltip = c("x", "y", "colour")) %>%
+            layout(legend = list(
+              orientation = "v",
+              bgcolor     = "rgba(255,255,255,0.85)",
+              bordercolor = "#dee2e6",
+              borderwidth = 1
+            ))
+        )
         plot_rendered(TRUE)
         pl
       }, error = function(e) {
@@ -801,13 +804,15 @@ path_viz_server <- function(id, shared) {
       req(shared$data_ready)
       tryCatch({
         p  <- build_summary_gg()
-        pl <- ggplotly(p, tooltip = c("x", "y", "colour")) %>%
-          layout(legend = list(
-            orientation = "v",
-            bgcolor     = "rgba(255,255,255,0.85)",
-            bordercolor = "#dee2e6",
-            borderwidth = 1
-          ))
+        pl <- suppressWarnings(
+          ggplotly(p, tooltip = c("x", "y", "colour")) %>%
+            layout(legend = list(
+              orientation = "v",
+              bgcolor     = "rgba(255,255,255,0.85)",
+              bordercolor = "#dee2e6",
+              borderwidth = 1
+            ))
+        )
         # Ensure every named trace shows a legend entry with its line colour
         for (i in seq_along(pl$x$data)) {
           nm <- pl$x$data[[i]]$name
