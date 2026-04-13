@@ -305,6 +305,19 @@ table.dataTable.compact td {
   bottom: auto !important;
 }
 
+/* Prevent selectize selected-item text from overlapping the dropdown arrow  */
+/* Adds right-padding so the text is never hidden behind the arrow button    */
+.selectize-input.items {
+  padding-right: 2rem !important;
+}
+
+.selectize-input > .item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
 /* Sidebar layout: prevent result area from being squeezed */
 .bslib-sidebar-layout > .main-content {
   min-width: 0;
