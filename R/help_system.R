@@ -313,34 +313,47 @@ help_cv <- info_btn("help_cv", "What CV should I use?",
   "<b>CV (Coefficient of Variation)</b> measures how variable the drug is 
   between occasions within the same person.
   <br><br>
+  <b>Enter as a percentage</b> — for example, type <b>20</b> for 20% variability.
+  <br><br>
   <b>Where to find it:</b>
   <ul>
   <li>From a pilot study or previous BE study with the same drug</li>
   <li>From published literature</li>
-  <li>From NCA results in this app (see summary statistics for Cmax and AUC)</li>
+  <li>From NCA results in this app (use the button that appears below if you have run an analysis)</li>
   </ul>
   <b>Typical ranges:</b>
   <ul>
-  <li>Low variability: CV < 15%</li>
+  <li>Low variability: CV &lt; 15%</li>
   <li>Moderate: 15–30%</li>
-  <li>Highly variable: > 30% (may need scaled approaches like ABEL or RSABE)</li>
-  </ul>
-  <em>Enter as a decimal: 20% = 0.20</em>")
+  <li>Highly variable: &gt; 30% (requires a scaled approach — ABEL or RSABE)</li>
+  </ul>")
+
+help_cv_wr <- info_btn("help_cv_wr", "What is the Reference CV?",
+  "For scaled bioequivalence approaches (EMA ABEL, FDA RSABE, NTID), 
+  you need the within-subject variability of the <b>Reference product specifically</b>.
+  <br><br>
+  This comes from a replicate design study where the Reference is given twice, 
+  allowing its variability to be estimated separately from the Test.
+  <br><br>
+  <b>If you only have one CV estimate</b> (e.g., from a standard 2-period study), 
+  enter the same value here as above. The calculation will be conservative.
+  <br><br>
+  <b>Enter as a percentage</b> — for example, type <b>35</b> for 35%.")
 
 help_theta0 <- info_btn("help_theta0", "What is the expected T/R ratio?",
-  "<b>θ₀ (Theta-zero)</b> is your best guess for the true ratio of Test to Reference.
+  "<b>T/R ratio</b> is your best guess for how similar the Test and Reference 
+  formulations are.
   <br><br>
-  If you believe the formulations are identical → θ₀ = 1.0 (ratio of 100%).
+  <b>Enter as a percentage</b> — for example, type <b>95</b> if you expect the 
+  Test to deliver 95% of the Reference exposure.
   <br><br>
-  If you expect a small difference → θ₀ = 0.95 (Test is 5% lower than Reference).
-  <br><br>
-  <b>Conservative approach:</b> Use 0.95 (the FDA recommends this for sample size 
-  planning). It builds in a safety margin.
-  <br><br>
-  <b>Optimistic approach:</b> Use 1.0 if you're confident the formulations are 
-  very similar. This gives a smaller sample size but less margin for error.
-  <br><br>
-  <em>When in doubt, use 0.95.</em>")
+  <ul>
+  <li>Type <b>100</b> if you believe the formulations are identical.</li>
+  <li>Type <b>95</b> as a conservative standard assumption (FDA recommended).</li>
+  <li>Type <b>105</b> if you expect the Test to be slightly higher than Reference.</li>
+  </ul>
+  <b>When in doubt, use 95.</b> This is the standard conservative assumption 
+  used in most regulatory submissions.")
 
 # --- LAMBDA Z INSPECTOR ----------------------------------------------------
 
