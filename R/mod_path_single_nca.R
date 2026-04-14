@@ -620,67 +620,26 @@ path_single_nca_server <- function(id, shared) {
       d <- tc(); req(length(d$time) >= 2)
       sel_idx <- as.integer(input$lz_points)
       
-      if (length(sel_idx) < 2) {
-        showNotification("Select at least 2 points for the regression.",
-                         type = "warning")
+      # Shared computation via helper — validation, regression, R²
+      lz_calc <- recalculate_lambda_z(d$time, d$conc, sel_idx)
+      
+      if (!is.null(lz_calc$error)) {
+        showNotification(lz_calc$error, type = "error", duration = 10)
         return()
       }
-      
-      # Get time/conc at selected indices
-      t_sel <- d$time[sel_idx]
-      c_sel <- d$conc[sel_idx]
-      
-      # Remove any non-positive concentrations
-      valid <- c_sel > 0 & !is.na(c_sel)
-      t_sel <- t_sel[valid]; c_sel <- c_sel[valid]
-      
-      if (length(t_sel) < 2) {
-        showNotification("Need at least 2 points with positive concentration.",
-                         type = "warning")
-        return()
+      if (!is.null(lz_calc$warning)) {
+        showNotification(lz_calc$warning, type = "warning", duration = 8)
       }
       
-      # Fit linear regression: ln(conc) = intercept - lambda_z * time
-      fit <- lm(log(c_sel) ~ t_sel)
-      lambda_z_new <- -coef(fit)[2]
-      intercept_new <- coef(fit)[1]
-      n_pts <- length(t_sel)
+      override <- lz_calc$result
+      lambda_z_new  <- override$lambda_z
+      half_life_new <- override$half_life
+      r2adj         <- override$r2adj
+      n_pts         <- override$n_points
+      t_sel         <- override$time_used
       
-      # Guard: negative lambda_z means ascending slope — not a terminal phase
-      if (is.na(lambda_z_new) || lambda_z_new <= 0) {
-        showNotification(
-          "The selected points have an ascending or flat slope \u2014 they do not represent a terminal elimination phase. Select points from the descending part of the curve.",
-          type = "error", duration = 10)
-        return()
-      }
-      
-      half_life_new <- log(2) / lambda_z_new
-      
-      # R² adjusted (requires at least 3 points; with 2, R² is always 1.0)
-      ss_res <- sum(residuals(fit)^2)
-      ss_tot <- sum((log(c_sel) - mean(log(c_sel)))^2)
-      r2 <- if (ss_tot > 0) 1 - ss_res / ss_tot else NA
-      r2adj <- if (n_pts >= 3 && !is.na(r2)) {
-        1 - (1 - r2) * (n_pts - 1) / (n_pts - 2)
-      } else {
-        NA
-      }
-      if (n_pts == 2) {
-        showNotification(
-          "Half-life computed from 2 points (R\u00B2 not available \u2014 at least 3 points needed for validation).",
-          type = "warning", duration = 8)
-      }
-      
-      # Store override
-      local$lz_override <- list(
-        lambda_z  = as.numeric(lambda_z_new),
-        half_life = as.numeric(half_life_new),
-        intercept = as.numeric(intercept_new),
-        r2adj     = as.numeric(r2adj),
-        n_points  = n_pts,
-        time_used = t_sel,
-        message   = "User-selected points"
-      )
+      # Store override (field names must match what lz_plot/lz_status consume)
+      local$lz_override <- override
       
       # Update NCA results with new lambda_z-dependent parameters
       r <- nca_res()

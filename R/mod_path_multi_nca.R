@@ -707,44 +707,26 @@ path_multi_nca_server <- function(id, shared) {
     observeEvent(input$lz_recalc, {
       sd <- lz_sub_data(); req(length(sd$time) >= 2)
       sel_idx <- as.integer(input$lz_points)
-      if (length(sel_idx) < 2) {
-        showNotification("Select at least 2 points.", type = "warning"); return()
-      }
-      t_sel <- sd$time[sel_idx]; c_sel <- sd$conc[sel_idx]
-      valid <- c_sel > 0 & !is.na(c_sel)
-      t_sel <- t_sel[valid]; c_sel <- c_sel[valid]
-      if (length(t_sel) < 2) {
-        showNotification("Need 2+ points with positive concentration.", type = "warning"); return()
-      }
-      fit <- lm(log(c_sel) ~ t_sel)
-      lz_new <- -coef(fit)[2]; int_new <- coef(fit)[1]
-      n_pts <- length(t_sel)
       
-      # Guard: negative lambda_z
-      if (is.na(lz_new) || lz_new <= 0) {
-        showNotification(
-          "The selected points have an ascending or flat slope \u2014 select points from the descending part of the curve.",
-          type = "error", duration = 10)
+      # Shared computation via helper
+      lz_calc <- recalculate_lambda_z(sd$time, sd$conc, sel_idx)
+      
+      if (!is.null(lz_calc$error)) {
+        showNotification(lz_calc$error, type = "error", duration = 10)
         return()
       }
-      
-      hl_new <- log(2) / lz_new
-      ss_res <- sum(residuals(fit)^2)
-      ss_tot <- sum((log(c_sel) - mean(log(c_sel)))^2)
-      r2 <- if (ss_tot > 0) 1 - ss_res / ss_tot else NA
-      r2adj <- if (n_pts >= 3 && !is.na(r2)) {
-        1 - (1 - r2) * (n_pts - 1) / (n_pts - 2)
-      } else { NA }
-      if (n_pts == 2) {
-        showNotification("Half-life computed from 2 points (R\u00B2 not available).",
-                         type = "warning", duration = 8)
+      if (!is.null(lz_calc$warning)) {
+        showNotification(lz_calc$warning, type = "warning", duration = 8)
       }
       
-      lz_state$override <- list(
-        lambda_z = as.numeric(lz_new), half_life = as.numeric(hl_new),
-        intercept = as.numeric(int_new), r2adj = as.numeric(r2adj),
-        n_points = n_pts, time_used = t_sel, message = "User-selected"
-      )
+      override <- lz_calc$result
+      lz_new  <- override$lambda_z
+      hl_new  <- override$half_life
+      r2adj   <- override$r2adj
+      n_pts   <- override$n_points
+      t_sel   <- override$time_used
+      
+      lz_state$override <- override
       
       # Log the override for audit trail
       sel <- input$lz_profile
