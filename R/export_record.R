@@ -44,8 +44,8 @@ generate_nca_script <- function(settings, col_map, file_name, blq_rule, lloq,
   composite_key_code <- if (!is.null(col_map$treatment)) {
     paste0(
       '\n# Create composite key for crossover data (Subject||Treatment)\n',
-      'data$.nca_key <- paste(data[', deparse(col_map$subject), ']],\n',
-      '                       data[', deparse(col_map$treatment), ']], sep = "||")\n',
+      'data$.nca_key <- paste(data[[', deparse(col_map$subject), ']],\n',
+      '                       data[[', deparse(col_map$treatment), ']], sep = "||")\n',
       'nca_key <- ".nca_key"\n'
     )
   } else {
@@ -748,11 +748,19 @@ create_analysis_record <- function(output_path, results, settings, col_map,
     if (!is.null(res) && res != 0) stop("system zip returned non-zero exit")
     res
   }, error = function(e) {
-    # Fallback: utils::zip in a self-contained scope that restores wd on exit
+    # Fallback when system zip is unavailable.
+    # Use withr::with_dir() if available — avoids modifying global working
+    # directory. Falls back to a scoped setwd with guaranteed on.exit restore.
     tryCatch({
-      old_wd <- setwd(rec_dir)
-      on.exit(setwd(old_wd), add = TRUE)
-      utils::zip(abs_output, files = basename(files_to_zip), flags = "-j")
+      if (requireNamespace("withr", quietly = TRUE)) {
+        withr::with_dir(rec_dir, {
+          utils::zip(abs_output, files = basename(files_to_zip), flags = "-j")
+        })
+      } else {
+        old_wd <- setwd(rec_dir)
+        on.exit(setwd(old_wd), add = TRUE)
+        utils::zip(abs_output, files = basename(files_to_zip), flags = "-j")
+      }
     }, error = function(e2) {
       warning("Could not create zip archive: ", e2$message)
     })
