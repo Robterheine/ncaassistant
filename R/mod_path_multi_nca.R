@@ -453,7 +453,6 @@ path_multi_nca_server <- function(id, shared) {
       
       if (!isTRUE(input$show_all_params)) {
         if (isTRUE(input$is_ss)) {
-          # Steady-state: show tau-relevant parameters, de-emphasise AUC∞
           key_cols <- intersect(
             c("Subject", "Treatment",
               "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
@@ -462,10 +461,12 @@ path_multi_nca_server <- function(id, shared) {
               "Adjusted R-squared"),
             names(display_df))
         } else {
+          # AUCPEO included so the >20% extrapolation flag is always visible
           key_cols <- intersect(
             c("Subject", "Treatment",
               "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
               "AUC to Last Point", "AUC to Infinity (observed)",
+              "AUC % Extrapolated (observed)",
               "Half-Life (h)", "Apparent Clearance (CL/F)",
               "Apparent Volume (Vz/F)", "Adjusted R-squared",
               "Points Used for Half-Life"),
@@ -474,11 +475,27 @@ path_multi_nca_server <- function(id, shared) {
         display_df <- display_df[, key_cols, drop = FALSE]
       }
       
-      datatable(display_df,
+      aucpeo_col <- "AUC % Extrapolated (observed)"
+      has_aucpeo <- aucpeo_col %in% names(display_df)
+      
+      dt <- datatable(display_df,
                 options = list(scrollX = TRUE, scrollY = "400px",
                                pageLength = 50, dom = "frtip"),
                 rownames = FALSE, class = "compact stripe hover") %>%
         formatSignif(columns = which(sapply(display_df, is.numeric)), digits = 4)
+      
+      # Highlight AUCPEO > 20% in amber. Values are on 0-100 scale (percentage).
+      # Amber flag prompts lambda-z review but does not block analysis.
+      if (has_aucpeo) {
+        dt <- dt %>%
+          formatStyle(
+            aucpeo_col,
+            backgroundColor = styleInterval(20, c("transparent", "#FFF3CD")),
+            color            = styleInterval(20, c("inherit",      "#7D5A00")),
+            fontWeight       = styleInterval(20, c("normal",       "bold"))
+          )
+      }
+      dt
     })
     
     # Summary stats

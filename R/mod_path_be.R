@@ -159,6 +159,7 @@ path_be_ui <- function(id) {
         tagList(
           uiOutput(ns("be_status")),
           uiOutput(ns("ss_note")),
+          uiOutput(ns("balance_note")),
           
           navset_card_tab(
             title = "Bioequivalence Results",
@@ -360,8 +361,9 @@ path_be_server <- function(id, shared) {
     })
     
     # NCA results (run as part of BE)
-    be_nca_result <- reactiveVal(NULL)
-    be_result     <- reactiveVal(NULL)
+    be_nca_result  <- reactiveVal(NULL)
+    be_result      <- reactiveVal(NULL)
+    balance_result <- reactiveVal(NULL)   # stores imbalance info for persistent alert
     
     observeEvent(input$run_be, {
       req(shared$pk_data, shared$col_map, shared$col_map$treatment)
@@ -510,6 +512,38 @@ path_be_server <- function(id, shared) {
             type = "warning", duration = 10)
         }
         
+        # ---- Balanced design pre-check ------------------------------------
+        # Check each subject appears in both treatment levels in the NCA result.
+        # be_data is at the NCA result grain (one row per subject-treatment),
+        # so this is design-agnostic — valid for 2x2, 3-period, and replicate.
+        # Missing subjects are listed by name and shown as a persistent alert.
+        # Analysis still proceeds (na.exclude handles missing data in lm/lme),
+        # but the user must be aware of the imbalance.
+        balance_subjects <- unique(be_data[[subj_col_be]])
+        incomplete_subjects <- Filter(function(s) {
+          trts <- be_data[[trt_col_be]][be_data[[subj_col_be]] == s]
+          !all(trt_levels %in% as.character(trts))
+        }, balance_subjects)
+        
+        if (length(incomplete_subjects) > 0) {
+          n_total <- length(balance_subjects)
+          n_incomplete <- length(incomplete_subjects)
+          subj_list <- paste(head(incomplete_subjects, 10), collapse = ", ")
+          if (n_incomplete > 10) subj_list <- paste0(subj_list, ", ...")
+          showNotification(
+            paste0(n_incomplete, " of ", n_total,
+                   " subject(s) have data for only one treatment: ", subj_list,
+                   ". These subjects contribute to one treatment arm only. ",
+                   "Degrees of freedom are reduced accordingly."),
+            type = "warning", duration = 15)
+          # Store for persistent alert (written below after be_result is set)
+          balance_info <- list(n_incomplete = n_incomplete, n_total = n_total,
+                               subjects = incomplete_subjects)
+        } else {
+          balance_info <- NULL
+        }
+        # -------------------------------------------------------------------
+
         alpha <- 1 - input$ci_level / 100
         ci_results <- list()
         anova_results <- list()
@@ -640,6 +674,7 @@ path_be_server <- function(id, shared) {
         ci_df <- do.call(rbind, ci_results)
         be_result(list(ci_table = ci_df, anova = anova_results))
         shared$be_results <- be_result()
+        balance_result(balance_info)  # persist for the alert panel
         
         setProgress(1, message = "Done!")
       })
@@ -654,6 +689,27 @@ path_be_server <- function(id, shared) {
                        icon("arrows-left-right", class = "fa-2x mb-2"),
                        tags$h5("Configure settings and click 'Run Complete BE Analysis'")))
       }
+    })
+
+    # Balance note — persistent alert when subjects have incomplete treatment data
+    output$balance_note <- renderUI({
+      bi <- balance_result()
+      if (is.null(bi) || bi$n_incomplete == 0) return(NULL)
+      subj_list <- paste(head(bi$subjects, 10), collapse = ", ")
+      if (bi$n_incomplete > 10) subj_list <- paste0(subj_list, " ...")
+      tags$div(
+        class = "alert alert-warning py-2 small mb-2",
+        icon("triangle-exclamation", class = "me-1"),
+        tags$strong("Incomplete design detected: "),
+        paste0(bi$n_incomplete, " of ", bi$n_total,
+               " subject(s) have data for only one treatment level."),
+        tags$br(),
+        tags$span(class = "text-muted",
+                  paste0("Affected subjects: ", subj_list, ". "),
+                  "These subjects contribute to one arm only. Degrees of freedom ",
+                  "are reduced and confidence intervals may be wider than expected. ",
+                  "Verify that missing profiles are not due to a data preparation error.")
+      )
     })
 
     # Steady-state note — shown in results area when SS is active
@@ -725,20 +781,37 @@ path_be_server <- function(id, shared) {
       display_nca <- rename_nca_columns(be_nca_result())
       
       if (!isTRUE(input$nca_show_all)) {
+        # AUCPEO included so >20% extrapolation is visible in default view
         key_cols <- intersect(
           c("Subject", "Treatment",
             "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
             "AUC to Last Point", "AUC to Infinity (observed)",
+            "AUC % Extrapolated (observed)",
             "Half-Life (h)", "Apparent Clearance (CL/F)",
             "Apparent Volume (Vz/F)", "Adjusted R-squared"),
           names(display_nca))
         display_nca <- display_nca[, key_cols, drop = FALSE]
       }
       
-      datatable(display_nca, options = list(scrollX = TRUE, scrollY = "400px",
+      aucpeo_col <- "AUC % Extrapolated (observed)"
+      has_aucpeo <- aucpeo_col %in% names(display_nca)
+      
+      dt <- datatable(display_nca, options = list(scrollX = TRUE, scrollY = "400px",
                                             pageLength = 50, dom = "frtip"),
                 rownames = FALSE, class = "compact stripe hover") %>%
         formatSignif(columns = which(sapply(display_nca, is.numeric)), digits = 4)
+      
+      # Amber flag when AUC extrapolation > 20% (0-100 scale from NonCompart)
+      if (has_aucpeo) {
+        dt <- dt %>%
+          formatStyle(
+            aucpeo_col,
+            backgroundColor = styleInterval(20, c("transparent", "#FFF3CD")),
+            color            = styleInterval(20, c("inherit",      "#7D5A00")),
+            fontWeight       = styleInterval(20, c("normal",       "bold"))
+          )
+      }
+      dt
     })
     
     # ANOVA

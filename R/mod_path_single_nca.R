@@ -502,6 +502,26 @@ path_single_nca_server <- function(id, shared) {
         tags$tr(tags$td("R\u00B2 of terminal fit:"), tags$td(tags$strong(sg("R2ADJ"))))
       )
       
+      # AUCPEO flag: show % extrapolated when lambda-z was estimated.
+      # Values from NonCompart are on 0-100 scale. Flag amber when > 20%.
+      aucpeo_val <- suppressWarnings(as.numeric(r["AUCPEO"]))
+      if (!is.null(r) && "AUCPEO" %in% names(r) && !is.na(aucpeo_val)) {
+        aucpeo_display <- paste0(round(aucpeo_val, 1), "%")
+        if (aucpeo_val > 20) {
+          aucpeo_cell <- tags$td(
+            tags$span(style = "color: #7D5A00; font-weight: bold;", aucpeo_display),
+            tags$span(class = "badge ms-2",
+                      style = "background: #FFF3CD; color: #7D5A00; font-size: 0.75em;",
+                      "Review lambda-z")
+          )
+        } else {
+          aucpeo_cell <- tags$td(tags$strong(aucpeo_display))
+        }
+        rows <- tagList(rows,
+          tags$tr(tags$td("AUC % extrapolated:"), aucpeo_cell)
+        )
+      }
+      
       tags$table(class = "table table-sm table-borderless",
                  style = "font-size: 0.85rem;", rows)
     })
