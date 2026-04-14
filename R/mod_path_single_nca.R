@@ -85,16 +85,16 @@ path_single_nca_ui <- function(id) {
         card_body(
           layout_columns(
             col_widths = c(3, 2, 2, 2, 2, 1),
-            selectInput(ns("admin_route"), tagList("Route", help_admin_route),
-                        choices = c("Oral / IM / SC" = "extravascular",
-                                    "IV Bolus" = "iv_bolus",
-                                    "IV Infusion" = "iv_infusion")),
+            selectInput(ns("admin_route"), tagList("Route of administration", help_admin_route),
+                        choices = c("Oral / IM / SC (extravascular)" = "extravascular",
+                                    "IV Bolus (injected into vein at once)" = "iv_bolus",
+                                    "IV Infusion (drip over time)" = "iv_infusion")),
             numericInput(ns("dose"), "Dose", value = 100, min = 0),
             tags$div(id = ns("dose_hint_container"),
                      uiOutput(ns("dose_hint"))),
-            textInput(ns("dose_unit"), "Dose unit", value = "mg"),
-            textInput(ns("time_unit"), "Time unit", value = "h"),
-            textInput(ns("conc_unit"), "Conc unit", value = "ng/mL"),
+            textInput(ns("dose_unit"), "Dose", value = "mg"),
+            textInput(ns("time_unit"), "Time", value = "h"),
+            textInput(ns("conc_unit"), "Conc", value = "ng/mL"),
             tags$div(style = "padding-top: 1.7rem;",
                      selectInput(ns("trap_method"), NULL,
                                  choices = c("Linear-up / Log-down" = "log",
@@ -103,7 +103,7 @@ path_single_nca_ui <- function(id) {
           layout_columns(
             col_widths = c(4, 8),
             checkboxInput(ns("is_ss"),
-                          tagList("Steady-state analysis", help_steady_state),
+                          tagList("Steady-state (drug given repeatedly)", help_steady_state),
                           FALSE),
             conditionalPanel(
               condition = sprintf("input['%s'] == true", ns("is_ss")),
@@ -162,7 +162,7 @@ path_single_nca_ui <- function(id) {
           )
         )
       ),
-      downloadButton(ns("dl_csv"), "Download results (CSV)",
+      downloadButton(ns("dl_csv"), "Download Results (CSV)",
                      class = "btn-outline-primary btn-sm mt-2"),
       hr(),
       tags$details(
@@ -316,9 +316,9 @@ path_single_nca_server <- function(id, shared) {
         card(class = "border-warning",
              card_body(class = "text-center py-4",
                        icon("triangle-exclamation", class = "fa-2x text-warning mb-2"),
-                       tags$h5("No data loaded"),
+                       tags$h5("No data loaded yet"),
                        tags$p("Upload data first, or switch to manual entry."),
-                       actionButton(ns("goto_upload"), "Upload Data", class = "btn-warning",
+                       actionButton(ns("goto_upload"), "Go to Upload & Check Data", class = "btn-warning",
                                     onclick = "Shiny.setInputValue('nav_path', 'data', {priority: 'event'});")))
     })
     

@@ -38,9 +38,9 @@ path_be_ui <- function(id) {
             card_body(
               selectInput(ns("admin_route"),
                           tagList("Route of administration", help_admin_route),
-                          choices = c("Oral / IM / SC" = "extravascular",
-                                      "IV Bolus" = "iv_bolus",
-                                      "IV Infusion" = "iv_infusion")),
+                          choices = c("Oral / IM / SC (extravascular)" = "extravascular",
+                                      "IV Bolus (injected into vein at once)" = "iv_bolus",
+                                      "IV Infusion (drip over time)" = "iv_infusion")),
               
               radioButtons(ns("dose_source"), "Dose information",
                            choices = c(
@@ -58,9 +58,9 @@ path_be_ui <- function(id) {
               
               layout_columns(
                 col_widths = c(4, 4, 4),
-                textInput(ns("dose_unit"), "Dose unit", value = "mg"),
-                textInput(ns("time_unit"), "Time unit", value = "h"),
-                textInput(ns("conc_unit"), "Conc unit", value = "ng/mL")
+                textInput(ns("dose_unit"), "Dose", value = "mg"),
+                textInput(ns("time_unit"), "Time", value = "h"),
+                textInput(ns("conc_unit"), "Conc", value = "ng/mL")
               ),
               selectInput(ns("trap_method"),
                           tagList("Trapezoidal method", help_trapezoidal),
@@ -323,10 +323,10 @@ path_be_server <- function(id, shared) {
         card(class = "border-warning",
              card_body(class = "text-center py-4",
                        icon("triangle-exclamation", class = "fa-2x text-warning mb-2"),
-                       tags$h5("No data loaded"),
+                       tags$h5("No data loaded yet"),
                        tags$p("Bioequivalence requires crossover data with Treatment, ",
                               "Period, and Sequence columns."),
-                       actionButton(ns("goto_upload"), "Upload Data", class = "btn-warning",
+                       actionButton(ns("goto_upload"), "Go to Upload & Check Data", class = "btn-warning",
                                     onclick = "Shiny.setInputValue('nav_path', 'data', {priority: 'event'});")))
       } else if (is.null(shared$col_map$treatment)) {
         card(class = "border-warning",
@@ -334,7 +334,7 @@ path_be_server <- function(id, shared) {
                        icon("triangle-exclamation", class = "fa-2x text-warning mb-2"),
                        tags$h5("Treatment column not mapped"),
                        tags$p("Go to Upload & Check Data and map your Treatment/Formulation column."),
-                       actionButton(ns("goto_upload2"), "Go to Data Upload", class = "btn-warning",
+                       actionButton(ns("goto_upload2"), "Go to Upload & Check Data", class = "btn-warning",
                                     onclick = "Shiny.setInputValue('nav_path', 'data', {priority: 'event'});")))
       }
     })

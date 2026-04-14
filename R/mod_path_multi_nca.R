@@ -133,9 +133,9 @@ path_multi_nca_ui <- function(id) {
               checkboxInput(ns("show_all_params"),
                             "Show all parameters (37 columns)", FALSE),
               DTOutput(ns("param_table")),
-              downloadButton(ns("dl_params_csv"), "Download as CSV",
+              downloadButton(ns("dl_params_csv"), "Download Results (CSV)",
                              class = "btn-outline-primary btn-sm mt-2"),
-              downloadButton(ns("dl_params_xlsx"), "Download as Excel",
+              downloadButton(ns("dl_params_xlsx"), "Download Results (Excel)",
                              class = "btn-outline-success btn-sm mt-2"),
               hr(),
               tags$details(
@@ -295,7 +295,7 @@ path_multi_nca_server <- function(id, shared) {
              card_body(class = "text-center py-4",
                        icon("triangle-exclamation", class = "fa-2x text-warning mb-2"),
                        tags$h5("No data loaded yet"),
-                       actionButton(ns("goto_upload"), "Upload Data",
+                       actionButton(ns("goto_upload"), "Go to Upload & Check Data",
                                     class = "btn-warning",
                                     onclick = "Shiny.setInputValue('nav_path', 'data', {priority: 'event'});")))
       }
