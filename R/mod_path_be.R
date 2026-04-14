@@ -64,7 +64,7 @@ path_be_ui <- function(id) {
               ),
               selectInput(ns("trap_method"),
                           tagList("Trapezoidal method", help_trapezoidal),
-                          choices = c("Linear-up / Log-down (recommended)" = "log",
+                          choices = c("Linear-up / Log-down" = "log",
                                       "Linear-up / Linear-down" = "linear")),
               sliderInput(ns("r2adj_be"),
                           tagList("Minimum R\u00B2 for half-life estimation", help_r2adj),

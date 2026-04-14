@@ -97,7 +97,8 @@ path_single_nca_ui <- function(id) {
             textInput(ns("conc_unit"), "Conc unit", value = "ng/mL"),
             tags$div(style = "padding-top: 1.7rem;",
                      selectInput(ns("trap_method"), NULL,
-                                 choices = c("Log-down" = "log", "Linear" = "linear")))
+                                 choices = c("Linear-up / Log-down" = "log",
+                                             "Linear-up / Linear-down" = "linear")))
           ),
           layout_columns(
             col_widths = c(4, 8),

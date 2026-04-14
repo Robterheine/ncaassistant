@@ -81,7 +81,7 @@ path_multi_nca_ui <- function(id) {
             card_body(
               selectInput(ns("trap_method"),
                           tagList("Trapezoidal method", help_trapezoidal),
-                          choices = c("Linear-up / Log-down (recommended)" = "log",
+                          choices = c("Linear-up / Log-down" = "log",
                                       "Linear-up / Linear-down" = "linear")),
               sliderInput(ns("r2adj"),
                           tagList("Minimum R² for half-life estimation", help_r2adj),
