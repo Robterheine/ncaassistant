@@ -648,6 +648,7 @@ create_analysis_record <- function(output_path, results, settings, col_map,
   # 2. Settings JSON
   tryCatch({
     settings_export <- list(
+      schema_version  = "1.2",   # increment when settings structure changes
       app_version     = tryCatch(get("APP_VERSION", envir = globalenv()), error = function(e) "?"),
       r_version       = R.version.string,
       timestamp       = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),

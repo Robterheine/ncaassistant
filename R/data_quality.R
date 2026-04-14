@@ -119,6 +119,54 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
                " (", length(unique(time_valid)), " unique time points)"))
   }
   
+  # Large time gap check — per subject to avoid between-period gaps in crossover
+  # triggering false positives. Gaps > 24h within a single profile may indicate
+  # missed samples or data entry errors that could affect AUC estimation.
+  if (!is.null(col_map$subject) && col_map$subject %in% names(data)) {
+    subjects_tg <- unique(data[[col_map$subject]])
+    gap_subjects <- c()
+    max_gap_seen <- 0
+    for (s in subjects_tg) {
+      s_idx <- which(data[[col_map$subject]] == s)
+      # For crossover data, check within each treatment period separately
+      if (!is.null(col_map$treatment) && col_map$treatment %in% names(data)) {
+        periods <- unique(data[[col_map$treatment]][s_idx])
+        for (per in periods) {
+          per_idx <- s_idx[data[[col_map$treatment]][s_idx] == per]
+          t_sorted <- sort(time_num[per_idx], na.last = NA)
+          if (length(t_sorted) >= 2) {
+            gaps <- diff(t_sorted)
+            gaps <- gaps[gaps > 0]   # ignore duplicate times (caught separately)
+            if (any(gaps > 24, na.rm = TRUE)) {
+              gap_subjects <- c(gap_subjects, as.character(s))
+              max_gap_seen <- max(max_gap_seen, max(gaps, na.rm = TRUE))
+            }
+          }
+        }
+      } else {
+        t_sorted <- sort(time_num[s_idx], na.last = NA)
+        if (length(t_sorted) >= 2) {
+          gaps <- diff(t_sorted)
+          gaps <- gaps[gaps > 0]
+          if (any(gaps > 24, na.rm = TRUE)) {
+            gap_subjects <- c(gap_subjects, as.character(s))
+            max_gap_seen <- max(max_gap_seen, max(gaps, na.rm = TRUE))
+          }
+        }
+      }
+    }
+    gap_subjects <- unique(gap_subjects)
+    if (length(gap_subjects) > 0) {
+      add("WARNING", "Time",
+          paste0("Large sampling gap (> 24 h) in ",
+                 length(gap_subjects), " subject(s)"),
+          paste0("Affected: ", paste(head(gap_subjects, 5), collapse = ", "),
+                 if (length(gap_subjects) > 5) " ..." else "",
+                 ". Largest gap: ", round(max_gap_seen, 1), " h"),
+          "Verify no samples were missed. Large gaps can increase AUC extrapolation error.")
+    }
+  }
+  
   # ===========================================================================
   # 4. CONCENTRATION COLUMN CHECKS
   # ===========================================================================

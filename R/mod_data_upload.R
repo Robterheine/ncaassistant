@@ -245,9 +245,12 @@ data_upload_server <- function(id, shared) {
       shared$qc_result <- qc
       
       # Auto-detect LLOQ from BLQ text entries if not set
-      if (input$lloq <= 0) {
-        conc_raw <- as.character(raw_data()[[col_map$conc]])
-        lt_vals <- conc_raw[grepl("^<", conc_raw)]
+      conc_raw_upload <- as.character(raw_data()[[col_map$conc]])
+      n_blq_text <- sum(grepl("^(BLQ|BQL|<|BLOQ|NS|ND|NQ)", conc_raw_upload,
+                               ignore.case = TRUE))
+      
+      if (input$lloq <= 0 && n_blq_text > 0) {
+        lt_vals <- conc_raw_upload[grepl("^<", conc_raw_upload)]
         if (length(lt_vals) > 0) {
           lt_nums <- suppressWarnings(as.numeric(gsub("^<\\s*", "", lt_vals)))
           lt_nums <- lt_nums[!is.na(lt_nums)]
@@ -260,6 +263,14 @@ data_upload_server <- function(id, shared) {
               type = "message", duration = 8)
           }
         }
+        # Hard stop: BLQ text is present but LLOQ is still 0 — processing must
+        # not continue because BLQ entries would become NA without any rule applied.
+        showNotification(
+          paste0(n_blq_text, " BLQ entr", if (n_blq_text == 1) "y" else "ies",
+                 " detected but LLOQ is not set. ",
+                 "Set an LLOQ value above 0 and click Process Data again."),
+          type = "error", duration = 10)
+        return()
       }
       
       if (!qc$pass) {

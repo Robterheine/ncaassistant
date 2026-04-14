@@ -356,11 +356,26 @@ path_multi_nca_server <- function(id, shared) {
       }
       
       withProgress(message = "Running NCA on all subjects...", value = 0.5, {
-        result <- run_nca(shared$pk_data, shared$col_map, settings)
+        # Capture any warnings from run_nca (e.g. degenerate profiles excluded)
+        nca_warnings <- character(0)
+        result <- withCallingHandlers(
+          run_nca(shared$pk_data, shared$col_map, settings),
+          warning = function(w) {
+            nca_warnings <<- c(nca_warnings, conditionMessage(w))
+            invokeRestart("muffleWarning")
+          }
+        )
         
         if (is.null(result)) {
           showNotification("NCA failed. Check settings.", type = "error")
           return()
+        }
+        
+        # Surface any degenerate-profile exclusions to the user
+        if (length(nca_warnings) > 0) {
+          showNotification(
+            paste0("Note: ", paste(nca_warnings, collapse = "; ")),
+            type = "warning", duration = 12)
         }
         
         if (input$dose_norm) {
@@ -585,7 +600,7 @@ path_multi_nca_server <- function(id, shared) {
         p <- ggplot(sub_d, aes(x = .data[[cm$time]], y = .data[[cm$conc]])) +
           geom_line(color = "#2C3E50", linewidth = 0.5) +
           geom_point(size = 1.5, color = "#3498DB") +
-          facet_wrap(as.formula(paste("~", cm$subject)), scales = "free_y") +
+          facet_wrap(reformulate(cm$subject), scales = "free_y") +
           scale_y_log10() +
           theme_minimal(base_size = 9) +
           labs(x = "Time", y = "Concentration (log)")

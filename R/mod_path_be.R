@@ -439,10 +439,23 @@ path_be_server <- function(id, shared) {
           settings$dose <- dose_df$dose
         }
         
-        nca_res <- run_nca(shared$pk_data, cm, settings)
+        nca_warnings_be <- character(0)
+        nca_res <- withCallingHandlers(
+          run_nca(shared$pk_data, cm, settings),
+          warning = function(w) {
+            nca_warnings_be <<- c(nca_warnings_be, conditionMessage(w))
+            invokeRestart("muffleWarning")
+          }
+        )
         
         if (is.null(nca_res)) {
           showNotification("NCA failed.", type = "error"); return()
+        }
+        
+        if (length(nca_warnings_be) > 0) {
+          showNotification(
+            paste0("Note: ", paste(nca_warnings_be, collapse = "; ")),
+            type = "warning", duration = 12)
         }
         
         be_nca_result(nca_res)
@@ -892,7 +905,7 @@ path_be_server <- function(id, shared) {
                                color = factor(.data[[cm$treatment]]))) +
           geom_line(linewidth = 0.5) +
           geom_point(size = 1.5) +
-          facet_wrap(as.formula(paste("~", cm$subject)), scales = "free_y") +
+          facet_wrap(reformulate(cm$subject), scales = "free_y") +
           scale_y_log10() +
           scale_color_brewer(palette = "Set1") +
           theme_minimal(base_size = 9) +
