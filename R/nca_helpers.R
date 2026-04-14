@@ -48,6 +48,10 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
       sub <- data[idx, ]
       tmax_idx <- which.max(sub[[conc_col]])
       
+      # Guard: which.max returns integer(0) when all concentrations are NA.
+      # 1:integer(0) throws "argument of length 0" — skip this subject.
+      if (length(tmax_idx) == 0) next
+      
       pre_cmax  <- idx[1:tmax_idx]
       post_cmax <- if (tmax_idx < length(idx)) idx[(tmax_idx + 1):length(idx)] else integer(0)
       

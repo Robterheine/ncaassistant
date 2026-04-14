@@ -44,12 +44,12 @@ generate_nca_script <- function(settings, col_map, file_name, blq_rule, lloq,
   composite_key_code <- if (!is.null(col_map$treatment)) {
     paste0(
       '\n# Create composite key for crossover data (Subject||Treatment)\n',
-      'data$.nca_key <- paste(data[["', col_map$subject, '"]],\n',
-      '                       data[["', col_map$treatment, '"]], sep = "||")\n',
+      'data$.nca_key <- paste(data[', deparse(col_map$subject), ']],\n',
+      '                       data[', deparse(col_map$treatment), ']], sep = "||")\n',
       'nca_key <- ".nca_key"\n'
     )
   } else {
-    paste0('\nnca_key <- "', col_map$subject, '"\n')
+    paste0('\nnca_key <- ', deparse(col_map$subject), '\n')
   }
   
   split_code <- if (!is.null(col_map$treatment)) {
@@ -132,9 +132,9 @@ if (requireNamespace("digest", quietly = TRUE)) {
 # --- Step 4: Column mapping --------------------------------------------------
 # These are the columns identified during the analysis.
 
-subject_col <- "', col_map$subject, '"
-time_col    <- "', col_map$time, '"
-conc_col    <- "', col_map$conc, '"
+subject_col <- ', deparse(col_map$subject), '
+time_col    <- ', deparse(col_map$time), '
+conc_col    <- ', deparse(col_map$conc), '
 cat("Subject column:", subject_col, "\\n")
 cat("Time column:   ", time_col, "\\n")
 cat("Conc column:   ", conc_col, "\\n")
@@ -731,22 +731,33 @@ create_analysis_record <- function(output_path, results, settings, col_map,
               overwrite = TRUE)
   }, error = function(e) warning("Could not copy data file: ", e$message))
   
-  # Create zip
+  # Create zip — without changing the global working directory.
+  # We use system2("zip", "-j") with absolute paths, which strips directory
+  # prefixes (-j = junk paths) without requiring setwd(). utils::zip() needs
+  # a working directory change to strip paths, which is not session-safe in
+  # a multi-session Shiny deployment.
   files_to_zip <- list.files(rec_dir, full.names = TRUE)
-  old_wd <- setwd(rec_dir)
-  on.exit(setwd(old_wd), add = TRUE)
+  abs_output   <- normalizePath(output_path, mustWork = FALSE)
   
-  zip_result <- tryCatch(
-    utils::zip(output_path, files = basename(files_to_zip), flags = "-j"),
-    error = function(e) {
-      # Fallback: use system zip
-      system2("zip", args = c("-j", shQuote(output_path),
-                               shQuote(basename(files_to_zip))),
-              stdout = FALSE, stderr = FALSE)
-    }
-  )
+  zip_result <- tryCatch({
+    # Primary: system zip with absolute paths, no setwd needed
+    res <- system2("zip",
+                   args   = c("-j", shQuote(abs_output),
+                               shQuote(files_to_zip)),
+                   stdout = FALSE, stderr = FALSE)
+    if (!is.null(res) && res != 0) stop("system zip returned non-zero exit")
+    res
+  }, error = function(e) {
+    # Fallback: utils::zip in a self-contained scope that restores wd on exit
+    tryCatch({
+      old_wd <- setwd(rec_dir)
+      on.exit(setwd(old_wd), add = TRUE)
+      utils::zip(abs_output, files = basename(files_to_zip), flags = "-j")
+    }, error = function(e2) {
+      warning("Could not create zip archive: ", e2$message)
+    })
+  })
   
-  setwd(old_wd)
   unlink(rec_dir, recursive = TRUE)
   
   invisible(output_path)
