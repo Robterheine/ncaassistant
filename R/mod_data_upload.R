@@ -111,6 +111,8 @@ data_upload_ui <- function(id) {
             )
           ),
           
+          uiOutput(ns("lloq_apply_ui")),
+          
           tags$div(
             class = "text-end mt-2",
             actionButton(ns("btn_apply"), "Process Data",
@@ -129,6 +131,38 @@ data_upload_ui <- function(id) {
 data_upload_server <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
+    lloq_suggestion <- reactiveVal(NULL)  # suggested LLOQ from auto-detection
+
+    # Render "Apply suggested LLOQ and process" button when suggestion is available
+    output$lloq_apply_ui <- renderUI({
+      sug <- lloq_suggestion()
+      if (is.null(sug)) return(NULL)
+      tags$div(
+        class = "alert alert-info py-2 small mt-2",
+        icon("circle-info", class = "me-1"),
+        tags$strong(paste0("LLOQ auto-detected: ", sug)),
+        tags$br(),
+        "A value of ", tags$strong(sug), " was inferred from your BLQ entries. ",
+        actionButton(ns("btn_apply_lloq"),
+                     paste0("Apply LLOQ = ", sug, " and process"),
+                     class = "btn-primary btn-sm mt-1",
+                     icon = icon("check"))
+      )
+    })
+
+    # "Apply suggested LLOQ" handler.
+    # Sets the LLOQ field to the auto-detected value and clears the suggestion
+    # banner. The user then clicks "Process Data" once more to complete upload.
+    # This two-step keeps the flow transparent without adding package dependencies.
+    observeEvent(input$btn_apply_lloq, {
+      sug <- lloq_suggestion()
+      req(!is.null(sug), sug > 0)
+      updateNumericInput(session, "lloq", value = sug)
+      lloq_suggestion(NULL)
+      showNotification(
+        paste0("LLOQ set to ", sug, ". Click ‘Process Data’ to continue."),
+        type = "message", duration = 6)
+    })
     
     # File type detection
     file_ext <- reactive({
@@ -250,28 +284,28 @@ data_upload_server <- function(id, shared) {
                                ignore.case = TRUE))
       
       if (input$lloq <= 0 && n_blq_text > 0) {
+        detected_lloq <- NULL
         lt_vals <- conc_raw_upload[grepl("^<", conc_raw_upload)]
         if (length(lt_vals) > 0) {
           lt_nums <- suppressWarnings(as.numeric(gsub("^<\\s*", "", lt_vals)))
           lt_nums <- lt_nums[!is.na(lt_nums)]
-          if (length(lt_nums) > 0) {
-            detected_lloq <- min(lt_nums)
-            updateNumericInput(session, "lloq", value = detected_lloq)
-            showNotification(
-              paste0("LLOQ auto-detected as ", detected_lloq,
-                     " from your BLQ entries. Click Process Data again to apply."),
-              type = "message", duration = 8)
-          }
+          if (length(lt_nums) > 0) detected_lloq <- min(lt_nums)
         }
-        # Hard stop: BLQ text is present but LLOQ is still 0 — processing must
-        # not continue because BLQ entries would become NA without any rule applied.
+        # Store suggestion so the "Apply and continue" button can use it
+        lloq_suggestion(detected_lloq)
+        # Hard stop: BLQ text present but no LLOQ — show persistent apply button
         showNotification(
           paste0(n_blq_text, " BLQ entr", if (n_blq_text == 1) "y" else "ies",
                  " detected but LLOQ is not set. ",
-                 "Set an LLOQ value above 0 and click Process Data again."),
-          type = "error", duration = 10)
+                 if (!is.null(detected_lloq))
+                   paste0("LLOQ auto-detected as ", detected_lloq,
+                          ". Use the button below the LLOQ field to apply and process.")
+                 else
+                   "Set an LLOQ value above 0 and click Process Data again."),
+          type = "error", duration = 12)
         return()
       }
+      lloq_suggestion(NULL)  # clear suggestion once LLOQ is properly set
       
       if (!qc$pass) {
         showNotification(

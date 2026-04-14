@@ -101,6 +101,7 @@ path_multi_nca_ui <- function(id) {
         # --- Main content ----------------------------------------------------
         tagList(
           uiOutput(ns("result_status")),
+          uiOutput(ns("excl_note")),
           
           navset_card_tab(
             title = "Results",
@@ -301,7 +302,8 @@ path_multi_nca_server <- function(id, shared) {
       }
     })
     
-    nca_result <- reactiveVal(NULL)
+    nca_result    <- reactiveVal(NULL)
+    nca_excl_note <- reactiveVal(NULL)  # persists degenerate-profile exclusion warnings
     
     # Run NCA
     observeEvent(input$run_nca, {
@@ -371,11 +373,14 @@ path_multi_nca_server <- function(id, shared) {
           return()
         }
         
-        # Surface any degenerate-profile exclusions to the user
+        # Store and surface any degenerate-profile exclusions
         if (length(nca_warnings) > 0) {
+          nca_excl_note(nca_warnings)  # persists as alert in results panel
           showNotification(
             paste0("Note: ", paste(nca_warnings, collapse = "; ")),
             type = "warning", duration = 12)
+        } else {
+          nca_excl_note(NULL)  # clear from previous run
         }
         
         if (input$dose_norm) {
@@ -418,6 +423,22 @@ path_multi_nca_server <- function(id, shared) {
     })
     
     # Status
+    # Persistent excluded-profiles alert
+    output$excl_note <- renderUI({
+      msgs <- nca_excl_note()
+      if (is.null(msgs) || length(msgs) == 0) return(NULL)
+      tags$div(
+        class = "alert alert-warning py-2 small mb-2",
+        icon("triangle-exclamation", class = "me-1"),
+        tags$strong("Profiles excluded from analysis: "),
+        paste(msgs, collapse = " | "),
+        tags$br(),
+        tags$span(class = "text-muted",
+                  "These profiles had fewer than 3 positive concentration values. ",
+                  "Check the raw data for these subjects/treatments.")
+      )
+    })
+
     output$result_status <- renderUI({
       if (is.null(nca_result())) {
         card(card_body(class = "text-center py-4 text-muted",
@@ -624,7 +645,7 @@ path_multi_nca_server <- function(id, shared) {
     output$lz_info <- renderUI({
       sd <- lz_sub_data(); req(length(sd$time) >= 3)
       lz <- if (!is.null(lz_state$override)) lz_state$override
-            else estimate_lambda_z(sd$time, sd$conc, 0.7)
+            else estimate_lambda_z(sd$time, sd$conc, input$r2adj)
       if (is.na(lz$lambda_z)) {
         tags$div(class="alert alert-warning py-2", tags$small(lz$message))
       } else {
@@ -641,7 +662,7 @@ path_multi_nca_server <- function(id, shared) {
       sd <- lz_sub_data(); req(length(sd$time) >= 3)
       tryCatch({
       lz <- if (!is.null(lz_state$override)) lz_state$override
-            else estimate_lambda_z(sd$time, sd$conc, 0.7)
+            else estimate_lambda_z(sd$time, sd$conc, input$r2adj)
       df <- data.frame(
         Time = sd$time,
         ln_Conc = ifelse(sd$conc > 0, log(sd$conc), NA),
@@ -694,7 +715,7 @@ path_multi_nca_server <- function(id, shared) {
         if (!is.null(lz_state$override)) {
           sel <- as.character(which(term)[sd$time[term] %in% lz_state$override$time_used])
         } else {
-          lz <- estimate_lambda_z(sd$time, sd$conc, 0.7)
+          lz <- estimate_lambda_z(sd$time, sd$conc, input$r2adj)
           sel <- if (length(lz$time_used) > 0)
             as.character(which(term)[sd$time[term] %in% lz$time_used]) else NULL
         }

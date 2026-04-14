@@ -160,6 +160,7 @@ path_be_ui <- function(id) {
           uiOutput(ns("be_status")),
           uiOutput(ns("ss_note")),
           uiOutput(ns("balance_note")),
+          uiOutput(ns("design_summary")),
           
           navset_card_tab(
             title = "Bioequivalence Results",
@@ -722,6 +723,61 @@ path_be_server <- function(id, shared) {
                   "These subjects contribute to one arm only. Degrees of freedom ",
                   "are reduced and confidence intervals may be wider than expected. ",
                   "Verify that missing profiles are not due to a data preparation error.")
+      )
+    })
+
+    # Design summary — shown after NCA runs to let user verify their model setup
+    output$design_summary <- renderUI({
+      req(be_nca_result())
+      r   <- be_nca_result()
+      cm  <- shared$col_map
+      dat <- shared$pk_data
+      if (is.null(dat) || is.null(cm)) return(NULL)
+      
+      # Counts from the NCA result (post-filtering)
+      n_profiles  <- nrow(r)
+      trt_col     <- if ("Treatment" %in% names(r)) "Treatment" else cm$treatment
+      treatments  <- if (!is.null(trt_col) && trt_col %in% names(r))
+                       sort(unique(r[[trt_col]])) else character(0)
+      n_trt       <- length(treatments)
+      
+      # Subjects per treatment from the result table
+      subj_col    <- if ("Subject" %in% names(r)) "Subject" else names(r)[1]
+      per_trt     <- if (n_trt > 0 && trt_col %in% names(r)) {
+        sapply(treatments, function(t)
+          sum(r[[trt_col]] == t, na.rm = TRUE))
+      } else integer(0)
+      
+      # Design info from shared study_info (set at upload time)
+      si     <- shared$study_info
+      design <- if (!is.null(si)) si$design else NULL
+      n_periods   <- if (!is.null(design)) design$n_periods   else "?"
+      n_sequences <- if (!is.null(design)) design$n_sequences else "?"
+      design_type <- if (!is.null(design) && !is.null(design$type))
+                       design$type else input$be_design
+      
+      tags$div(
+        class = "alert alert-light py-2 small mb-2",
+        style = "border-left: 3px solid #3498DB;",
+        icon("info-circle", class = "text-info me-1"),
+        tags$strong("Design detected from data: "),
+        tags$span(design_type),
+        tags$span(class = "text-muted ms-3",
+                  paste0(n_profiles, " profile(s)")),
+        if (n_trt > 0) {
+          trt_str <- paste(
+            mapply(function(t, n) paste0(t, " (n=", n, ")"),
+                   treatments, per_trt),
+            collapse = ", ")
+          tags$span(class = "text-muted ms-3",
+                    paste0("Treatments: ", trt_str))
+        },
+        tags$span(class = "text-muted ms-3",
+                  paste0(n_periods, " period(s), ",
+                         n_sequences, " sequence(s)")),
+        tags$br(),
+        tags$span(class = "text-muted",
+                  "Verify this matches your intended design before interpreting the confidence intervals.")
       )
     })
 
