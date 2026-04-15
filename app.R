@@ -691,16 +691,15 @@ server <- function(input, output, session) {
               tags$li("Hub restructured from 2+3 to 3+3 card grid; workflow paths renumbered 1\u20136"),
               tags$li("App designed by Rob ter Heine, Radboud Applied Pharmacometrics"),
               tags$li("Version bump to 1.2; validation suite updated with URS-VIZ-01 through URS-VIZ-08 (supportive class)"),
-              tags$hr(class = "my-2"),
-              tags$li(tags$strong("Bug fixes:"), " BLQ Rule 5 crash when all concentrations are NA (which.max guard); LLOQ hard-stop when BLQ text present and LLOQ = 0; degenerate profile filter in run_nca (<3 positive values excluded with persistent amber note); R\u00B2adj division-by-zero in 2-point lambda-z; BLQ Rule 6 label corrected to \u2018before first quantifiable\u2019 throughout"),
-              tags$li(tags$strong("Export fixes:"), " Composite key column names wrapped in deparse() in generated R script; zip archive no longer calls setwd() globally (system2 primary, withr::with_dir fallback); schema_version field added to analysis_settings.json"),
-              tags$li(tags$strong("Lambda-z refactor:"), " Shared recalculate_lambda_z() helper in nca_helpers.R; all three modules (single NCA, batch NCA, BE) use identical regression, R\u00B2adj, and validation logic; R\u00B2 threshold slider now wired to all estimate_lambda_z() calls in the half-life review inspector"),
-              tags$li(tags$strong("Data quality:"), " Large sampling gap warning (>24 h within a profile, crossover-aware); time gap check per subject and per treatment period"),
-              tags$li(tags$strong("Upload:"), " One-click \u2018Apply LLOQ = X and process\u2019 button when LLOQ is auto-detected from BLQ text entries; reformulate() replaces as.formula(paste()) for safe column name handling"),
-              tags$li(tags$strong("Batch NCA:"), " AUCPEO >20% flagged in amber in parameter table; excluded profiles displayed as persistent amber note above results tabs"),
-              tags$li(tags$strong("Bioequivalence:"), " Steady-state checkbox added (AUC\u03C4 as primary parameter); balanced design pre-check with persistent amber warning; design summary card after NCA run; warnings from run_nca surfaced via withCallingHandlers"),
-              tags$li(tags$strong("Plan a Study:"), " 3-step guided flow; CV, GMR, and power entered as percentages; valid design list prevents invalid combinations; NTID locked to 4-period replicate"),
-              tags$li(tags$strong("UI:"), " User Manual PDF downloadable from navigation bar; PharmaKinEx references removed from codebase")
+              tags$li("Bug fixes: BLQ Rule 5 crash when all concentrations are NA (which.max guard); LLOQ hard-stop when BLQ text present and LLOQ = 0; degenerate profile filter in run_nca (<3 positive values excluded with persistent amber note); R\u00B2adj division-by-zero in 2-point lambda-z; BLQ Rule 6 label corrected to \u2018before first quantifiable\u2019 throughout"),
+              tags$li("Export fixes: composite key column names wrapped in deparse() in generated R script; zip archive no longer calls setwd() globally (system2 primary, withr::with_dir fallback); schema_version field added to analysis_settings.json"),
+              tags$li("Lambda-z refactor: shared recalculate_lambda_z() helper in nca_helpers.R; all three modules (single NCA, batch NCA, BE) use identical regression, R\u00B2adj, and validation logic; R\u00B2 threshold slider now wired to all estimate_lambda_z() calls in the half-life review inspector"),
+              tags$li("Data quality: large sampling gap warning (>24 h within a profile, crossover-aware); time gap check per subject and per treatment period"),
+              tags$li("Upload: one-click \u2018Apply LLOQ = X and process\u2019 button when LLOQ is auto-detected from BLQ text entries; reformulate() replaces as.formula(paste()) for safe column name handling"),
+              tags$li("Batch NCA: AUCPEO >20% flagged in amber in parameter table; excluded profiles displayed as persistent amber note above results tabs"),
+              tags$li("Bioequivalence: steady-state checkbox added (AUC\u03C4 as primary parameter); balanced design pre-check with persistent amber warning; design summary card after NCA run; warnings from run_nca surfaced via withCallingHandlers"),
+              tags$li("Plan a Study: 3-step guided flow; CV, GMR, and power entered as percentages; valid design list prevents invalid combinations; NTID locked to 4-period replicate"),
+              tags$li("UI: User Manual PDF downloadable from navigation bar; PharmaKinEx references removed from codebase")
             )
           ),
           
