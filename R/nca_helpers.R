@@ -300,10 +300,14 @@ run_nca <- function(data, col_map, settings) {
   # Ensure data is sorted by key and time
   data <- data[order(data[[nca_key]], data[[col_map$time]]), ]
   
-  # Degenerate profile filter: remove profiles with < 3 non-zero, non-NA
-  # concentration values before passing to tblNCA. A single degenerate
-  # profile can crash the entire batch call. Removed profiles are reported
-  # as a warning attribute on the result so callers can surface them.
+  # Degenerate profile filter: remove profiles with < 2 non-zero, non-NA
+  # concentration values before passing to tblNCA. At least 2 positive
+  # values are needed to compute Cmax, Tmax, and AUClast. Profiles with
+  # exactly 2 positive values are valid sparse profiles — tblNCA handles
+  # them correctly, returning NA for lambda-z-dependent parameters (half-life,
+  # AUC∞, CL/F, Vz/F) which require ≥ 3 points for regression. Profiles with
+  # only 1 positive value produce no meaningful NCA output and are excluded.
+  # Excluded profiles are reported via warning so callers can surface them.
   all_keys   <- unique(data[[nca_key]])
   good_keys  <- character(0)
   bad_keys   <- character(0)
@@ -311,13 +315,13 @@ run_nca <- function(data, col_map, settings) {
     k_conc <- data[[col_map$conc]][data[[nca_key]] == k]
     k_conc_num <- suppressWarnings(as.numeric(k_conc))
     n_valid <- sum(!is.na(k_conc_num) & k_conc_num > 0)
-    if (n_valid >= 3) good_keys <- c(good_keys, k)
+    if (n_valid >= 2) good_keys <- c(good_keys, k)
     else              bad_keys  <- c(bad_keys,  k)
   }
   
   if (length(bad_keys) > 0) {
-    warning(paste0("Excluded ", length(bad_keys), " profile(s) with < 3 ",
-                   "positive concentration values: ",
+    warning(paste0("Excluded ", length(bad_keys), " profile(s) with fewer than 2 ",
+                   "positive concentration values (no meaningful NCA output possible): ",
                    paste(head(bad_keys, 5), collapse = ", "),
                    if (length(bad_keys) > 5) " ..." else ""))
     data <- data[data[[nca_key]] %in% good_keys, ]

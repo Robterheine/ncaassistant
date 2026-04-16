@@ -434,7 +434,7 @@ path_multi_nca_server <- function(id, shared) {
         paste(msgs, collapse = " | "),
         tags$br(),
         tags$span(class = "text-muted",
-                  "These profiles had fewer than 3 positive concentration values. ",
+                  "These profiles had fewer than 2 positive concentration values (no meaningful NCA output possible). ",
                   "Check the raw data for these subjects/treatments.")
       )
     })
