@@ -163,7 +163,7 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
           paste0("Affected: ", paste(head(gap_subjects, 5), collapse = ", "),
                  if (length(gap_subjects) > 5) " ..." else "",
                  ". Largest gap: ", round(max_gap_seen, 1), " h"),
-          "Verify no samples were missed. Large gaps can increase AUC extrapolation error.")
+          "Verify no samples were missed. Large gaps can increase AUC extrapolation error. If longer intervals are expected for your study design (e.g. long-acting formulations), this warning can be disregarded.")
     }
   }
   
