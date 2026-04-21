@@ -326,9 +326,12 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
         "Normal for real-world data. Missing samples will be handled automatically.")
   }
   
-  # Subjects with all-zero or all-NA concentrations
+  # Subjects with all-zero or all-NA concentrations, and Tmax = 0 check
+  tmax_zero_subjects <- c()
   for (s in subjects) {
-    s_conc <- conc_num[data[[subj_col]] == s]
+    s_idx  <- data[[subj_col]] == s
+    s_conc <- conc_num[s_idx]
+    s_time <- time_num[s_idx]
     if (all(is.na(s_conc))) {
       add("WARNING", "Subjects",
           paste0("Subject '", s, "' has no measurable concentrations"),
@@ -339,7 +342,27 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
           paste0("Subject '", s, "' has all-zero concentrations"),
           "No drug detected in any sample.",
           "May indicate non-compliance or dosing failure. Review source data.")
+    } else {
+      # Check if peak concentration occurs at time = 0.
+      # For extravascular dosing this is pharmacokinetically implausible and
+      # usually signals a mislabelled pre-dose sample or data entry error.
+      cmax_idx  <- which.max(s_conc)
+      if (length(cmax_idx) > 0) {
+        tmax_val <- s_time[cmax_idx]
+        if (!is.na(tmax_val) && tmax_val == 0) {
+          tmax_zero_subjects <- c(tmax_zero_subjects, as.character(s))
+        }
+      }
     }
+  }
+  if (length(tmax_zero_subjects) > 0) {
+    add("WARNING", "Subjects",
+        paste0("Tmax = 0 in ", length(tmax_zero_subjects), " subject(s)"),
+        paste0("Subjects: ", paste(head(tmax_zero_subjects, 5), collapse = ", "),
+               if (length(tmax_zero_subjects) > 5) " ..." else ""),
+        paste0("Peak concentration at time = 0 is unusual for extravascular dosing ",
+               "and may indicate a mislabelled pre-dose sample or that the first ",
+               "sample was collected before absorption began. Verify the raw data."))
   }
   
   # ===========================================================================

@@ -100,18 +100,26 @@ path_single_nca_ui <- function(id) {
                                  choices = c("Linear-up / Log-down" = "log",
                                              "Linear-up / Linear-down" = "linear")))
           ),
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'iv_infusion'", ns("admin_route")),
+            numericInput(ns("inf_dur"),
+                         "Infusion duration (same unit as Time)",
+                         value = 1, min = 0)
+          ),
           layout_columns(
-            col_widths = c(4, 8),
+            col_widths = c(6, 6),
             checkboxInput(ns("is_ss"),
-                          tagList("Steady-state (drug given repeatedly)", help_steady_state),
-                          FALSE),
-            conditionalPanel(
-              condition = sprintf("input['%s'] == true", ns("is_ss")),
-              tags$p(class = "text-muted small",
-                     "The pre-dose concentration is not zero because the drug has accumulated. ",
-                     "The app will calculate AUC within the dosing interval (AUC\u03C4) ",
-                     "instead of AUC to infinity.")
-            )
+                          tagList("Steady-state", help_steady_state), FALSE),
+            sliderInput(ns("r2adj"),
+                        tagList("Min R\u00B2 for half-life", help_r2adj),
+                        min = 0, max = 1, value = 0.7, step = 0.05)
+          ),
+          conditionalPanel(
+            condition = sprintf("input['%s'] == true", ns("is_ss")),
+            tags$p(class = "text-muted small",
+                   "The pre-dose concentration is not zero because the drug has accumulated. ",
+                   "The app will calculate AUC within the dosing interval (AUC\u03C4) ",
+                   "instead of AUC to infinity.")
           )
         )
       ),
@@ -434,7 +442,8 @@ path_single_nca_server <- function(id, shared) {
                                       timeUnit = input$time_unit,
                                       concUnit = input$conc_unit,
                                       SS = isTRUE(input$is_ss),
-                                      R2ADJ = 0.7),
+                                      R2ADJ = input$r2adj,
+                                      dur   = if (input$admin_route == "iv_infusion") input$inf_dur else 0),
                      error = function(e) { showNotification(paste("Error:", e$message), type="error"); NULL })
       
       # For steady-state: derive tau-based parameters
@@ -530,7 +539,7 @@ path_single_nca_server <- function(id, shared) {
     output$lz_info <- renderUI({
       d <- tc(); req(length(d$time) >= 3)
       lz <- if (!is.null(local$lz_override)) local$lz_override
-            else estimate_lambda_z(d$time, d$conc, 0.7)
+            else estimate_lambda_z(d$time, d$conc, input$r2adj)
       if (is.na(lz$lambda_z))
         tags$div(class="alert alert-warning py-2", tags$small(tags$strong("Not estimable. "), lz$message))
       else {
@@ -547,7 +556,7 @@ path_single_nca_server <- function(id, shared) {
       d <- tc(); req(length(d$time) >= 3)
       tryCatch({
       lz <- if (!is.null(local$lz_override)) local$lz_override
-            else estimate_lambda_z(d$time, d$conc, 0.7)
+            else estimate_lambda_z(d$time, d$conc, input$r2adj)
       df <- data.frame(
         Time = d$time,
         ln_Conc = ifelse(d$conc > 0, log(d$conc), NA),
@@ -606,7 +615,7 @@ path_single_nca_server <- function(id, shared) {
         if (!is.null(local$lz_override)) {
           sel <- as.character(which(term)[d$time[term] %in% local$lz_override$time_used])
         } else {
-          lz <- estimate_lambda_z(d$time, d$conc, 0.7)
+          lz <- estimate_lambda_z(d$time, d$conc, input$r2adj)
           sel <- if (length(lz$time_used) > 0)
             as.character(which(term)[d$time[term] %in% lz$time_used]) else NULL
         }
@@ -730,13 +739,13 @@ path_single_nca_server <- function(id, shared) {
           settings <- list(
             admin_route = input$admin_route,
             dose = input$dose,
-            infusion_duration = 0,
+            infusion_duration = if (!is.null(input$inf_dur) && input$admin_route == "iv_infusion") input$inf_dur else 0,
             is_steady_state = isTRUE(input$is_ss),
             dose_unit = input$dose_unit,
             time_unit = input$time_unit,
             conc_unit = input$conc_unit,
             trap_method = input$trap_method,
-            r2adj_threshold = 0.7,
+            r2adj_threshold = input$r2adj,
             n_obs = length(d$time)
           )
           
@@ -839,15 +848,27 @@ path_single_nca_server <- function(id, shared) {
             writeLines(html, file.path(rec_dir, "analysis_summary.html"))
           }, error = function(e) warning(e$message))
           
-          # Create zip
+          # Create zip — system2 with absolute paths avoids setwd() on global state
           files_to_zip <- list.files(rec_dir, full.names = TRUE)
-          old_wd <- setwd(rec_dir)
-          on.exit(setwd(old_wd), add = TRUE)
-          tryCatch(
-            utils::zip(file, files = basename(files_to_zip), flags = "-j"),
-            error = function(e) system2("zip", args = c("-j", shQuote(file),
-                                         shQuote(basename(files_to_zip)))))
-          setwd(old_wd)
+          abs_output   <- normalizePath(file, mustWork = FALSE)
+          zip_ok <- tryCatch({
+            res <- system2("zip", args = c("-j", shQuote(abs_output),
+                                            shQuote(files_to_zip)),
+                           stdout = FALSE, stderr = FALSE)
+            !is.null(res) && res == 0
+          }, error = function(e) FALSE)
+          if (!zip_ok) {
+            tryCatch({
+              if (requireNamespace("withr", quietly = TRUE)) {
+                withr::with_dir(rec_dir,
+                  utils::zip(abs_output, files = basename(files_to_zip), flags = "-j"))
+              } else {
+                old_wd <- setwd(rec_dir)
+                on.exit(setwd(old_wd), add = TRUE)
+                utils::zip(abs_output, files = basename(files_to_zip), flags = "-j")
+              }
+            }, error = function(e) warning("Could not create zip: ", e$message))
+          }
           unlink(rec_dir, recursive = TRUE)
         })
       }

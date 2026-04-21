@@ -111,14 +111,14 @@ rename_summary_columns <- function(df) {
   renames <- c(
     "Parameter" = "Parameter",
     "N"         = "N",
-    "Mean"      = "Mean",
+    "Geo_Mean"  = "Geometric Mean",
+    "Geo_CV_pct"= "Geometric CV (%)",
+    "Median"    = "Median",
+    "Mean"      = "Arithmetic Mean",
     "SD"        = "Std Dev",
     "CV_pct"    = "CV (%)",
-    "Median"    = "Median",
     "Min"       = "Min",
-    "Max"       = "Max",
-    "Geo_Mean"  = "Geometric Mean",
-    "Geo_CV_pct"= "Geometric CV (%)"
+    "Max"       = "Max"
   )
   nm <- names(df)
   for (i in seq_along(nm)) {
@@ -242,14 +242,14 @@ summarize_pk_params <- function(data, params) {
     data.frame(
       Parameter  = p,
       N          = n,
+      Geo_Mean   = ifelse(all(vals > 0), geo_mean, NA),
+      Geo_CV_pct = ifelse(all(vals > 0), geo_cv, NA),
+      Median     = median(vals),
       Mean       = mean(vals),
       SD         = sd(vals),
       CV_pct     = ifelse(mean(vals) != 0, sd(vals) / mean(vals) * 100, NA),
-      Median     = median(vals),
       Min        = min(vals),
       Max        = max(vals),
-      Geo_Mean   = ifelse(all(vals > 0), geo_mean, NA),
-      Geo_CV_pct = ifelse(all(vals > 0), geo_cv, NA),
       stringsAsFactors = FALSE
     )
   })

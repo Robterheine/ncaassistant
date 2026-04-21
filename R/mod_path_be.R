@@ -39,8 +39,9 @@ path_be_ui <- function(id) {
               selectInput(ns("admin_route"),
                           tagList("Route of administration", help_admin_route),
                           choices = c("Oral / IM / SC (extravascular)" = "extravascular",
-                                      "IV Bolus (injected into vein at once)" = "iv_bolus",
-                                      "IV Infusion (drip over time)" = "iv_infusion")),
+                                      "IV Bolus (injected into vein at once)" = "iv_bolus")),
+              # Note: IV Infusion is not supported in BE analysis (no paired
+              # infusion duration per treatment period).
               
               radioButtons(ns("dose_source"), "Dose information",
                            choices = c(
@@ -68,7 +69,7 @@ path_be_ui <- function(id) {
                                       "Linear-up / Linear-down" = "linear")),
               sliderInput(ns("r2adj_be"),
                           tagList("Minimum R\u00B2 for half-life estimation", help_r2adj),
-                          min = 0.5, max = 1, value = 0.7, step = 0.05),
+                          min = 0,   max = 1, value = 0.7, step = 0.05),
               checkboxInput(ns("is_ss"),
                             tagList("Steady-state (drug given repeatedly)", help_steady_state),
                             value = FALSE)

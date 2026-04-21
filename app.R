@@ -17,6 +17,9 @@
 APP_VERSION <- "1.2"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
+# Allow uploads up to 50 MB (Shiny default is 5 MB)
+options(shiny.maxRequestSize = 50 * 1024^2)
+
 library(shiny)
 library(bslib)
 library(NonCompart)
@@ -131,6 +134,17 @@ ui <- page_fluid(
 # --- Server ------------------------------------------------------------------
 server <- function(input, output, session) {
   
+  # === SESSION CLEANUP =======================================================
+  # Register a cleanup handler so any orphaned temp directories created during
+  # Complete Analysis Record generation are removed when the session ends,
+  # regardless of whether the download completed or the browser tab was closed.
+  session_temp_dirs <- character(0)
+  session$onSessionEnded(function() {
+    for (d in session_temp_dirs) {
+      if (dir.exists(d)) unlink(d, recursive = TRUE)
+    }
+  })
+
   # === GLOBAL STATE ==========================================================
   # Shared across all paths
   shared <- reactiveValues(
@@ -691,6 +705,7 @@ server <- function(input, output, session) {
               tags$li("Hub restructured from 2+3 to 3+3 card grid; workflow paths renumbered 1\u20136"),
               tags$li("App designed by Rob ter Heine, Radboud Applied Pharmacometrics"),
               tags$li("Version bump to 1.2; validation suite updated with URS-VIZ-01 through URS-VIZ-08 (supportive class)"),
+              tags$li(tags$em(class = "text-muted", "Post-launch maintenance updates:")),
               tags$li("Bug fixes: BLQ Rule 5 crash when all concentrations are NA (which.max guard); LLOQ hard-stop when BLQ text present and LLOQ = 0; degenerate profile filter in run_nca (<3 positive values excluded with persistent amber note); R\u00B2adj division-by-zero in 2-point lambda-z; BLQ Rule 6 label corrected to \u2018before first quantifiable\u2019 throughout"),
               tags$li("Export fixes: composite key column names wrapped in deparse() in generated R script; zip archive no longer calls setwd() globally (system2 primary, withr::with_dir fallback); schema_version field added to analysis_settings.json"),
               tags$li("Lambda-z refactor: shared recalculate_lambda_z() helper in nca_helpers.R; all three modules (single NCA, batch NCA, BE) use identical regression, R\u00B2adj, and validation logic; R\u00B2 threshold slider now wired to all estimate_lambda_z() calls in the half-life review inspector"),

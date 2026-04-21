@@ -136,8 +136,8 @@ estimate_lambda_z <- function(time, conc, r2adj_threshold = 0.7,
   
   # Remove NAs and zero concentrations (can't log-transform)
   valid <- !is.na(conc) & conc > 0
-  t <- time[valid]
-  c <- conc[valid]
+  t  <- time[valid]
+  cv <- conc[valid]  # renamed from c to avoid shadowing base::c()
   
   if (length(t) < 3) {
     return(list(
@@ -151,7 +151,7 @@ estimate_lambda_z <- function(time, conc, r2adj_threshold = 0.7,
   }
   
   # Find Cmax index (in the valid subset)
-  cmax_idx <- which.max(c)
+  cmax_idx <- which.max(cv)
   
   # Only use points after Cmax
   terminal_mask <- seq_along(t) > cmax_idx
@@ -161,7 +161,7 @@ estimate_lambda_z <- function(time, conc, r2adj_threshold = 0.7,
   }
   
   t_term <- t[terminal_mask]
-  c_term <- c[terminal_mask]
+  cv_term <- cv[terminal_mask]
   
   if (length(t_term) < 3) {
     return(list(
@@ -174,7 +174,7 @@ estimate_lambda_z <- function(time, conc, r2adj_threshold = 0.7,
     ))
   }
   
-  log_c_term <- log(c_term)
+  log_c_term <- log(cv_term)
   
   # Best fit method: try last 3, 4, 5, ... n points
   # Pick regression with highest adjusted R²
