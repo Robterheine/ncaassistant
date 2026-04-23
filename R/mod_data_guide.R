@@ -716,7 +716,8 @@ data_guide_ui <- function() {
           "The LLOQ value is the number from your bioanalytical validation report ",
           "(e.g., 0.5 ng/mL). If you leave LLOQ at 0, the app cannot process BLQ text entries ",
           "and will show an error. The app tries to auto-detect the LLOQ from entries like ",
-          "'<0.5' and will pre-fill it for you — verify the value and click Process Data."
+          "'<0.5' (both period and comma decimal separators are recognised) ",
+          "and will pre-fill it for you — verify the value and click Process Data."
         ),
         
         ex_table(data.frame(
@@ -727,7 +728,8 @@ data_guide_ui <- function() {
         
         tags$p(class = "small text-muted",
                "The app auto-detects BLQ strings and the LLOQ value (0.5 in this case, ",
-               "from the '<0.5' entry). Leave them as-is in your file."),
+               "from the '<0.5' entry). Both period and comma decimal separators are ",
+               "recognised in BLQ entries. Leave them as-is in your file."),
         
         # Actual vs nominal time
         tags$h6(class = "fw-semibold mt-4",
@@ -764,6 +766,54 @@ data_guide_ui <- function() {
           )
         ),
         
+        # Data quality warnings
+        tags$h6(class = "fw-semibold mt-4",
+                "Understanding data quality warnings"),
+        tags$p(class = "small",
+               "After you click Process Data, the app runs a set of checks and shows — ",
+               "depending on what it finds — errors (red, must fix), warnings (amber, ",
+               "investigate), and information notices (blue). Here are the most common ones:"),
+
+        tags$div(
+          class = "small",
+
+          tags$p(tags$strong("Large sampling gap.")),
+          tags$p(class = "text-muted",
+                 "Fires when consecutive time points within a profile are far apart. ",
+                 "For single-dose studies (observation window up to 48 h) the threshold is 24 h. ",
+                 "For multi-day studies (observation window > 48 h) the threshold is 48 h, ",
+                 "so daily trough samples at 24 h, 48 h, 72 h, 96 h, 120 h are not flagged. ",
+                 "If you see this warning, check the ‘Largest gap’ value shown. ",
+                 "A gap of 24.0–25.0 h in a multi-day study is normal sampling time variability. ",
+                 "A gap of 48 h or more usually means a sample was missed."),
+
+          tags$p(tags$strong("BLQ entries detected but LLOQ is not set.")),
+          tags$p(class = "text-muted",
+                 "Your concentration column contains text like ‘<0.5’, ‘BLQ’, or ‘ND’ but the ",
+                 "LLOQ field is set to 0. The app cannot process BLQ values without knowing the ",
+                 "LLOQ. If your BLQ entries use the format '<X' (e.g., '<0.5'), ",
+                 "both period and comma decimal separators are recognised. ",
+                 "The app will auto-detect the LLOQ and show a button to apply it. ",
+                 "Otherwise, enter the LLOQ manually and click Process Data again."),
+
+          tags$p(tags$strong("Tmax = 0 in one or more subjects.")),
+          tags$p(class = "text-muted",
+                 "The highest concentration in a profile occurs at time = 0. For oral or IM dosing, ",
+                 "this almost always means the pre-dose sample has been mislabelled, or the first ",
+                 "sample was collected before absorption began. Check the raw data for that subject."),
+
+          tags$p(tags$strong("Subjects with < 3 observations.")),
+          tags$p(class = "text-muted",
+                 "Lambda-z and half-life cannot be estimated with fewer than 3 time points. ",
+                 "NCA will still run and report Cmax, Tmax, and AUClast for these subjects, ",
+                 "but AUC to infinity, clearance, and volume will be missing."),
+
+          tags$p(tags$strong("Unequal observations per subject.")),
+          tags$p(class = "text-muted",
+                 "This is informational only. Missing samples are normal in real-world studies ",
+                 "and the app handles them automatically.")
+        ),
+
         # Common column name variations
         tags$h6(class = "fw-semibold mt-4", "Common column name variations the app recognizes"),
         tags$p(class = "small",

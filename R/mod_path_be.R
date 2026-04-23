@@ -480,6 +480,11 @@ path_be_server <- function(id, shared) {
           design_df <- shared$pk_data %>%
             select(all_of(c(merge_cols, extra))) %>% distinct()
           
+          # Coerce subject ID column to character so the merge matches
+          # nca_res$Subject (always character after composite key splitting)
+          # regardless of the original column type (e.g., integer Subject ID).
+          design_df[[cm$subject]] <- as.character(design_df[[cm$subject]])
+          
           if ("Subject" %in% names(nca_res) && "Treatment" %in% names(nca_res)) {
             be_data <- merge(nca_res, design_df,
                              by.x = c("Subject","Treatment"),
@@ -502,8 +507,10 @@ path_be_server <- function(id, shared) {
         if (length(trt_levels) != 2) {
           showNotification(
             paste0("Treatment column must have exactly 2 levels (found ",
-                   length(trt_levels), ": ", paste(trt_levels, collapse = ", "),
-                   "). Bioequivalence compares two formulations."),
+                   length(trt_levels),
+                   if (length(trt_levels) > 0) paste0(": ", paste(trt_levels, collapse = ", ")) else "",
+                   "). Please ensure your Treatment column contains exactly two values ",
+                   "(e.g., Test and Reference, or Drug A and Drug B)."),
             type = "error", duration = 10)
           return()
         }
@@ -516,6 +523,19 @@ path_be_server <- function(id, shared) {
         if (is.null(params) || length(params) == 0)
           params <- intersect(c("CMAX","AUCLST","AUCIFO"), names(nca_res))
         
+        # Warn when no Sequence column is mapped for crossover designs
+        if (is.null(seq_col) &&
+            input$be_design %in% c("crossover_2x2", "crossover_3period", "replicate_2x2x4")) {
+          showNotification(
+            paste0("No Sequence column is mapped. For a ", input$be_design,
+                   " design the Sequence term is part of the standard ANOVA model ",
+                   "(ln(PK) = Sequence + Subject(Sequence) + Period + Treatment). ",
+                   "Without it, between-sequence variance is uncontrolled and ",
+                   "degrees of freedom may be slightly incorrect. ",
+                   "If your data has a Sequence column, map it in the Upload step."),
+            type = "warning", duration = 15)
+        }
+
         # Warn if design selection may not match the data
         if (!is.null(seq_col) && length(unique(be_data[[seq_col]])) < 2 &&
             input$be_design %in% c("crossover_2x2", "crossover_3period", "replicate_2x2x4")) {
@@ -563,6 +583,20 @@ path_be_server <- function(id, shared) {
         ci_results <- list()
         anova_results <- list()
         
+        # Warn once if Tmax is among the selected parameters
+        if ("TMAX" %in% params) {
+          showNotification(
+            paste0("Tmax is included in your analysis. Note: Tmax is a discrete ",
+                   "variable that takes only values present in the sampling schedule. ",
+                   "A parametric ANOVA model is not the regulatory standard for Tmax. ",
+                   "EMA and FDA guidance recommends a non-parametric approach ",
+                   "(Wilcoxon signed-rank / Hodges-Lehmann) for Tmax. ",
+                   "The parametric CI shown here is provided for completeness only ",
+                   "and should not be used as the primary Tmax analysis in a ",
+                   "regulatory submission."),
+            type = "warning", duration = 20)
+        }
+
         for (param in params) {
           vals <- as.numeric(be_data[[param]])
           if (input$log_transform && param != "TMAX") {
@@ -617,7 +651,16 @@ path_be_server <- function(id, shared) {
           
           if (is.null(fit)) { ci_results[[param]] <- data.frame(Parameter=param, Point_Est=NA, CI_Lower=NA, CI_Upper=NA, Bioequivalent=NA, stringsAsFactors=FALSE); next }
           
-          anova_results[[param]] <- tryCatch(anova(fit), error = function(e) NULL)
+          anova_results[[param]] <- tryCatch({
+            if (inherits(fit, "lme")) {
+              # Type III (marginal) SS for lme — order-independent, correct for
+              # unbalanced data. anova.lme with type="marginal" uses Wald F-tests.
+              anova(fit, type = "marginal")
+            } else {
+              # drop1 with F-test gives Type III SS for lm objects.
+              drop1(fit, test = "F")
+            }
+          }, error = function(e) NULL)
           
           is_lme <- inherits(fit, "lme")
           trt_coef_name <- paste0(trt_col_be, trt_levels[2])
@@ -692,9 +735,8 @@ path_be_server <- function(id, shared) {
         balance_result(balance_info)  # persist for the alert panel
         
         setProgress(1, message = "Done!")
+        showNotification("Bioequivalence analysis complete.", type = "message")
       })
-      
-      showNotification("Bioequivalence analysis complete.", type = "message")
     })
     
     # Status

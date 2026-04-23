@@ -137,7 +137,11 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
           if (length(t_sorted) >= 2) {
             gaps <- diff(t_sorted)
             gaps <- gaps[gaps > 0]   # ignore duplicate times (caught separately)
-            if (any(gaps > 24, na.rm = TRUE)) {
+            # Adaptive threshold: multi-day studies (max time > 48 h) use daily
+            # trough sampling with ~24 h intervals. Exact times can be 24.0x h,
+            # triggering a fixed 24 h threshold as a false positive.
+            gap_threshold <- if (max(t_sorted, na.rm = TRUE) > 48) 48 else 24
+            if (any(gaps > gap_threshold, na.rm = TRUE)) {
               gap_subjects <- c(gap_subjects, as.character(s))
               max_gap_seen <- max(max_gap_seen, max(gaps, na.rm = TRUE))
             }
@@ -148,7 +152,8 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
         if (length(t_sorted) >= 2) {
           gaps <- diff(t_sorted)
           gaps <- gaps[gaps > 0]
-          if (any(gaps > 24, na.rm = TRUE)) {
+          gap_threshold <- if (max(t_sorted, na.rm = TRUE) > 48) 48 else 24
+          if (any(gaps > gap_threshold, na.rm = TRUE)) {
             gap_subjects <- c(gap_subjects, as.character(s))
             max_gap_seen <- max(max_gap_seen, max(gaps, na.rm = TRUE))
           }
@@ -158,7 +163,7 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
     gap_subjects <- unique(gap_subjects)
     if (length(gap_subjects) > 0) {
       add("WARNING", "Time",
-          paste0("Large sampling gap (> 24 h) in ",
+          paste0("Large sampling gap (> 24 h / > 48 h for multi-day studies) in ",
                  length(gap_subjects), " subject(s)"),
           paste0("Affected: ", paste(head(gap_subjects, 5), collapse = ", "),
                  if (length(gap_subjects) > 5) " ..." else "",
@@ -204,7 +209,9 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
       # Try to auto-detect LLOQ from "<X" patterns
       lt_vals <- conc_char[grepl("^<", conc_char)]
       if (length(lt_vals) > 0) {
-        lt_nums <- suppressWarnings(as.numeric(gsub("^<\\s*", "", lt_vals)))
+        lt_nums_str <- gsub("^<\\s*", "", lt_vals)
+        lt_nums_str <- gsub(",", ".", lt_nums_str)  # handle European decimal comma
+        lt_nums <- suppressWarnings(as.numeric(lt_nums_str))
         lt_nums <- lt_nums[!is.na(lt_nums)]
         if (length(lt_nums) > 0) {
           add("INFO", "Concentration",

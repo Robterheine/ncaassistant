@@ -287,7 +287,9 @@ data_upload_server <- function(id, shared) {
         detected_lloq <- NULL
         lt_vals <- conc_raw_upload[grepl("^<", conc_raw_upload)]
         if (length(lt_vals) > 0) {
-          lt_nums <- suppressWarnings(as.numeric(gsub("^<\\s*", "", lt_vals)))
+          lt_nums_str <- gsub("^<\\s*", "", lt_vals)
+          lt_nums_str <- gsub(",", ".", lt_nums_str)  # handle European decimal comma
+          lt_nums <- suppressWarnings(as.numeric(lt_nums_str))
           lt_nums <- lt_nums[!is.na(lt_nums)]
           if (length(lt_nums) > 0) detected_lloq <- min(lt_nums)
         }
@@ -317,8 +319,24 @@ data_upload_server <- function(id, shared) {
       # Process
       data <- raw_data()
       data[[col_map$time]] <- suppressWarnings(as.numeric(data[[col_map$time]]))
-      data[[col_map$conc]] <- suppressWarnings(as.numeric(data[[col_map$conc]]))
-      
+
+      # Pre-process BLQ text entries before numeric conversion.
+      # Values like "<0,195" (European decimal) or "<0.1" become NA after
+      # as.numeric(), so apply_blq_rules never sees them as BLQ (it checks
+      # !is.na(x) & x < lloq). Setting them to 0 ensures .is_blq = TRUE,
+      # and apply_blq_rules then handles them correctly per the selected rule.
+      if (input$lloq > 0) {
+        conc_raw_chr <- as.character(data[[col_map$conc]])
+        blq_text_mask <- grepl("^<", conc_raw_chr) &
+                         is.na(suppressWarnings(as.numeric(conc_raw_chr)))
+        if (any(blq_text_mask)) {
+          conc_raw_chr[blq_text_mask] <- "0"  # placeholder: 0 < lloq -> .is_blq = TRUE
+        }
+        data[[col_map$conc]] <- suppressWarnings(as.numeric(conc_raw_chr))
+      } else {
+        data[[col_map$conc]] <- suppressWarnings(as.numeric(data[[col_map$conc]]))
+      }
+
       if (input$lloq > 0) {
         data <- apply_blq_rules(data, col_map, rule = input$blq_rule,
                                 lloq = input$lloq)
