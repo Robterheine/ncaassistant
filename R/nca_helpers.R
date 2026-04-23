@@ -356,7 +356,7 @@ run_nca <- function(data, col_map, settings) {
   
   # If composite key was used, split it back into Subject and Treatment columns
   if (!is.null(result) && use_composite_key) {
-    key_parts <- strsplit(result[[1]], "\\|\\|", fixed = TRUE)
+    key_parts <- strsplit(result[[1]], "||", fixed = TRUE)
     result$Subject   <- sapply(key_parts, `[`, 1)
     result$Treatment <- sapply(key_parts, `[`, 2)
     
