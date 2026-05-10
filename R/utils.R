@@ -109,11 +109,14 @@ rename_nca_columns <- function(df) {
 #' @return Data frame with renamed columns
 rename_summary_columns <- function(df) {
   renames <- c(
+    "Treatment" = "Treatment",
     "Parameter" = "Parameter",
     "N"         = "N",
     "Geo_Mean"  = "Geometric Mean",
     "Geo_CV_pct"= "Geometric CV (%)",
     "Median"    = "Median",
+    "Q25"       = "Q1 (25%)",
+    "Q75"       = "Q3 (75%)",
     "Mean"      = "Arithmetic Mean",
     "SD"        = "Std Dev",
     "CV_pct"    = "CV (%)",
@@ -221,23 +224,40 @@ fmt_pk <- function(x, digits = 4) {
 #' @param data Data frame of NCA results (one row per subject)
 #' @param params Character vector of parameter names to summarize
 #' @return Data frame with summary statistics
-summarize_pk_params <- function(data, params) {
+summarize_pk_params <- function(data, params, group_col = NULL) {
+  # If a grouping column is provided (e.g., Treatment), compute
+  # statistics separately for each group level.
+  if (!is.null(group_col) && group_col %in% names(data)) {
+    groups <- sort(unique(as.character(data[[group_col]])))
+    group_results <- lapply(groups, function(g) {
+      sub <- data[as.character(data[[group_col]]) == g, , drop = FALSE]
+      tbl <- summarize_pk_params(sub, params, group_col = NULL)
+      tbl <- cbind(data.frame(Group = g, stringsAsFactors = FALSE), tbl)
+      tbl
+    })
+    out <- do.call(rbind, group_results)
+    names(out)[1] <- group_col
+    return(out)
+  }
+
   results <- lapply(params, function(p) {
     vals <- as.numeric(data[[p]])
     vals <- vals[!is.na(vals)]
     n <- length(vals)
     if (n == 0) {
       return(data.frame(
-        Parameter = p, N = 0, Mean = NA, SD = NA, CV_pct = NA,
-        Median = NA, Min = NA, Max = NA,
+        Parameter = p, N = 0,
         Geo_Mean = NA, Geo_CV_pct = NA,
+        Median = NA, Q25 = NA, Q75 = NA,
+        Mean = NA, SD = NA, CV_pct = NA,
+        Min = NA, Max = NA,
         stringsAsFactors = FALSE
       ))
     }
     
-    geo_mean <- exp(mean(log(vals[vals > 0])))
-    geo_sd   <- exp(sd(log(vals[vals > 0])))
-    geo_cv   <- sqrt(exp(sd(log(vals[vals > 0]))^2) - 1) * 100
+    pos <- vals[vals > 0]
+    geo_mean <- if (length(pos) >= 2) exp(mean(log(pos))) else NA
+    geo_cv   <- if (length(pos) >= 2) sqrt(exp(sd(log(pos))^2) - 1) * 100 else NA
     
     data.frame(
       Parameter  = p,
@@ -245,6 +265,8 @@ summarize_pk_params <- function(data, params) {
       Geo_Mean   = ifelse(all(vals > 0), geo_mean, NA),
       Geo_CV_pct = ifelse(all(vals > 0), geo_cv, NA),
       Median     = median(vals),
+      Q25        = unname(quantile(vals, 0.25)),
+      Q75        = unname(quantile(vals, 0.75)),
       Mean       = mean(vals),
       SD         = sd(vals),
       CV_pct     = ifelse(mean(vals) != 0, sd(vals) / mean(vals) * 100, NA),
@@ -255,6 +277,36 @@ summarize_pk_params <- function(data, params) {
   })
   
   do.call(rbind, results)
+}
+
+#' Append unit strings to friendly parameter labels
+#'
+#' @param labels Character vector of friendly parameter names
+#' @param dose_unit Dose unit (e.g., "mg")
+#' @param time_unit Time unit (e.g., "h")
+#' @param conc_unit Concentration unit (e.g., "ng/mL")
+#' @return Character vector with units appended where applicable
+add_units_to_labels <- function(labels, dose_unit = "mg", time_unit = "h", conc_unit = "ng/mL") {
+  auc_unit  <- paste0(conc_unit, "\u00b7", time_unit)
+  cl_unit   <- paste0("L/", time_unit)
+  unit_map <- c(
+    "Peak Concentration (Cmax)"          = conc_unit,
+    "Time of Peak (Tmax)"                = time_unit,
+    "AUC to Last Point"                  = auc_unit,
+    "AUC to Infinity (observed)"         = auc_unit,
+    "AUC Within Dosing Interval"         = auc_unit,
+    "Half-Life (h)"                      = time_unit,
+    "Elimination Rate Constant"          = paste0("1/", time_unit),
+    "Apparent Clearance (CL/F)"          = cl_unit,
+    "Apparent Volume (Vz/F)"             = "L",
+    "Lambda_z Lower Time"                = time_unit,
+    "Lambda_z Upper Time"                = time_unit
+  )
+  for (i in seq_along(labels)) {
+    u <- unit_map[labels[i]]
+    if (!is.na(u)) labels[i] <- paste0(labels[i], " (", u, ")")
+  }
+  labels
 }
 
 #' Get available PowerTOST designs as a named list for selectInput

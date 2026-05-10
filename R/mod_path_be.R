@@ -851,12 +851,18 @@ path_be_server <- function(id, shared) {
                             names(display_ci))
       display_ci <- display_ci[, key_cols, drop = FALSE]
       
-      datatable(display_ci,
+      # Fixed 2 decimal places for ratio and CI columns (regulatory standard)
+      num_cols <- intersect(c("Ratio (%)", "90% CI Lower", "90% CI Upper"),
+                            names(display_ci))
+      dt <- datatable(display_ci,
                 options = list(scrollX = TRUE, dom = "t", ordering = FALSE),
                 rownames = FALSE, class = "compact stripe hover") %>%
         formatStyle(be_col,
                     backgroundColor = styleEqual(c("YES","NO"), c("#d4edda","#f8d7da")),
                     fontWeight = "bold")
+      if (length(num_cols) > 0)
+        dt <- dt %>% formatRound(columns = num_cols, digits = 2)
+      dt
     })
     
     # Forest plot

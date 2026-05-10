@@ -772,7 +772,13 @@ server <- function(input, output, session) {
               tags$li("Improved half-life plot: clean tooltips, inline colour legend, no label overlap"),
               tags$li("Fixed startup crash caused by NULL input in module server evaluation"),
               tags$li("Fixed conditionalPanel double-namespacing across all modules"),
-              tags$li("Fixed manual data entry using proper Shiny textAreaInput binding")
+              tags$li("Fixed manual data entry using proper Shiny textAreaInput binding"),
+              tags$li("Summary statistics table now grouped by Treatment for crossover studies; added Q1 (25%) and Q3 (75%) columns"),
+              tags$li("Boxplot now faceted by Treatment for crossover data"),
+              tags$li("Elimination rate constant (\u03BBz) and points used added to default parameter table"),
+              tags$li("Parameter table headers now include units (e.g., Cmax (ng/mL), Half-Life (h))"),
+              tags$li("BE confidence interval table now shows values to 2 decimal places"),
+              tags$li("Visualization: configurable x-axis tick spacing; BLQ exclusion note adapts to selected summary statistic")
             )
           ),
           

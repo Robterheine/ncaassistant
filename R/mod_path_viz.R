@@ -157,7 +157,14 @@ path_viz_ui <- function(id) {
               ),
 
               numericInput(ns("base_size"), "Base font size (pt)",
-                           value = 11, min = 8, max = 18, step = 1)
+                           value = 11, min = 8, max = 18, step = 1),
+              selectizeInput(ns("x_tick"), "X-axis tick spacing",
+                             choices = c("Auto" = "", "1" = "1", "2" = "2",
+                                         "4" = "4", "6" = "6", "8" = "8",
+                                         "12" = "12", "24" = "24"),
+                             selected = "",
+                             options = list(create = TRUE,
+                                           placeholder = "Auto"))
             )
           ),
 
@@ -448,9 +455,11 @@ path_viz_server <- function(id, shared) {
       if (!input$plot_type %in% c("summary", "both")) return(NULL)
       n <- blq_n_summary()
       if (n == 0) return(NULL)
+      stat <- input$summary_stat %||% "geomean"
+      excl_label <- if (stat == "geomean") "from geometric mean" else "from the summary"
       tags$div(class = "alert alert-info py-2 small mb-2",
                icon("triangle-exclamation", class = "me-1"),
-               n, " observation(s) with concentration \u2264 0 excluded from geometric mean.")
+               n, paste0(" observation(s) with concentration \u2264 0 excluded ", excl_label, "."))
     })
 
     output$arithmean_warning <- renderUI({
@@ -656,6 +665,12 @@ path_viz_server <- function(id, shared) {
       p <- p + labs(x = x_lab, y = y_lab,
                     title = if (nzchar(title_txt)) title_txt else NULL)
       if (isTRUE(input$y_scale == "log")) p <- p + scale_y_log10()
+      # X-axis tick spacing (user-configurable or auto)
+      x_tick_val <- suppressWarnings(as.numeric(input$x_tick))
+      if (!is.na(x_tick_val) && x_tick_val > 0) {
+        max_t <- max(d$.time, na.rm = TRUE)
+        p <- p + scale_x_continuous(breaks = seq(0, ceiling(max_t / x_tick_val) * x_tick_val, by = x_tick_val))
+      }
       apply_theme(p, theme_name, base_sz)
     })
 
@@ -768,6 +783,11 @@ path_viz_server <- function(id, shared) {
                     caption = caption_txt)
 
       if (isTRUE(input$y_scale == "log")) p <- p + scale_y_log10()
+      x_tick_val <- suppressWarnings(as.numeric(input$x_tick))
+      if (!is.na(x_tick_val) && x_tick_val > 0) {
+        max_t <- max(summ$.time, na.rm = TRUE)
+        p <- p + scale_x_continuous(breaks = seq(0, ceiling(max_t / x_tick_val) * x_tick_val, by = x_tick_val))
+      }
       apply_theme(p, theme_name, base_sz)
     })
 

@@ -486,6 +486,10 @@ path_multi_nca_server <- function(id, shared) {
     output$param_table <- renderDT({
       req(nca_result())
       display_df <- rename_nca_columns(nca_result())
+      # Append units to parameter column headers
+      names(display_df) <- add_units_to_labels(names(display_df),
+        dose_unit = input$dose_unit, time_unit = input$time_unit,
+        conc_unit = input$conc_unit)
       
       if (!isTRUE(input$show_all_params)) {
         if (isTRUE(input$is_ss)) {
@@ -503,9 +507,10 @@ path_multi_nca_server <- function(id, shared) {
               "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
               "AUC to Last Point", "AUC to Infinity (observed)",
               "AUC % Extrapolated (observed)",
-              "Half-Life (h)", "Apparent Clearance (CL/F)",
-              "Apparent Volume (Vz/F)", "Adjusted R-squared",
-              "Points Used for Half-Life"),
+              "Half-Life (h)", "Elimination Rate Constant",
+              "Points Used for Half-Life",
+              "Apparent Clearance (CL/F)",
+              "Apparent Volume (Vz/F)", "Adjusted R-squared"),
             names(display_df))
         }
         display_df <- display_df[, key_cols, drop = FALSE]
@@ -541,12 +546,13 @@ path_multi_nca_server <- function(id, shared) {
       
       if (isTRUE(input$is_ss)) {
         # At steady state: AUC0-t = AUCtau, show CL/F (derived from AUCtau by NonCompart)
-        key <- intersect(c("CMAX","TMAX","AUCLST","LAMZHL","CLFO"), names(r))
+        key <- intersect(c("CMAX","TMAX","AUCLST","LAMZHL","LAMZ","CLFO"), names(r))
       } else {
-        key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r))
+        key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","LAMZ","CLFO","VZFO"), names(r))
       }
       if (length(key) == 0) return(NULL)
-      summ <- summarize_pk_params(r, key)
+      group <- if ("Treatment" %in% names(r)) "Treatment" else NULL
+      summ <- summarize_pk_params(r, key, group_col = group)
       summ <- rename_summary_columns(summ)
       
       # At steady state, relabel AUC to Last Point as AUC within dosing interval
@@ -566,18 +572,28 @@ path_multi_nca_server <- function(id, shared) {
       r <- nca_result()
       key <- intersect(c("CMAX","AUCLST","AUCIFO","LAMZHL"), names(r))
       if (length(key) == 0) return(plotly_empty())
+      has_trt <- "Treatment" %in% names(r)
+      id_cols <- if (has_trt) c("Treatment") else character(0)
       long <- r %>%
-        select(all_of(key)) %>%
-        pivot_longer(everything(), names_to = "Parameter", values_to = "Value") %>%
+        select(all_of(c(id_cols, key))) %>%
+        pivot_longer(all_of(key), names_to = "Parameter", values_to = "Value") %>%
         mutate(Value = as.numeric(Value),
                Parameter = sapply(Parameter, friendly_name)) %>%
         filter(!is.na(Value))
-      p <- ggplot(long, aes(x = Parameter, y = Value)) +
-        geom_boxplot(fill = "#3498DB", alpha = 0.6) +
-        geom_jitter(width = 0.15, alpha = 0.4, size = 1.5) +
-        facet_wrap(~Parameter, scales = "free", nrow = 1) +
-        theme_minimal(base_size = 11) +
-        theme(axis.text.x = element_blank())
+      if (has_trt) {
+        p <- ggplot(long, aes(x = Treatment, y = Value, fill = Treatment)) +
+          geom_boxplot(alpha = 0.6) +
+          geom_jitter(width = 0.15, alpha = 0.4, size = 1.5) +
+          facet_wrap(~Parameter, scales = "free", nrow = 1) +
+          theme_minimal(base_size = 11)
+      } else {
+        p <- ggplot(long, aes(x = Parameter, y = Value)) +
+          geom_boxplot(fill = "#3498DB", alpha = 0.6) +
+          geom_jitter(width = 0.15, alpha = 0.4, size = 1.5) +
+          facet_wrap(~Parameter, scales = "free", nrow = 1) +
+          theme_minimal(base_size = 11) +
+          theme(axis.text.x = element_blank())
+      }
       ggplotly(p)
     })
     
