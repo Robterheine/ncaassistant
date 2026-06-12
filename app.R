@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.2.2
+# Non-Compartmental Analysis Assistant v1.2.3
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # Designed by Rob ter Heine
@@ -14,7 +14,7 @@
 #   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.2.2"
+APP_VERSION <- "1.2.3"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 # Allow uploads up to 50 MB (Shiny default is 5 MB)
@@ -690,8 +690,20 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.2.2",
+            tags$h6(class = "fw-bold mb-1", "v1.2.3",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "June 2026"),
+            tags$ul(class = "mb-0",
+              tags$li("Bug fix: NCA no longer fails (“NCA failed” / “Check input types!”) under NonCompart 0.8.0, which strictly rejects non-numeric input. run_nca (batch + bioequivalence) and the single-subject NCA now coerce time, concentration, dose, duration, and MW to numeric — and sort by numeric time — before calling NonCompart, so analysis is robust to character-typed columns from any upload path, locale, or package version"),
+              tags$li("Single-subject (uploaded mode): profile time/concentration are coerced and numerically sorted at the source, fixing a lexicographic-ordering hazard (“12” before “2”) on character columns"),
+              tags$li("Validation: added regression test NCA-ED-07 (run_nca on character-typed time/concentration must match the numeric result) — the gap that let this reach release, since all prior NCA fixtures were numeric"),
+              tags$li("No change to NCA, bioequivalence, or power results for valid numeric data")
+            )
+          ),
+
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.2.2"),
             tags$p(class = "text-muted mb-1", "June 2026"),
             tags$ul(class = "mb-0",
               tags$li("Analysis records now carry a three-way SHA-256 integrity manifest (data_integrity.txt) fingerprinting the source data, the analysis settings, and the results — every artefact independently verifiable for traceability"),

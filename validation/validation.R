@@ -383,6 +383,19 @@ check("NCA-ED-05", "Edge: sparse 3pt", { r<-run_nca(data.frame(Subject="A",Time=
       "URS-NCA-10", method="3 points", expected="Cmax=10", critical=TRUE)
 check("NCA-ED-06", "Edge: large conc", { r<-run_nca(data.frame(Subject=rep("A",5),Time=c(0,1,2,4,8),Conc=c(0,1e8,5e7,1e7,1e6)),iv_cm,theoph_settings); !is.null(r)&&as.numeric(r$CMAX[1])==1e8 },
       "URS-NCA-10", method="1e8 concentration", expected="Cmax=1e8", critical=FALSE)
+# Regression guard: NonCompart 0.8.0 hard-stops ("Check input types!") on
+# non-numeric input, and a character time column also sorts lexicographically
+# ("12" before "2"). run_nca must coerce defensively and still match numeric.
+# Times 0,1,2,4,8,12 deliberately trigger the lexicographic-sort hazard.
+check("NCA-ED-07", "Robustness: character-typed time/conc",
+      { dn<-data.frame(Subject=rep("A",6),Time=c(0,1,2,4,8,12),Conc=c(0,100,80,40,12,2),stringsAsFactors=FALSE)
+        dc<-dn; dc$Time<-as.character(dc$Time); dc$Conc<-as.character(dc$Conc)
+        rn<-run_nca(dn,iv_cm,theoph_settings); rc<-run_nca(dc,iv_cm,theoph_settings)
+        !is.null(rn) && !is.null(rc) &&
+          isTRUE(all.equal(as.numeric(rn$CMAX),   as.numeric(rc$CMAX))) &&
+          isTRUE(all.equal(as.numeric(rn$AUCLST), as.numeric(rc$AUCLST))) },
+      "URS-NCA-10", method="run_nca: character vs numeric time/conc (NonCompart 0.8.0 type robustness)",
+      expected="Identical CMAX & AUClast; no type/sort failure", critical=TRUE)
 
 parse_manual <- function(tt, cc) {
   tl<-trimws(unlist(strsplit(tt,"\n"))); cl<-trimws(unlist(strsplit(cc,"\n")))
@@ -569,8 +582,8 @@ check("EXP-DT-02", "Determinism: summary", { s1<-summarize_pk_params(theoph_resu
       "URS-EXP-01", method="Summary twice", expected="Identical", critical=TRUE)
 check("EXP-VR-01", "APP_VERSION queryable", nchar(APP_VERSION)>0&&APP_VERSION!="unknown",
       "URS-EXP-06", method="APP_VERSION from app.R", expected="Non-empty", critical=TRUE)
-check("EXP-VR-02", "APP_VERSION is 1.2.2", APP_VERSION=="1.2.2",
-      "URS-EXP-06", method="=='1.2.2'", expected="1.2.2", critical=FALSE)
+check("EXP-VR-02", "APP_VERSION is 1.2.3", APP_VERSION=="1.2.3",
+      "URS-EXP-06", method="=='1.2.3'", expected="1.2.3", critical=FALSE)
 check("EXP-VR-03", "Package versions", { v<-sapply(c("NonCompart","PowerTOST","nlme"),function(p)as.character(packageVersion(p))); all(nchar(v)>0) },
       "URS-EXP-06", method="packageVersion", expected="All return strings", critical=TRUE)
 check("EXP-SH-01", "SHA-256 computable", nchar(digest(file="validation/validation.R",algo="sha256"))==64,

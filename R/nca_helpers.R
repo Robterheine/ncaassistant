@@ -297,6 +297,15 @@ run_nca <- function(data, col_map, settings) {
     nca_key <- col_map$subject
   }
   
+  # Force numeric time/concentration BEFORE sorting and filtering. As of
+  # NonCompart 0.8.0, sNCA() hard-stops with "Check input types!" on non-numeric
+  # input, and a character time column would also sort lexicographically
+  # ("10" before "2"), breaking tblNCA's monotonic-time requirement. Coercing
+  # here makes the NCA robust to a stray character column regardless of upload
+  # path, locale, or NonCompart version. Numeric input is unaffected.
+  data[[col_map$time]] <- suppressWarnings(as.numeric(as.character(data[[col_map$time]])))
+  data[[col_map$conc]] <- suppressWarnings(as.numeric(as.character(data[[col_map$conc]])))
+
   # Ensure data is sorted by key and time
   data <- data[order(data[[nca_key]], data[[col_map$time]]), ]
   
@@ -329,7 +338,16 @@ run_nca <- function(data, col_map, settings) {
   
   # Abort cleanly if no valid profiles remain
   if (nrow(data) == 0 || length(good_keys) == 0) return(NULL)
-  
+
+  # Force numeric dose/duration/MW too (sNCA type-checks these as well).
+  dose_num <- suppressWarnings(as.numeric(settings$dose))
+  dur_in   <- if (is.null(settings$infusion_duration)) 0 else settings$infusion_duration
+  dur_num  <- suppressWarnings(as.numeric(dur_in))
+  if (length(dur_num) == 0 || is.na(dur_num)) dur_num <- 0
+  mw_in    <- if (is.null(settings$mw)) 0 else settings$mw
+  mw_num   <- suppressWarnings(as.numeric(mw_in))
+  if (length(mw_num) == 0 || is.na(mw_num)) mw_num <- 0
+
   # Run NCA via NonCompart
   result <- tryCatch({
     tblNCA(
@@ -337,15 +355,15 @@ run_nca <- function(data, col_map, settings) {
       key       = nca_key,
       colTime   = col_map$time,
       colConc   = col_map$conc,
-      dose      = settings$dose,
+      dose      = dose_num,
       adm       = adm,
-      dur       = settings$infusion_duration,
+      dur       = dur_num,
       doseUnit  = settings$dose_unit,
       timeUnit  = settings$time_unit,
       concUnit  = settings$conc_unit,
       down      = down_method,
       R2ADJ     = settings$r2adj_threshold,
-      MW        = settings$mw,
+      MW        = mw_num,
       SS        = settings$is_steady_state,
       iAUC      = iAUC_df
     )

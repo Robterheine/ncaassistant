@@ -373,8 +373,13 @@ path_single_nca_server <- function(id, shared) {
           sub_d <- d[d[[cm$subject]] == trimws(parts[1]) &
                        d[[cm$treatment]] == trimws(parts[2]), ]
         } else sub_d <- d[d[[cm$subject]] == sel, ]
-        sub_d <- sub_d[order(sub_d[[cm$time]]), ]
-        list(time = sub_d[[cm$time]], conc = sub_d[[cm$conc]], label = sel)
+        # Coerce to numeric BEFORE ordering: a character time column would sort
+        # lexicographically ("10" before "2"), producing a non-monotonic profile
+        # that NonCompart rejects. Numeric input is unaffected.
+        sub_t <- suppressWarnings(as.numeric(as.character(sub_d[[cm$time]])))
+        sub_c <- suppressWarnings(as.numeric(as.character(sub_d[[cm$conc]])))
+        ord <- order(sub_t)
+        list(time = sub_t[ord], conc = sub_c[ord], label = sel)
       }
     })
     
@@ -413,7 +418,12 @@ path_single_nca_server <- function(id, shared) {
       adm <- switch(input$admin_route, "extravascular"="Extravascular",
                      "iv_bolus"="Bolus", "iv_infusion"="Infusion")
       down <- switch(input$trap_method, "linear"="Linear", "log"="Log")
-      r <- tryCatch(NonCompart::sNCA(d$time, d$conc, dose = input$dose,
+      # NonCompart 0.8.0 hard-stops ("Check input types!") unless time, conc, and
+      # dose are numeric. Coerce defensively so a stray character value can't fail NCA.
+      t_num <- suppressWarnings(as.numeric(as.character(d$time)))
+      c_num <- suppressWarnings(as.numeric(as.character(d$conc)))
+      dose_num <- suppressWarnings(as.numeric(input$dose))
+      r <- tryCatch(NonCompart::sNCA(t_num, c_num, dose = dose_num,
                                       adm = adm, down = down,
                                       doseUnit = input$dose_unit,
                                       timeUnit = input$time_unit,
@@ -423,12 +433,12 @@ path_single_nca_server <- function(id, shared) {
                                       dur   = if (input$admin_route == "iv_infusion") input$inf_dur else 0),
                      error = function(e) { showNotification(paste("Error:", e$message), type="error"); NULL })
       
-      # For steady-state: derive tau-based parameters
+      # For steady-state: derive tau-based parameters (use coerced numerics)
       if (!is.null(r) && isTRUE(input$is_ss)) {
-        tau   <- max(d$time, na.rm = TRUE) - min(d$time, na.rm = TRUE)
+        tau   <- max(t_num, na.rm = TRUE) - min(t_num, na.rm = TRUE)
         auclst <- as.numeric(r["AUCLST"])
         cmax   <- as.numeric(r["CMAX"])
-        cmin   <- min(d$conc[!is.na(d$conc)], na.rm = TRUE)
+        cmin   <- min(c_num[!is.na(c_num)], na.rm = TRUE)
         cavg   <- if (tau > 0 && !is.na(auclst)) auclst / tau else NA
         fluct  <- if (!is.na(cavg) && cavg > 0) (cmax - cmin) / cavg * 100 else NA
         swing  <- if (!is.na(cmin) && cmin > 0) (cmax - cmin) / cmin else NA

@@ -1,6 +1,6 @@
 # NCA Assistant — Validation Package
 
-This folder contains the validation package for NCA Assistant v1.2.2. It follows a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles for custom software used in a regulated pharmaceutical environment.
+This folder contains the validation package for NCA Assistant v1.2.3. It follows a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles for custom software used in a regulated pharmaceutical environment.
 
 ---
 
@@ -37,7 +37,7 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **180 automated tests** across nine sections, each mapped to a URS requirement:
+The script runs **181 automated tests** across nine sections, each mapped to a URS requirement:
 
 | Section | Code | Tests cover |
 |---------|------|-------------|
