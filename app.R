@@ -17,6 +17,13 @@
 APP_VERSION <- "1.2.6"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
+# Mirror APP_VERSION into the global environment. When RStudio runs a single-file
+# app via runApp(), app.R is evaluated in its own environment, so APP_VERSION is
+# NOT in globalenv — but the record/export helpers (sourced into globalenv) look
+# it up there. This makes the version resolve correctly in the analysis-record
+# HTML summary and settings JSON instead of falling back to a placeholder.
+assign("APP_VERSION", APP_VERSION, envir = globalenv())
+
 # Allow uploads up to 50 MB (Shiny default is 5 MB)
 options(shiny.maxRequestSize = 50 * 1024^2)
 
