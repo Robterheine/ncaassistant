@@ -1,6 +1,6 @@
 # NCA Assistant — Validation Package
 
-This folder contains the validation package for NCA Assistant v1.2. It follows a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles for custom software used in a regulated pharmaceutical environment.
+This folder contains the validation package for NCA Assistant v1.2.2. It follows a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles for custom software used in a regulated pharmaceutical environment.
 
 ---
 
@@ -9,7 +9,7 @@ This folder contains the validation package for NCA Assistant v1.2. It follows a
 | File | Description |
 |------|-------------|
 | `validation.R` | Consolidated validation script (Attachment A to the IQ/OQ/PQ protocol) |
-| `NCA_Assistant_URS.docx` | User Requirement Specification — 49 requirements across 8 categories |
+| `NCA_Assistant_URS.docx` | User Requirement Specification — 57 requirements across 8 categories |
 | `NCA_Assistant_IQOQPQ.docx` | IQ/OQ/PQ protocol — every test listed individually with method, expected result, URS cross-reference, and criticality |
 | `validation_results.csv` | Generated on each run — pass/fail record with timestamps and environment details |
 
@@ -37,7 +37,7 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **169 automated tests** across eight sections, each mapped to a URS requirement:
+The script runs **178 automated tests** across nine sections, each mapped to a URS requirement:
 
 | Section | Code | Tests cover |
 |---------|------|-------------|
@@ -51,7 +51,7 @@ The script runs **169 automated tests** across eight sections, each mapped to a 
 | Usability & Code Quality | UI | Module loading, defensive coding checks |
 | Visualisation | VIZ | Plot data construction, dose normalisation, colour palette handling |
 
-In addition, **24 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload, column mapping, the half-life review inspector, and the Complete Analysis Record download. The manual test definitions are included in the script for traceability but are marked SKIP in automated runs.
+In addition, **32 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload, column mapping, the half-life review inspector, the Complete Analysis Record download (across all four analysis paths), and the Visualize Figure Record. The manual test definitions are included in the script for traceability but are marked SKIP in automated runs.
 
 ---
 
@@ -72,7 +72,7 @@ A passing run produces:
 
 ```
 ALL CRITICAL TESTS PASSED
-URS: 49/49 covered
+URS: 57/57 covered
 Results: validation/validation_results.csv
 ```
 
