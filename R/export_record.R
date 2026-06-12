@@ -6,7 +6,7 @@
 
 # Schema version for analysis_settings.json / figure_settings.json. Increment
 # when the settings structure changes so downstream tooling can branch on it.
-RECORD_SCHEMA_VERSION <- "1.2.1"
+RECORD_SCHEMA_VERSION <- "1.2.2"
 
 #' Zip the contents of a directory into output_path without changing the global
 #' working directory (session-safe in multi-session Shiny deployments).
@@ -47,6 +47,131 @@ zip_record_dir <- function(rec_dir, output_path) {
   invisible(output_path)
 }
 
+#' SHA-256 hash of a file, or a placeholder when it can't be computed.
+sha256_or_na <- function(path) {
+  if (!is.null(path) && file.exists(path) &&
+      requireNamespace("digest", quietly = TRUE)) {
+    digest::digest(file = path, algo = "sha256")
+  } else {
+    "not computed"
+  }
+}
+
+#' Write a three-way data-integrity manifest (data_integrity.txt)
+#'
+#' Records a SHA-256 hash for each artefact in the record (source data, analysis
+#' settings, and results — plus the figure for visualisation records) so the
+#' whole package is independently verifiable. This is the traceability anchor:
+#' recompute any hash and confirm it matches, linking source data → settings →
+#' results.
+#'
+#' @param rec_dir Record directory to write data_integrity.txt into
+#' @param artifacts Named list: label -> absolute file path (order preserved)
+#' @return invisibly, a named character vector of label -> hash
+write_integrity_manifest <- function(rec_dir, artifacts) {
+  hashes <- character(0)
+  lines <- c(
+    "Data Integrity Verification (SHA-256)",
+    "=====================================",
+    "",
+    "This manifest fingerprints every artefact in this analysis record so the",
+    "package is independently verifiable and traceable end to end:",
+    "source data → analysis settings → results.",
+    "Recompute any hash below and confirm it matches; a match proves that file",
+    "has not been altered since the analysis was performed.",
+    "")
+  for (lab in names(artifacts)) {
+    p <- artifacts[[lab]]
+    h <- sha256_or_na(p)
+    hashes[[lab]] <- h
+    sz <- if (!is.null(p) && file.exists(p)) as.character(file.info(p)$size) else "NA"
+    lines <- c(lines,
+               paste0(lab, ":"),
+               paste0("  file:    ", if (!is.null(p)) basename(p) else "(none)"),
+               paste0("  size:    ", sz, " bytes"),
+               paste0("  SHA-256: ", h),
+               "")
+  }
+  lines <- c(lines,
+             "To verify any file, in R run:",
+             "  digest::digest(file = \"<filename>\", algo = \"sha256\")",
+             "and confirm the result matches the hash above.",
+             "",
+             paste0("Computed at: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")))
+  writeLines(lines, file.path(rec_dir, "data_integrity.txt"))
+  invisible(hashes)
+}
+
+#' Generate the R code block that auto-compares reproduced vs app results
+#'
+#' Bundled into the reproduction script. Reads app_results_reference.csv (the
+#' app's own computed results, shipped in the record) and reports the maximum
+#' relative difference and a MATCH/CLOSE/DIFFERENT verdict.
+#'
+#' @param mode "table" (data frame, batch/BE) or "vector" (single subject)
+.comparison_block <- function(mode = "table") {
+  if (mode == "vector") {
+'
+# --- Automated check: reproduced vs app results -----------------------------
+# The record ships the app\'s own results (app_results_reference.csv). This block
+# compares the reproduction against them and reports whether they agree.
+ref_file <- "app_results_reference.csv"
+if (file.exists(ref_file)) {
+  app_ref <- read.csv(ref_file, stringsAsFactors = FALSE)
+  common  <- intersect(names(result), app_ref$Parameter)
+  a <- suppressWarnings(as.numeric(result[common]))
+  b <- suppressWarnings(as.numeric(app_ref$Value[match(common, app_ref$Parameter)]))
+  both <- is.finite(a) & is.finite(b)
+  if (any(both)) {
+    rel <- abs(a[both] - b[both]) / pmax(abs(b[both]), 1e-12)
+    max_rel <- max(rel)
+    verdict <- if (max_rel < 1e-6) "MATCH" else if (max_rel < 1e-3) "CLOSE" else "DIFFERENT"
+    cat("\\n--- Reproduction check: reproduced vs app ---\\n")
+    cat(sprintf("Compared %d parameters. Max relative difference: %.3g -> %s\\n",
+                sum(both), max_rel, verdict))
+    cat(if (verdict == "MATCH") "The standalone reproduction matches the app output.\\n"
+        else "Review the parameters above for differences.\\n")
+  }
+} else {
+  cat("\\n(app_results_reference.csv not found - compare reproduced_results.csv with results.xlsx manually.)\\n")
+}
+'
+  } else {
+'
+# --- Automated check: reproduced vs app results -----------------------------
+# The record ships the app\'s own results (app_results_reference.csv). This block
+# compares the reproduction against them and reports whether they agree.
+ref_file <- "app_results_reference.csv"
+if (file.exists(ref_file)) {
+  app_ref <- read.csv(ref_file, stringsAsFactors = FALSE, check.names = FALSE)
+  shared_cols <- intersect(names(result), names(app_ref))
+  if (nrow(result) == nrow(app_ref) && length(shared_cols) > 0) {
+    max_rel <- 0; n_cmp <- 0; n_par <- 0
+    for (cn in shared_cols) {
+      a <- suppressWarnings(as.numeric(as.character(result[[cn]])))
+      b <- suppressWarnings(as.numeric(as.character(app_ref[[cn]])))
+      both <- is.finite(a) & is.finite(b)
+      if (!any(both)) next
+      n_par <- n_par + 1
+      rel <- abs(a[both] - b[both]) / pmax(abs(b[both]), 1e-12)
+      max_rel <- max(max_rel, max(rel)); n_cmp <- n_cmp + sum(both)
+    }
+    verdict <- if (max_rel < 1e-6) "MATCH" else if (max_rel < 1e-3) "CLOSE" else "DIFFERENT"
+    cat("\\n--- Reproduction check: reproduced vs app (", nrow(result), " rows) ---\\n", sep = "")
+    cat(sprintf("Compared %d numeric values across %d parameters. Max relative difference: %.3g -> %s\\n",
+                n_cmp, n_par, max_rel, verdict))
+    cat(if (verdict == "MATCH") "The standalone reproduction matches the app output.\\n"
+        else "Review the parameters above for differences.\\n")
+  } else {
+    cat("\\nRow/column layout differs from app reference - compare reproduced_results.csv with results.xlsx manually.\\n")
+  }
+} else {
+  cat("\\n(app_results_reference.csv not found - compare reproduced_results.csv with results.xlsx manually.)\\n")
+}
+'
+  }
+}
+
 #' Generate the standalone reproducibility R script for NCA
 #' @param settings List of NCA settings
 #' @param col_map Column mapping
@@ -54,9 +179,10 @@ zip_record_dir <- function(rec_dir, output_path) {
 #' @param blq_rule BLQ rule used
 #' @param lloq LLOQ value
 #' @param lz_overrides Named list of lambda_z overrides (subject -> list)
+#' @param data_sha256 Recorded SHA-256 of the source data (for an integrity check)
 #' @return Character string containing the complete R script
 generate_nca_script <- function(settings, col_map, file_name, blq_rule, lloq,
-                                 lz_overrides = NULL) {
+                                 lz_overrides = NULL, data_sha256 = NULL) {
   
   adm_map <- c(extravascular = "Extravascular", iv_bolus = "Bolus",
                 iv_infusion = "Infusion")
@@ -164,9 +290,18 @@ cat("Data loaded:", nrow(data), "rows,", ncol(data), "columns\\n")
 
 # --- Step 3: Verify data integrity ------------------------------------------
 
+recorded_data_sha256 <- "', if (!is.null(data_sha256)) data_sha256 else "", '"
 if (requireNamespace("digest", quietly = TRUE)) {
   file_hash <- digest::digest(file = data_file, algo = "sha256")
-  cat("SHA-256 hash:", file_hash, "\\n")
+  cat("SHA-256 hash (recomputed):", file_hash, "\\n")
+  if (nzchar(recorded_data_sha256)) {
+    cat("SHA-256 hash (recorded):  ", recorded_data_sha256, "\\n")
+    if (identical(file_hash, recorded_data_sha256)) {
+      cat("Data integrity: MATCH - the data file is unchanged since the analysis.\\n")
+    } else {
+      cat("Data integrity: MISMATCH - this data file differs from the analysed file!\\n")
+    }
+  }
 } else {
   cat("Install the digest package to verify data integrity: install.packages(\\"digest\\")\\n")
 }
@@ -310,9 +445,12 @@ result <- NonCompart::tblNCA(
 write.csv(result, "reproduced_results.csv", row.names = FALSE)
 cat("\\nResults saved to: reproduced_results.csv\\n")
 cat("Subjects analyzed:", nrow(result), "\\n")
-cat("\\nDone. Compare reproduced_results.csv with the app output.\\n")
+
+# --- Step 10: Compare reproduced results with the app -----------------------',
+.comparison_block("table"), '
+cat("\\nDone.\\n")
 ')
-  
+
   script
 }
 
@@ -326,7 +464,8 @@ cat("\\nDone. Compare reproduced_results.csv with the app output.\\n")
 generate_single_nca_script <- function(time_vec, conc_vec, settings,
                                         subject_label = "Subject",
                                         file_name = NULL,
-                                        lz_override = NULL) {
+                                        lz_override = NULL,
+                                        data_sha256 = NULL) {
 
   adm_map <- c(extravascular = "Extravascular", iv_bolus = "Bolus",
                 iv_infusion = "Infusion")
@@ -392,6 +531,17 @@ if (file_ext %in% c("csv", "txt")) {
   if (!requireNamespace("readxl", quietly = TRUE))
     install.packages("readxl", repos = "https://cloud.r-project.org")
   data <- as.data.frame(readxl::read_excel(data_file))
+}
+
+# Verify data integrity against the hash recorded at analysis time
+recorded_data_sha256 <- "', if (!is.null(data_sha256)) data_sha256 else "", '"
+if (nzchar(recorded_data_sha256) && requireNamespace("digest", quietly = TRUE)) {
+  file_hash <- digest::digest(file = data_file, algo = "sha256")
+  cat("SHA-256 (recomputed):", file_hash, "\\n")
+  cat("SHA-256 (recorded):  ", recorded_data_sha256, "\\n")
+  cat(if (identical(file_hash, recorded_data_sha256))
+        "Data integrity: MATCH - the data file is unchanged since the analysis.\\n"
+      else "Data integrity: MISMATCH - this data file differs from the analysed file!\\n")
 }
 
 # The analysis was performed on the following data:
@@ -471,6 +621,9 @@ cat("\\nKey parameters:\\n")
 for (p in c("CMAX", "TMAX", "AUCLST", "AUCIFO", "LAMZHL", "CLFO", "VZFO")) {
   if (p %in% names(result)) cat(sprintf("  %s = %s\\n", p, result[p]))
 }
+
+# --- Step 5: Compare reproduced results with the app ------------------------',
+.comparison_block("vector"), '
 cat("\\nDone.\\n")
 ')
 }
@@ -630,10 +783,16 @@ if (lloq > 0) paste0('<p>Concentrations below the LLOQ (', lloq, ' ', settings$c
 <code>setwd("path/to/your/folder")</code></li>
 <li>Run the script:<br>
 <code>source("reproduce_analysis.R")</code></li>
-<li>The script installs any missing packages automatically and produces
-<code>reproduced_results.csv</code>.</li>
-<li>Compare with <code>results.xlsx</code> from this package.</li>
+<li>The script installs any missing packages automatically, produces
+<code>reproduced_results.csv</code>, and <strong>automatically compares</strong> its
+output against the app\'s results (<code>app_results_reference.csv</code>, included),
+printing a <code>MATCH</code> / <code>DIFFERENT</code> verdict. It also re-checks the
+data file\'s SHA-256 against the recorded value.</li>
 </ol>
+<p style="font-size:12px; color:#7f8c8d; margin-bottom:0;">
+Independent integrity: <code>data_integrity.txt</code> lists SHA-256 hashes for the
+source data, the analysis settings, and the results, so every artefact in this
+package can be verified separately.</p>
 </div>
 
 <h2>8. References</h2>
@@ -705,7 +864,11 @@ create_analysis_record <- function(output_path, results, settings, col_map,
                 else nrow(results)
   n_obs <- if (!is.null(settings$n_obs)) settings$n_obs else "?"
   analysis_type <- if (!is.null(be_results)) "Bioequivalence" else "Non-Compartmental Analysis"
-  
+
+  # SHA-256 of the source data file — embedded in the reproduce script (so it can
+  # confirm the data is unchanged) and listed in the integrity manifest.
+  data_sha256 <- sha256_or_na(original_file_path)
+
   # 1. Results Excel
   tryCatch({
     wb <- openxlsx::createWorkbook()
@@ -728,7 +891,14 @@ create_analysis_record <- function(output_path, results, settings, col_map,
     }
     openxlsx::saveWorkbook(wb, file.path(rec_dir, "results.xlsx"), overwrite = TRUE)
   }, error = function(e) warning("Could not create results.xlsx: ", e$message))
-  
+
+  # 1b. Machine-readable reference results (raw NonCompart columns) so the
+  #     reproduce script can compare its output against the app automatically.
+  tryCatch({
+    write.csv(results, file.path(rec_dir, "app_results_reference.csv"),
+              row.names = FALSE)
+  }, error = function(e) warning("Could not write app_results_reference.csv: ", e$message))
+
   # 2. Settings JSON
   tryCatch({
     settings_export <- list(
@@ -769,32 +939,21 @@ create_analysis_record <- function(output_path, results, settings, col_map,
                file.path(rec_dir, "analysis_settings.json"))
   }, error = function(e) warning("Could not create settings JSON: ", e$message))
   
-  # 3. Reproducibility R script
+  # 3. Reproducibility R script (with embedded source-data hash for verification)
   tryCatch({
     script <- generate_nca_script(settings, col_map, original_file_name,
-                                   blq_rule, lloq, lz_overrides)
+                                   blq_rule, lloq, lz_overrides,
+                                   data_sha256 = data_sha256)
     writeLines(script, file.path(rec_dir, "reproduce_analysis.R"))
   }, error = function(e) warning("Could not create R script: ", e$message))
-  
-  # 4. Data integrity
+
+  # 4. Data integrity — three-way SHA-256 manifest (source data, settings, results)
   tryCatch({
-    file_hash <- if (requireNamespace("digest", quietly = TRUE)) {
-      digest::digest(file = original_file_path, algo = "sha256")
-    } else {
-      "digest package not available — hash not computed"
-    }
-    integrity <- paste0(
-      "Data Integrity Verification\n",
-      "===========================\n\n",
-      "File name:    ", original_file_name, "\n",
-      "File size:    ", file.info(original_file_path)$size, " bytes\n",
-      "SHA-256 hash: ", file_hash, "\n",
-      "Computed at:  ", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), "\n\n",
-      "To verify: in R, run:\n",
-      "  digest::digest(file = \"", original_file_name, "\", algo = \"sha256\")\n",
-      "The result should match the hash above.\n"
-    )
-    writeLines(integrity, file.path(rec_dir, "data_integrity.txt"))
+    write_integrity_manifest(rec_dir, list(
+      "Source data"       = original_file_path,
+      "Analysis settings" = file.path(rec_dir, "analysis_settings.json"),
+      "Results (Excel)"   = file.path(rec_dir, "results.xlsx")
+    ))
   }, error = function(e) warning("Could not create integrity file: ", e$message))
   
   # 5. Summary HTML
@@ -882,6 +1041,14 @@ create_single_analysis_record <- function(output_path, result, settings,
     openxlsx::saveWorkbook(wb, file.path(rec_dir, "results.xlsx"), overwrite = TRUE)
   }, error = function(e) warning("Could not create results.xlsx: ", e$message))
 
+  # 1b. Machine-readable reference results (Parameter abbreviation / Value) so
+  #     the reproduce script can compare against the app automatically.
+  tryCatch({
+    write.csv(data.frame(Parameter = names(result), Value = as.character(result),
+                         stringsAsFactors = FALSE),
+              file.path(rec_dir, "app_results_reference.csv"), row.names = FALSE)
+  }, error = function(e) warning("Could not write app_results_reference.csv: ", e$message))
+
   # 2. Settings JSON — full schema, parity with batch/BE
   tryCatch({
     settings_export <- list(
@@ -918,36 +1085,37 @@ create_single_analysis_record <- function(output_path, result, settings,
   }, error = function(e) warning("Could not create settings JSON: ", e$message))
 
   # 3. Reproducibility R script (threshold + override now reproduced faithfully)
+  data_sha256 <- if (has_file) sha256_or_na(original_file_path) else NULL
   tryCatch({
     script <- generate_single_nca_script(
       time_vec = time_vec, conc_vec = conc_vec, settings = settings,
       subject_label = subject_label,
       file_name = if (has_file) original_file_name else NULL,
-      lz_override = lz_override
+      lz_override = lz_override,
+      data_sha256 = data_sha256
     )
     writeLines(script, file.path(rec_dir, "reproduce_analysis.R"))
   }, error = function(e) warning("Could not create R script: ", e$message))
 
-  # 4 + 6. Data integrity and original data copy
+  # 4 + 6. Original data copy, then three-way integrity manifest
   file_hash <- "N/A (manual entry)"
   tryCatch({
     if (has_file) {
-      if (requireNamespace("digest", quietly = TRUE)) {
-        file_hash <- digest::digest(file = original_file_path, algo = "sha256")
-      }
-      writeLines(paste0(
-        "Data Integrity Verification\n===========================\n\n",
-        "File name:    ", original_file_name, "\n",
-        "SHA-256 hash: ", file_hash, "\n",
-        "Computed at:  ", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), "\n"),
-        file.path(rec_dir, "data_integrity.txt"))
+      file_hash <- sha256_or_na(original_file_path)
       file.copy(original_file_path, file.path(rec_dir, original_file_name),
                 overwrite = TRUE)
+      source_path <- original_file_path
     } else {
       # Manual entry: persist the typed data so the record is self-contained
       write.csv(data.frame(Time = time_vec, Concentration = conc_vec),
                 file.path(rec_dir, "manual_entry.csv"), row.names = FALSE)
+      source_path <- file.path(rec_dir, "manual_entry.csv")
     }
+    write_integrity_manifest(rec_dir, list(
+      "Source data"       = source_path,
+      "Analysis settings" = file.path(rec_dir, "analysis_settings.json"),
+      "Results (Excel)"   = file.path(rec_dir, "results.xlsx")
+    ))
   }, error = function(e) warning("Could not create integrity file: ", e$message))
 
   # 5. Summary HTML
@@ -1123,6 +1291,17 @@ p <- p + ggplot2::theme_bw()
 ggplot2::ggsave("reproduced_figure.', fmt, '", plot = p, device = "', fmt, '",
                 width = ', width_in, ', height = ', height_in, ', dpi = ', dpi, ', units = "in")
 cat("Saved reproduced_figure.', fmt, '\\n")
+
+# --- Step 6: Compare with the app figure ------------------------------------
+# A figure is compared visually rather than numerically: open
+# "reproduced_figure.', fmt, '" next to "figure.', fmt, '" (shipped in this record)
+# and confirm they match. The data file SHA-256 in data_integrity.txt confirms
+# the underlying data is identical.
+if (file.exists("figure.', fmt, '")) {
+  cat("Compare reproduced_figure.', fmt, ' with figure.', fmt, ' (bundled) - they should match.\\n")
+} else {
+  cat("Bundled figure.', fmt, ' not found alongside the script; compare against the record copy.\\n")
+}
 ')
 }
 
@@ -1277,23 +1456,19 @@ create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
     writeLines(script, file.path(rec_dir, "reproduce_figure.R"))
   }, error = function(e) warning("Could not create figure R script: ", e$message))
 
-  # 4 + 6. Data integrity + original data copy
-  file_hash <- "not computed"
+  # 4 + 6. Original data copy, then three-way integrity manifest
+  #        (source data, figure settings, and the figure itself)
+  file_hash <- sha256_or_na(original_file_path)
   tryCatch({
-    if (requireNamespace("digest", quietly = TRUE) &&
-        !is.null(original_file_path) && file.exists(original_file_path)) {
-      file_hash <- digest::digest(file = original_file_path, algo = "sha256")
-    }
-    writeLines(paste0(
-      "Data Integrity Verification\n===========================\n\n",
-      "File name:    ", original_file_name, "\n",
-      "SHA-256 hash: ", file_hash, "\n",
-      "Computed at:  ", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), "\n"),
-      file.path(rec_dir, "data_integrity.txt"))
     if (!is.null(original_file_path) && file.exists(original_file_path)) {
       file.copy(original_file_path, file.path(rec_dir, original_file_name),
                 overwrite = TRUE)
     }
+    write_integrity_manifest(rec_dir, list(
+      "Source data"     = original_file_path,
+      "Figure settings" = file.path(rec_dir, "figure_settings.json"),
+      "Figure"          = file.path(rec_dir, paste0("figure.", fmt))
+    ))
   }, error = function(e) warning("Could not create integrity file: ", e$message))
 
   # 5. Provenance HTML

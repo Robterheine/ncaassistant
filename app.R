@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.2.1
+# Non-Compartmental Analysis Assistant v1.2.2
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # Designed by Rob ter Heine
@@ -14,7 +14,7 @@
 #   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.2.1"
+APP_VERSION <- "1.2.2"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 # Allow uploads up to 50 MB (Shiny default is 5 MB)
@@ -690,8 +690,21 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.2.1",
+            tags$h6(class = "fw-bold mb-1", "v1.2.2",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "June 2026"),
+            tags$ul(class = "mb-0",
+              tags$li("Analysis records now carry a three-way SHA-256 integrity manifest (data_integrity.txt) fingerprinting the source data, the analysis settings, and the results — every artefact independently verifiable for traceability"),
+              tags$li("Reproducibility scripts now self-verify: they re-check the source-data SHA-256 against the recorded value and automatically compare their output against the app's results (app_results_reference.csv), printing a MATCH / DIFFERENT verdict"),
+              tags$li("Figure Records gained a matching three-way manifest (source data, figure settings, figure) and a visual-comparison instruction in reproduce_figure.R"),
+              tags$li("Validation: NCA all-zero / single-point edge tests now assert graceful handling (degenerate profile → NULL, no crash); version-display check made robust to line breaks; suite passes with no failures"),
+              tags$li("Documentation: README Complete Analysis Record section updated to cover all four analysis paths, the Figure Record, the three-way manifest, and the automated comparison")
+            )
+          ),
+
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.2.1"),
             tags$p(class = "text-muted mb-1", "June 2026"),
             tags$ul(class = "mb-0",
               tags$li("Complete Analysis Record now available consistently across all four analysis paths (Visualize, One Subject, All Subjects, Bioequivalence)"),

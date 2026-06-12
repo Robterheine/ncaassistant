@@ -1,6 +1,6 @@
 # NCA Assistant
 
-**Version 1.2.1** | Designed by Rob ter Heine
+**Version 1.2.2** | Designed by Rob ter Heine
 
 A freely available, open-source Shiny application for pharmacokinetic non-compartmental analysis (NCA), bioequivalence testing, study planning, and data visualization. Developed by the [Radboud Applied Pharmacometrics](https://www.radboudumc.nl/en/research/research-groups/radboud-applied-pharmacometrics) research group at Radboudumc, Nijmegen, The Netherlands.
 
@@ -29,14 +29,19 @@ Plus: **Statistical Methods** page (publication-ready, expert-reviewed), **Data 
 
 ## Complete Analysis Record
 
-Both the Batch NCA and Bioequivalence paths can generate a **Complete Analysis Record** — a self-contained zip file for regulatory submissions, publication supplements, or audit trails:
+All four analysis paths — **Visualize Data**, **One Subject at a Time**, **All Subjects (Batch)**, and **Bioequivalence** — can generate a **Complete Analysis Record**: a self-contained zip file for regulatory submissions, publication supplements, or audit trails. A consistently placed *Generate Analysis Record* panel (with an explanatory tooltip) appears on each tab once results exist.
+
+For the NCA and bioequivalence paths the record contains:
 
 - **results.xlsx** — Individual NCA parameters, summary statistics, and (for BE) confidence intervals and ANOVA tables
-- **analysis_settings.json** — Every setting that affects the analysis, with package versions, timestamp, and (if used in the same session) visualization settings
-- **reproduce_analysis.R** — Standalone R script that reproduces the exact analysis without the app, with step-by-step comments
-- **data_integrity.txt** — SHA-256 hash of the original data file
+- **app_results_reference.csv** — The app's computed results in machine-readable form, used by the reproduction script for an automated comparison
+- **analysis_settings.json** — Every setting that affects the analysis, with package versions, schema version, timestamp, and (if used in the same session) visualization settings
+- **reproduce_analysis.R** — Standalone R script that reproduces the exact analysis without the app. It re-checks the source-data SHA-256 against the recorded value, and **automatically compares** its output against `app_results_reference.csv`, printing a `MATCH` / `DIFFERENT` verdict
+- **data_integrity.txt** — Three-way SHA-256 manifest fingerprinting the **source data, the analysis settings, and the results**, so every artefact is independently verifiable (source data → settings → results)
 - **analysis_summary.html** — Self-contained summary with statistical methods, software environment, and instructions
 - **Original data file** — Copy included so the package is self-contained
+
+The **Visualize Data** path produces an equivalent **Figure Record**: the exported figure, `figure_settings.json`, a `reproduce_figure.R` script that rebuilds the plot from the data, a three-way integrity manifest (source data, figure settings, figure), an HTML provenance summary, and a copy of the original data.
 
 ---
 
@@ -95,7 +100,7 @@ See [`validation/README.md`](validation/README.md) for detailed instructions on 
 
 ## Citation
 
-> ter Heine R. NCA Assistant (v1.2.1). Radboud Applied Pharmacometrics, Radboudumc, Nijmegen, The Netherlands. https://github.com/robterheine/ncaassistant
+> ter Heine R. NCA Assistant (v1.2.2). Radboud Applied Pharmacometrics, Radboudumc, Nijmegen, The Netherlands. https://github.com/robterheine/ncaassistant
 
 > Kim H, et al. NonCompart: Noncompartmental Analysis for Pharmacokinetic Data. *Transl Clin Pharmacol*. 2018;26(1):10-15.
 
