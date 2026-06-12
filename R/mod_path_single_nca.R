@@ -429,7 +429,11 @@ path_single_nca_server <- function(id, shared) {
                                       timeUnit = input$time_unit,
                                       concUnit = input$conc_unit,
                                       SS = isTRUE(input$is_ss),
-                                      R2ADJ = input$r2adj,
+                                      # R2ADJ = 0: never let NonCompart open its interactive
+                                      # terminal-slope picker (DetSlope/identify), which blocks the
+                                      # app in an interactive R session. The user's R² threshold is
+                                      # applied by the half-life inspector below (estimate_lambda_z).
+                                      R2ADJ = 0,
                                       dur   = if (input$admin_route == "iv_infusion") input$inf_dur else 0),
                      error = function(e) { showNotification(paste("Error:", e$message), type="error"); NULL })
       

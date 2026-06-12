@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.2.5
+# Non-Compartmental Analysis Assistant v1.2.6
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # Designed by Rob ter Heine
@@ -14,7 +14,7 @@
 #   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.2.5"
+APP_VERSION <- "1.2.6"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 # Allow uploads up to 50 MB (Shiny default is 5 MB)
@@ -714,8 +714,20 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.2.5",
+            tags$h6(class = "fw-bold mb-1", "v1.2.6",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "June 2026"),
+            tags$ul(class = "mb-0",
+              tags$li("Critical fix: the app could hang on launch or during analysis when run from an interactive R session (e.g. RStudio) — NonCompart's automatic terminal-slope routine falls into an interactive base-graphics picker (“Choose points for terminal slope”) for poor-fit profiles, which blocks the app. NCA calls now pass R²adj = 0 so this interactive picker is never invoked; the automatic best-adjusted-R² slope is used and the user's R² threshold is applied by the app's own half-life review. Verified identical results for well-behaved profiles"),
+              tags$li("The startup engine self-test no longer executes an NCA (which could itself trigger the interactive picker); it now verifies the engine's lazy-load database loads, without running any analysis"),
+              tags$li("Reproducibility scripts updated to match (R²adj = 0) so a downloaded script also never opens the interactive picker"),
+              tags$li("No change to NCA, bioequivalence, or power results for valid data")
+            )
+          ),
+
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.2.5"),
             tags$p(class = "text-muted mb-1", "June 2026"),
             tags$ul(class = "mb-0",
               tags$li("Engine self-test at startup: the app now actually runs the NCA engine (not just reads its version), so a corrupt or stale NonCompart install — e.g. a “lazy-load database is corrupt” error after the package was updated mid-session — is caught immediately with a clear ‘restart R’ message instead of a confusing mid-analysis failure"),

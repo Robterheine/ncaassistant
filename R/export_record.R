@@ -404,7 +404,7 @@ result <- NonCompart::tblNCA(
   timeUnit = "', settings$time_unit, '",
   concUnit = "', settings$conc_unit, '",
   down     = "', down, '",
-  R2ADJ    = ', settings$r2adj_threshold, ',
+  R2ADJ    = 0,  # matches the app: avoids NonCompart\'s interactive DetSlope() picker
   SS       = ', toupper(as.character(settings$is_steady_state)), '
 )
 ', split_code, '
@@ -602,7 +602,7 @@ result <- NonCompart::sNCA(
   timeUnit = "', settings$time_unit, '",
   concUnit = "', settings$conc_unit, '",
   down     = "', down, '",
-  R2ADJ    = ', r2_thresh, ',
+  R2ADJ    = 0,  # matches the app: avoids NonCompart\'s interactive DetSlope() picker
   SS       = ', toupper(as.character(settings$is_steady_state)), '
 )
 ', override_section, '

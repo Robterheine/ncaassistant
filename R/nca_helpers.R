@@ -362,7 +362,16 @@ run_nca <- function(data, col_map, settings) {
       timeUnit  = settings$time_unit,
       concUnit  = settings$conc_unit,
       down      = down_method,
-      R2ADJ     = settings$r2adj_threshold,
+      # R2ADJ = 0 (NOT the user threshold). When R2ADJ > 0, NonCompart::sNCA
+      # falls into the INTERACTIVE base-graphics picker DetSlope() ("Choose points
+      # for terminal slope", via identify()) for any profile whose automatic fit
+      # is below the threshold — which BLOCKS the whole app in an interactive R
+      # session (e.g. RStudio runApp). With R2ADJ = 0 the automatic best-adjusted-R²
+      # slope is always used; the user's R² threshold is applied by the app's own
+      # half-life review (estimate_lambda_z) and the R²adj column is shown for
+      # inspection. Verified: identical results to the threshold for well-behaved
+      # profiles (DetSlope only ever fires below threshold).
+      R2ADJ     = 0,
       MW        = mw_num,
       SS        = settings$is_steady_state,
       iAUC      = iAUC_df

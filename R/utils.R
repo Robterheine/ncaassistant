@@ -12,16 +12,20 @@
 NONCOMPART_MIN_VERSION    <- "0.7.0"   # floor we expect the tblNCA/sNCA API at
 NONCOMPART_TESTED_VERSION <- "0.8.0"   # version the app is validated against
 
-#' Run the NCA engine on trivial data to confirm it actually loads and executes.
-#' Catches a corrupt/stale install (e.g. "lazy-load database ... is corrupt",
-#' which happens when NonCompart is updated while an R session has it loaded) —
-#' a state that packageVersion() alone cannot detect because it only reads the
-#' DESCRIPTION file, not the lazy-load database the functions live in.
-#' @return NULL if the engine runs, else the error message string.
+#' Verify the NCA engine's lazy-load database is intact, WITHOUT executing any
+#' NCA. Force-reading every object from the package deserialises the functions/
+#' data (so a corrupt or stale .rdb — e.g. "lazy-load database ... is corrupt",
+#' which happens when NonCompart is updated while an R session has it loaded —
+#' throws here), while never calling sNCA/tblNCA. This matters because sNCA can
+#' fall into NonCompart's interactive base-graphics picker ("Choose points for
+#' terminal slope", via DetSlope/identify()), which would block the app in an
+#' interactive R session. packageVersion() alone cannot detect a stale handle
+#' because it only reads the DESCRIPTION, not the lazy-load database.
+#' @return NULL if the engine loads, else the error message string.
 noncompart_engine_error <- function() {
   tryCatch({
-    suppressWarnings(suppressMessages(
-      NonCompart::sNCA(x = c(0, 1, 2, 4), y = c(0, 10, 5, 2), dose = 1)))
+    ns <- asNamespace("NonCompart")
+    for (nm in ls(ns, all.names = TRUE)) force(get(nm, envir = ns))
     NULL
   }, error = function(e) conditionMessage(e))
 }
