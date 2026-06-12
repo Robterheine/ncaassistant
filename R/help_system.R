@@ -399,10 +399,10 @@ help_plot_types <- info_btn("help_plot_types", "Which plot type should I use?",
   use mean ± SD for your report.</em>")
 
 help_log_scale <- info_btn("help_log_scale", "Linear vs. log scale?",
-  "<b>Linear scale</b>: What you'd normally expect. Good for seeing the actual 
+  "<b>Linear scale</b>: What you'd normally expect. Good for seeing the actual
   concentration values and peak height.
   <br><br>
-  <b>Log scale</b>: Compresses high values and expands low values. 
+  <b>Log scale</b>: Compresses high values and expands low values.
   <b>Essential for PK analysis</b> because:
   <ul>
   <li>The terminal elimination phase appears as a straight line</li>
@@ -410,3 +410,74 @@ help_log_scale <- info_btn("help_log_scale", "Linear vs. log scale?",
   <li>Low concentrations become visible instead of being squashed at the bottom</li>
   </ul>
   <em>Always check both. Use log scale to assess the terminal phase.</em>")
+
+# --- ANALYSIS RECORD -------------------------------------------------------
+
+help_analysis_record <- info_btn("help_analysis_record",
+  "What is the Analysis Record?",
+  "A <b>self-contained package</b> (a single zip file) that captures everything
+  needed to reproduce and verify this analysis later.
+  <br><br>
+  It contains:
+  <ul>
+  <li><b>Results</b> — an Excel file with the parameters / figure</li>
+  <li><b>Settings (JSON)</b> — every choice that affects the output, with package versions</li>
+  <li><b>Reproducibility R script</b> — re-runs the exact analysis without this app</li>
+  <li><b>Data integrity hash (SHA-256)</b> — proves the data file wasn't changed</li>
+  <li><b>HTML summary</b> — a human-readable record of methods and environment</li>
+  <li><b>A copy of your original data</b> — so the package stands on its own</li>
+  </ul>
+  <b>When to use it:</b> regulatory submissions, publication supplements, and audit
+  trails — any time someone needs to verify how the result was produced.")
+
+# ============================================================================
+# SHARED UI — Analysis Record panel (used by every analysis tab)
+# ============================================================================
+
+#' Render the consistent "Generate Analysis Record" panel
+#'
+#' One reusable component so the record action looks and behaves identically in
+#' the Visualize, Single-Subject, Batch, and Bioequivalence tabs. Secondary
+#' styling keeps it subordinate to each tab's primary action; the info popover
+#' explains it; the inline analyst/study fields keep the main view uncluttered.
+#'
+#' Fixed input ids (dl_record, record_analyst, record_study) match the existing
+#' server handlers in every module, so wiring is unchanged.
+#'
+#' @param ns The module namespace function
+#' @param intro Optional short description of what THIS tab's record contains
+#' @param button_label Label for the download button
+#' @return A bslib card
+analysis_record_ui <- function(ns, intro = NULL,
+                               button_label = "Generate Analysis Record") {
+  default_intro <- paste0(
+    "Download a self-contained package — results, settings, a standalone R ",
+    "script that reproduces this analysis, a SHA-256 data-integrity hash, and an ",
+    "HTML summary. For regulatory submissions, publication supplements, and audit trails.")
+
+  card(
+    class = "mt-3 border-secondary-subtle",
+    card_header(
+      class = "bg-light d-flex align-items-center py-2",
+      icon("file-zipper", class = "me-2 text-primary"),
+      tags$span(class = "fw-semibold", "Analysis Record"),
+      help_analysis_record,
+      tags$span(class = "badge bg-secondary ms-2", style = "font-weight: 500;",
+                "reproducibility · audit")
+    ),
+    card_body(
+      class = "py-3",
+      tags$p(class = "text-muted small mb-2", intro %||% default_intro),
+      layout_columns(
+        col_widths = c(6, 6),
+        textInput(ns("record_analyst"), "Analyst name (optional)",
+                  value = "", placeholder = "Your name"),
+        textInput(ns("record_study"), "Study name (optional)",
+                  value = "", placeholder = "e.g., Study XYZ")
+      ),
+      downloadButton(ns("dl_record"), button_label,
+                     class = "btn-outline-primary btn-sm",
+                     icon = icon("file-zipper"))
+    )
+  )
+}

@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.2
+# Non-Compartmental Analysis Assistant v1.2.1
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # Designed by Rob ter Heine
@@ -14,7 +14,7 @@
 #   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.2"
+APP_VERSION <- "1.2.1"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 # Allow uploads up to 50 MB (Shiny default is 5 MB)
@@ -690,8 +690,22 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.2",
+            tags$h6(class = "fw-bold mb-1", "v1.2.1",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "June 2026"),
+            tags$ul(class = "mb-0",
+              tags$li("Complete Analysis Record now available consistently across all four analysis paths (Visualize, One Subject, All Subjects, Bioequivalence)"),
+              tags$li("New: Visualize Data path generates a full Figure Record — the exported figure, figure settings (JSON), a standalone R script that reproduces the plot from the data, a SHA-256 data-integrity hash, an HTML provenance summary, and a copy of the original data"),
+              tags$li("Discoverability: the ‘Generate Analysis Record’ action is now a clearly visible, consistently placed panel (with an info tooltip) on every analysis tab — no longer hidden inside a collapsed menu or sub-tab, while remaining visually secondary to each tab’s primary action"),
+              tags$li("One Subject at a Time: analysis record unified onto the shared export engine — the settings JSON now records the BLQ rule, LLOQ, full package list, and schema version (previously a reduced subset)"),
+              tags$li("Reproducibility fix: the single-subject reproduction script now uses the analyst’s chosen minimum R² threshold for half-life (previously hardcoded to 0.70) and reproduces any manual lambda-z (terminal phase) adjustment"),
+              tags$li("Internal: shared record-zip helper and schema_version (1.2.1) used by all record generators; no change to NCA, bioequivalence, or power calculations")
+            )
+          ),
+
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.2"),
             tags$p(class = "text-muted mb-1", "April 2026"),
             tags$ul(class = "mb-0",
               tags$li("New workflow path: Visualize Data (path 3) \u2014 publication-ready concentration-time plots"),

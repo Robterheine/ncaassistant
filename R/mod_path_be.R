@@ -256,31 +256,9 @@ path_be_ui <- function(id) {
                            class = "btn-outline-primary ms-2")
           ),
           
-          hr(),
-          tags$details(
-            tags$summary(
-              class = "fw-semibold small",
-              style = "cursor: pointer;",
-              icon("file-zipper", class = "me-1 text-primary"),
-              "Download Complete Analysis Record"
-            ),
-            tags$div(
-              class = "mt-2 small",
-              tags$p(class = "text-muted",
-                     "Self-contained package with NCA results, BE results, settings, ",
-                     "R reproducibility script, data integrity hash, and analysis summary."),
-              layout_columns(
-                col_widths = c(6, 6),
-                textInput(ns("record_analyst"), "Analyst name (optional)",
-                          value = "", placeholder = "Your name"),
-                textInput(ns("record_study"), "Study name (optional)",
-                          value = "", placeholder = "e.g., BE Study XYZ")
-              ),
-              downloadButton(ns("dl_record"), "Generate Analysis Record",
-                             class = "btn-primary btn-sm w-100",
-                             icon = icon("file-zipper"))
-            )
-          )
+          # Analysis Record — consistent, discoverable panel (appears once
+          # the BE analysis has been run).
+          uiOutput(ns("record_panel"))
         )
       )
     )
@@ -1238,6 +1216,17 @@ path_be_server <- function(id, shared) {
       }
     )
     
+    # Analysis Record panel — appears once the BE comparison has run
+    output$record_panel <- renderUI({
+      req(be_result())
+      analysis_record_ui(
+        session$ns,
+        intro = paste0(
+          "Self-contained package with NCA results, the bioequivalence results ",
+          "(ANOVA tables and 90% confidence intervals), every setting, a standalone ",
+          "R reproducibility script, a SHA-256 data-integrity hash, and an HTML summary."))
+    })
+
     # Complete Analysis Record
     output$dl_record <- downloadHandler(
       filename = function() {

@@ -260,7 +260,10 @@ path_viz_ui <- function(id) {
                 "Observations with concentration \u2264 0 excluded from geometric mean."
               )
             )
-          )
+          ),
+
+          # Analysis Record \u2014 consistent panel (appears once a plot is rendered)
+          uiOutput(ns("record_panel"))
         )
       )
     )
@@ -922,6 +925,85 @@ path_viz_server <- function(id, shared) {
             showNotification(paste("Export failed:", conditionMessage(e)),
                              type = "error", duration = 8)
         )
+      }
+    )
+
+    # ---- Analysis Record panel (appears once a plot is rendered) ----------
+    output$record_panel <- renderUI({
+      req(shared$data_ready, plot_rendered())
+      analysis_record_ui(
+        session$ns,
+        intro = paste0(
+          "Self-contained package for this figure: the exported image, all figure ",
+          "settings, a standalone R script that reproduces the plot from your data, ",
+          "a SHA-256 data-integrity hash, and an HTML provenance summary. ",
+          "Ideal for publication supplements and audit trails."))
+    })
+
+    # ---- Figure Record download -------------------------------------------
+    output$dl_record <- downloadHandler(
+      filename = function() {
+        study <- if (!is.null(input$record_study) && nchar(input$record_study) > 0)
+          gsub("[^A-Za-z0-9_-]", "_", input$record_study) else "Figure"
+        paste0("Analysis_Record_", study, "_", Sys.Date(), ".zip")
+      },
+      content = function(file) {
+        req(shared$data_ready, plot_rendered(), shared$col_map, shared$study_info)
+
+        withProgress(message = "Generating figure record...", value = 0.4, {
+          p <- tryCatch(resolve_export_plot(), error = function(e) NULL)
+          req(!is.null(p))
+
+          cm <- shared$col_map
+          si <- shared$study_info
+          original_name <- si$file_name %||% "data.csv"
+          original_path <- si$file_path
+
+          # Fallback: persist raw data to a temp file if the original is gone
+          if (is.null(original_path) || !file.exists(original_path)) {
+            original_path <- file.path(tempdir(), original_name)
+            if (!is.null(shared$raw_data))
+              write.csv(shared$raw_data, original_path, row.names = FALSE)
+          }
+
+          n_subj <- tryCatch(length(unique(shared$pk_data[[cm$subject]])),
+                             error = function(e) NA)
+          n_obs  <- tryCatch(nrow(shared$pk_data), error = function(e) NA)
+
+          # Build a fresh viz_settings snapshot (don't depend on the observer
+          # having fired yet)
+          vs <- list(
+            plot_type         = input$plot_type      %||% "spaghetti",
+            color_by          = input$color_by       %||% "subject",
+            y_scale           = input$y_scale        %||% "linear",
+            summary_statistic = input$summary_stat   %||% "geomean",
+            dose_normalized   = isTRUE(input$dose_norm),
+            theme             = input$plot_theme     %||% "bw",
+            colour_palette    = input$color_palette  %||% "default",
+            figure_width_in   = as.numeric(input$export_width  %||% 7),
+            figure_height_in  = as.numeric(input$export_height %||% 5),
+            dpi               = as.integer(input$export_dpi    %||% 300),
+            export_format     = input$export_format  %||% "png",
+            blq_excluded_n    = blq_n_summary()
+          )
+
+          setProgress(0.7, message = "Building record...")
+
+          create_viz_record(
+            output_path        = file,
+            plot_obj           = p,
+            viz_settings       = vs,
+            col_map            = cm,
+            original_file_path = original_path,
+            original_file_name = original_name,
+            blq_rule           = si$blq_rule %||% "none",
+            lloq               = si$lloq %||% 0,
+            analyst            = if (!is.null(input$record_analyst) && nchar(input$record_analyst) > 0) input$record_analyst else "Analyst",
+            study_name         = if (!is.null(input$record_study) && nchar(input$record_study) > 0) input$record_study else "Untitled Study",
+            n_subjects         = n_subj,
+            n_obs              = n_obs
+          )
+        })
       }
     )
 

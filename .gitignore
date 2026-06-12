@@ -1,5 +1,8 @@
 rsconnect/
 .DS_Store
-.DS_Store
 .Rhistory
 .RData
+
+# Generated artifacts
+Rplots*.pdf
+validation/validation_results.csv

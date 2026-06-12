@@ -137,34 +137,7 @@ path_multi_nca_ui <- function(id) {
               downloadButton(ns("dl_params_csv"), "Download Results (CSV)",
                              class = "btn-outline-primary btn-sm mt-2"),
               downloadButton(ns("dl_params_xlsx"), "Download Results (Excel)",
-                             class = "btn-outline-success btn-sm mt-2"),
-              hr(),
-              tags$details(
-                tags$summary(
-                  class = "fw-semibold small",
-                  style = "cursor: pointer;",
-                  icon("file-zipper", class = "me-1 text-primary"),
-                  "Download Complete Analysis Record"
-                ),
-                tags$div(
-                  class = "mt-2 small",
-                  tags$p(class = "text-muted",
-                         "Download a self-contained package with results, settings, ",
-                         "a standalone R reproducibility script, data integrity hash, ",
-                         "and analysis summary. Useful for regulatory submissions, ",
-                         "publication supplements, and audit trails."),
-                  layout_columns(
-                    col_widths = c(6, 6),
-                    textInput(ns("record_analyst"), "Analyst name (optional)",
-                              value = "", placeholder = "Your name"),
-                    textInput(ns("record_study"), "Study name (optional)",
-                              value = "", placeholder = "e.g., Phase I PK Study")
-                  ),
-                  downloadButton(ns("dl_record"), "Generate Analysis Record",
-                                 class = "btn-primary btn-sm w-100",
-                                 icon = icon("file-zipper"))
-                )
-              )
+                             class = "btn-outline-success btn-sm mt-2")
             ),
             
             # Summary stats
@@ -228,7 +201,11 @@ path_multi_nca_ui <- function(id) {
                 )
               )
             )
-          )
+          ),
+
+          # Analysis Record — consistent panel below the results, visible
+          # regardless of which results sub-tab is open (appears once NCA runs).
+          uiOutput(ns("record_panel"))
         )
       )
     )
@@ -843,10 +820,21 @@ path_multi_nca_server <- function(id, shared) {
       }
     )
     
+    # Analysis Record panel — appears once NCA has been run
+    output$record_panel <- renderUI({
+      req(nca_result())
+      analysis_record_ui(
+        session$ns,
+        intro = paste0(
+          "Self-contained package with individual NCA parameters, summary statistics, ",
+          "every setting, a standalone R reproducibility script, a SHA-256 ",
+          "data-integrity hash, and an HTML summary."))
+    })
+
     # Complete Analysis Record
     output$dl_record <- downloadHandler(
       filename = function() {
-        study <- if (nchar(input$record_study) > 0) 
+        study <- if (nchar(input$record_study) > 0)
           gsub("[^A-Za-z0-9_-]", "_", input$record_study) else "NCA"
         paste0("Analysis_Record_", study, "_", Sys.Date(), ".zip")
       },

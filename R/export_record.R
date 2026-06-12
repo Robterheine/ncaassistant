@@ -4,6 +4,49 @@
 # Generates a self-contained zip with results, settings, reproducibility
 # script, data integrity hash, and summary document.
 
+# Schema version for analysis_settings.json / figure_settings.json. Increment
+# when the settings structure changes so downstream tooling can branch on it.
+RECORD_SCHEMA_VERSION <- "1.2.1"
+
+#' Zip the contents of a directory into output_path without changing the global
+#' working directory (session-safe in multi-session Shiny deployments).
+#'
+#' Primary: system2("zip", "-j") with absolute paths (junk paths, no setwd).
+#' Fallback: withr::with_dir() if available, else a scoped setwd with guaranteed
+#' on.exit restore.
+#'
+#' @param rec_dir Directory whose files should be zipped (non-recursive)
+#' @param output_path Destination zip path
+#' @return invisibly, output_path
+zip_record_dir <- function(rec_dir, output_path) {
+  files_to_zip <- list.files(rec_dir, full.names = TRUE)
+  abs_output   <- normalizePath(output_path, mustWork = FALSE)
+
+  tryCatch({
+    res <- system2("zip",
+                   args   = c("-j", shQuote(abs_output), shQuote(files_to_zip)),
+                   stdout = FALSE, stderr = FALSE)
+    if (!is.null(res) && res != 0) stop("system zip returned non-zero exit")
+    res
+  }, error = function(e) {
+    tryCatch({
+      if (requireNamespace("withr", quietly = TRUE)) {
+        withr::with_dir(rec_dir, {
+          utils::zip(abs_output, files = basename(files_to_zip), flags = "-j")
+        })
+      } else {
+        old_wd <- setwd(rec_dir)
+        on.exit(setwd(old_wd), add = TRUE)
+        utils::zip(abs_output, files = basename(files_to_zip), flags = "-j")
+      }
+    }, error = function(e2) {
+      warning("Could not create zip archive: ", e2$message)
+    })
+  })
+
+  invisible(output_path)
+}
+
 #' Generate the standalone reproducibility R script for NCA
 #' @param settings List of NCA settings
 #' @param col_map Column mapping
@@ -282,15 +325,56 @@ cat("\\nDone. Compare reproduced_results.csv with the app output.\\n")
 #' @param file_name Original file name (or NULL for manual entry)
 generate_single_nca_script <- function(time_vec, conc_vec, settings,
                                         subject_label = "Subject",
-                                        file_name = NULL) {
-  
+                                        file_name = NULL,
+                                        lz_override = NULL) {
+
   adm_map <- c(extravascular = "Extravascular", iv_bolus = "Bolus",
                 iv_infusion = "Infusion")
   adm <- adm_map[settings$admin_route]
   down <- if (settings$trap_method == "log") "Log" else "Linear"
-  
+  r2_thresh <- settings$r2adj_threshold %||% 0.7
+
   time_str <- paste(time_vec, collapse = ", ")
   conc_str <- paste(conc_vec, collapse = ", ")
+
+  # Optional manual lambda-z override block. The app refits the terminal phase
+  # using the points the analyst selected; reproduce that here so the script
+  # output matches the app exactly.
+  override_section <- if (!is.null(lz_override) &&
+                          !is.null(lz_override$time_used) &&
+                          length(lz_override$time_used) >= 2) {
+    sel_times <- paste(signif(as.numeric(lz_override$time_used), 10), collapse = ", ")
+    paste0(
+'
+
+# --- Step 3b: Apply manual lambda-z override --------------------------------
+# The terminal elimination phase was adjusted manually in the app using the
+# time points listed below (', length(lz_override$time_used), ' points). This block refits lambda-z
+# on exactly those points and recomputes the dependent parameters.
+
+sel_times <- c(', sel_times, ')
+ov_mask <- time %in% sel_times & !is.na(conc) & conc > 0
+if (sum(ov_mask) >= 2) {
+  ov_fit   <- lm(log(conc[ov_mask]) ~ time[ov_mask])
+  lambda_z <- as.numeric(-coef(ov_fit)[2])
+  result["LAMZ"]   <- lambda_z
+  result["LAMZHL"] <- log(2) / lambda_z
+  clast  <- as.numeric(result["CLST"])
+  auclst <- as.numeric(result["AUCLST"])
+  if (!is.na(clast) && !is.na(auclst) && lambda_z > 0) {
+    aucifo <- auclst + clast / lambda_z
+    result["AUCIFO"] <- aucifo
+    result["AUCPEO"] <- (clast / lambda_z) / aucifo * 100
+    if (', settings$dose, ' > 0) {
+      result["CLFO"] <- ', settings$dose, ' / aucifo
+      result["VZFO"] <- ', settings$dose, ' / (aucifo * lambda_z)
+    }
+  }
+  cat("Applied manual lambda-z override on", sum(ov_mask), "points; t-half =",
+      round(log(2) / lambda_z, 4), "\\n")
+}
+')
+  } else ""
   
   data_section <- if (!is.null(file_name) && nchar(file_name) > 0) {
     paste0(
@@ -368,10 +452,10 @@ result <- NonCompart::sNCA(
   timeUnit = "', settings$time_unit, '",
   concUnit = "', settings$conc_unit, '",
   down     = "', down, '",
-  R2ADJ    = 0.7,
+  R2ADJ    = ', r2_thresh, ',
   SS       = ', toupper(as.character(settings$is_steady_state)), '
 )
-
+', override_section, '
 
 # --- Step 4: Display results ---
 
@@ -648,7 +732,7 @@ create_analysis_record <- function(output_path, results, settings, col_map,
   # 2. Settings JSON
   tryCatch({
     settings_export <- list(
-      schema_version  = "1.2",   # increment when settings structure changes
+      schema_version  = RECORD_SCHEMA_VERSION,
       app_version     = tryCatch(get("APP_VERSION", envir = globalenv()), error = function(e) "?"),
       r_version       = R.version.string,
       timestamp       = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
@@ -731,42 +815,495 @@ create_analysis_record <- function(output_path, results, settings, col_map,
               overwrite = TRUE)
   }, error = function(e) warning("Could not copy data file: ", e$message))
   
-  # Create zip — without changing the global working directory.
-  # We use system2("zip", "-j") with absolute paths, which strips directory
-  # prefixes (-j = junk paths) without requiring setwd(). utils::zip() needs
-  # a working directory change to strip paths, which is not session-safe in
-  # a multi-session Shiny deployment.
-  files_to_zip <- list.files(rec_dir, full.names = TRUE)
-  abs_output   <- normalizePath(output_path, mustWork = FALSE)
-  
-  zip_result <- tryCatch({
-    # Primary: system zip with absolute paths, no setwd needed
-    res <- system2("zip",
-                   args   = c("-j", shQuote(abs_output),
-                               shQuote(files_to_zip)),
-                   stdout = FALSE, stderr = FALSE)
-    if (!is.null(res) && res != 0) stop("system zip returned non-zero exit")
-    res
-  }, error = function(e) {
-    # Fallback when system zip is unavailable.
-    # Use withr::with_dir() if available — avoids modifying global working
-    # directory. Falls back to a scoped setwd with guaranteed on.exit restore.
-    tryCatch({
-      if (requireNamespace("withr", quietly = TRUE)) {
-        withr::with_dir(rec_dir, {
-          utils::zip(abs_output, files = basename(files_to_zip), flags = "-j")
-        })
-      } else {
-        old_wd <- setwd(rec_dir)
-        on.exit(setwd(old_wd), add = TRUE)
-        utils::zip(abs_output, files = basename(files_to_zip), flags = "-j")
-      }
-    }, error = function(e2) {
-      warning("Could not create zip archive: ", e2$message)
-    })
-  })
-  
+  # Create zip — session-safe, no global setwd (see zip_record_dir).
+  zip_record_dir(rec_dir, output_path)
+
   unlink(rec_dir, recursive = TRUE)
-  
+
+  invisible(output_path)
+}
+
+
+#' Create the Complete Analysis Record zip for a single-subject NCA
+#'
+#' Single-subject results are a named vector from NonCompart::sNCA rather than
+#' a per-subject data frame, so this is a dedicated entry point. It produces the
+#' same six-file record as create_analysis_record() and reuses the shared script,
+#' HTML, and zip helpers, so the single-subject record is now on par with the
+#' batch and BE records (full package list, BLQ rule, LLOQ, schema version, and
+#' lambda-z override capture).
+#'
+#' @param output_path Path to write the zip file
+#' @param result Named vector of NCA parameters (from sNCA, override applied)
+#' @param settings List of NCA settings (admin_route, dose, units, trap_method,
+#'   r2adj_threshold, infusion_duration, is_steady_state, n_obs)
+#' @param time_vec,conc_vec The analysed profile (for the reproducibility script)
+#' @param subject_label Label for the subject / profile
+#' @param original_file_path,original_file_name Source data file (NULL = manual)
+#' @param blq_rule,lloq BLQ handling actually applied ("none"/0 for manual entry)
+#' @param analyst,study_name Free-text metadata
+#' @param lz_override Optional single override entry with $time_used plus the
+#'   audit fields (profile, original_lambda_z, adjusted_lambda_z, original_r2adj,
+#'   adjusted_r2adj, points_used); NULL when no manual adjustment was made
+create_single_analysis_record <- function(output_path, result, settings,
+                                           time_vec, conc_vec,
+                                           subject_label = "Subject",
+                                           original_file_path = NULL,
+                                           original_file_name = "manual_entry.csv",
+                                           blq_rule = "none", lloq = 0,
+                                           analyst = "Analyst",
+                                           study_name = "Untitled Study",
+                                           lz_override = NULL) {
+
+  tmp <- tempdir()
+  rec_dir <- file.path(tmp, "analysis_record")
+  if (dir.exists(rec_dir)) unlink(rec_dir, recursive = TRUE)
+  dir.create(rec_dir, recursive = TRUE)
+
+  has_file <- !is.null(original_file_path) && file.exists(original_file_path)
+
+  # Wrap the single override entry into the named-list shape that the shared
+  # HTML/JSON helpers expect (keyed by the profile label).
+  lz_overrides <- if (!is.null(lz_override)) {
+    stats::setNames(list(lz_override), subject_label)
+  } else NULL
+
+  # 1. Results Excel (friendly Parameter / Abbreviation / Value layout)
+  tryCatch({
+    df <- data.frame(
+      Parameter    = vapply(names(result), friendly_name, character(1)),
+      Abbreviation = names(result),
+      Value        = as.character(result),
+      stringsAsFactors = FALSE
+    )
+    wb <- openxlsx::createWorkbook()
+    openxlsx::addWorksheet(wb, "NCA_Parameters")
+    openxlsx::writeData(wb, 1, df)
+    openxlsx::saveWorkbook(wb, file.path(rec_dir, "results.xlsx"), overwrite = TRUE)
+  }, error = function(e) warning("Could not create results.xlsx: ", e$message))
+
+  # 2. Settings JSON — full schema, parity with batch/BE
+  tryCatch({
+    settings_export <- list(
+      schema_version  = RECORD_SCHEMA_VERSION,
+      app_version     = tryCatch(get("APP_VERSION", envir = globalenv()), error = function(e) "?"),
+      r_version       = R.version.string,
+      timestamp       = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+      analyst         = analyst,
+      study_name      = study_name,
+      analysis_type   = "Single-Subject NCA",
+      subject         = subject_label,
+      input_file      = original_file_name,
+      data_source     = if (has_file) "uploaded_file" else "manual_entry",
+      admin_route     = settings$admin_route,
+      dose            = settings$dose,
+      dose_unit       = settings$dose_unit,
+      time_unit       = settings$time_unit,
+      conc_unit       = settings$conc_unit,
+      infusion_dur    = settings$infusion_duration %||% 0,
+      steady_state    = settings$is_steady_state,
+      trap_method     = settings$trap_method,
+      r2adj_threshold = settings$r2adj_threshold %||% 0.7,
+      blq_rule        = blq_rule,
+      lloq            = lloq,
+      packages = list(
+        NonCompart = tryCatch(as.character(packageVersion("NonCompart")), error = function(e) "?"),
+        nlme       = tryCatch(as.character(packageVersion("nlme")), error = function(e) "?"),
+        PowerTOST  = tryCatch(as.character(packageVersion("PowerTOST")), error = function(e) "?")
+      )
+    )
+    if (!is.null(lz_overrides)) settings_export$lz_overrides <- lz_overrides
+    writeLines(jsonlite::toJSON(settings_export, pretty = TRUE, auto_unbox = TRUE),
+               file.path(rec_dir, "analysis_settings.json"))
+  }, error = function(e) warning("Could not create settings JSON: ", e$message))
+
+  # 3. Reproducibility R script (threshold + override now reproduced faithfully)
+  tryCatch({
+    script <- generate_single_nca_script(
+      time_vec = time_vec, conc_vec = conc_vec, settings = settings,
+      subject_label = subject_label,
+      file_name = if (has_file) original_file_name else NULL,
+      lz_override = lz_override
+    )
+    writeLines(script, file.path(rec_dir, "reproduce_analysis.R"))
+  }, error = function(e) warning("Could not create R script: ", e$message))
+
+  # 4 + 6. Data integrity and original data copy
+  file_hash <- "N/A (manual entry)"
+  tryCatch({
+    if (has_file) {
+      if (requireNamespace("digest", quietly = TRUE)) {
+        file_hash <- digest::digest(file = original_file_path, algo = "sha256")
+      }
+      writeLines(paste0(
+        "Data Integrity Verification\n===========================\n\n",
+        "File name:    ", original_file_name, "\n",
+        "SHA-256 hash: ", file_hash, "\n",
+        "Computed at:  ", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), "\n"),
+        file.path(rec_dir, "data_integrity.txt"))
+      file.copy(original_file_path, file.path(rec_dir, original_file_name),
+                overwrite = TRUE)
+    } else {
+      # Manual entry: persist the typed data so the record is self-contained
+      write.csv(data.frame(Time = time_vec, Concentration = conc_vec),
+                file.path(rec_dir, "manual_entry.csv"), row.names = FALSE)
+    }
+  }, error = function(e) warning("Could not create integrity file: ", e$message))
+
+  # 5. Summary HTML
+  tryCatch({
+    col_map <- list(subject = "Subject", time = "Time", conc = "Concentration")
+    html <- generate_summary_html(settings, col_map, original_file_name,
+                                   file_hash, blq_rule, lloq, analyst,
+                                   study_name, 1, length(time_vec),
+                                   "Single-Subject NCA", lz_overrides)
+    writeLines(html, file.path(rec_dir, "analysis_summary.html"))
+  }, error = function(e) warning("Could not create summary HTML: ", e$message))
+
+  zip_record_dir(rec_dir, output_path)
+  unlink(rec_dir, recursive = TRUE)
+  invisible(output_path)
+}
+
+
+#' Generate a standalone R script that reproduces a Visualize-tab figure
+#'
+#' Rebuilds the concentration-time figure with ggplot2 from the original data
+#' file using the recorded visualization settings, then saves it at the recorded
+#' dimensions/resolution. Faithful to the core plot (geometry, grouping, scale,
+#' dose-normalization, summary statistic); cosmetic theming is approximated.
+#'
+#' @param viz_settings The shared$viz_settings list
+#' @param col_map Column mapping list
+#' @param file_name Original data file name
+#' @return Character string containing the complete R script
+generate_viz_script <- function(viz_settings, col_map, file_name) {
+
+  vs <- viz_settings
+  plot_type  <- vs$plot_type        %||% "spaghetti"
+  y_scale    <- vs$y_scale          %||% "linear"
+  color_by   <- vs$color_by         %||% "subject"
+  summary_st <- vs$summary_statistic %||% "geomean"
+  do_norm    <- isTRUE(vs$dose_normalized)
+  width_in   <- vs$figure_width_in  %||% 7
+  height_in  <- vs$figure_height_in %||% 5
+  dpi        <- vs$dpi              %||% 300
+  fmt        <- vs$export_format    %||% "png"
+
+  has_treat <- !is.null(col_map$treatment)
+  has_dose  <- !is.null(col_map$dose)
+
+  # Map the colour-by choice to its source column
+  color_col <- switch(color_by,
+    "subject"   = col_map$subject,
+    "treatment" = col_map$treatment %||% col_map$subject,
+    "period"    = col_map$period    %||% col_map$subject,
+    "sequence"  = col_map$sequence  %||% col_map$subject,
+    col_map$subject)
+
+  norm_section <- if (do_norm && has_dose) {
+    paste0(
+'# Dose-normalize concentration (C / Dose); non-positive doses become NA
+dose_vals <- suppressWarnings(as.numeric(d[[', deparse(col_map$dose), ']]))
+dose_vals[is.na(dose_vals) | dose_vals <= 0] <- NA
+d$.conc <- d$.conc / dose_vals
+y_label <- "Dose-normalized concentration (C/Dose)"
+')
+  } else {
+    '\ny_label <- "Concentration"\n'
+  }
+
+  plot_section <- if (plot_type == "summary") {
+    grp <- if (has_treat) paste0('c(".time", ', deparse(col_map$treatment), ')') else 'c(".time")'
+    stat_code <- if (summary_st == "geomean") {
+'# Geometric mean and geometric CV% (positive concentrations only)
+summ <- d[!is.na(d$.conc) & d$.conc > 0, ]
+summ <- summ %>%
+  dplyr::group_by(dplyr::across(dplyr::all_of(grp_cols))) %>%
+  dplyr::summarise(
+    .gm  = exp(mean(log(.conc))),
+    .gcv = sqrt(exp(stats::var(log(.conc))) - 1) * 100,
+    .y   = exp(mean(log(.conc))),
+    .lo  = exp(mean(log(.conc)) - stats::sd(log(.conc))),
+    .hi  = exp(mean(log(.conc)) + stats::sd(log(.conc))),
+    .groups = "drop")
+'
+    } else {
+'# Arithmetic mean +/- SD
+summ <- d[!is.na(d$.conc), ] %>%
+  dplyr::group_by(dplyr::across(dplyr::all_of(grp_cols))) %>%
+  dplyr::summarise(
+    .y  = mean(.conc),
+    .lo = mean(.conc) - stats::sd(.conc),
+    .hi = mean(.conc) + stats::sd(.conc),
+    .groups = "drop")
+'
+    }
+    paste0(
+'grp_cols <- ', grp, '
+', stat_code, '
+p <- ggplot2::ggplot(summ, ggplot2::aes(x = .time, y = .y',
+      if (has_treat) paste0(', colour = ', deparse(col_map$treatment),
+                            ', group = ', deparse(col_map$treatment)) else "",
+      ')) +
+  ggplot2::geom_line() +
+  ggplot2::geom_point() +
+  ggplot2::geom_errorbar(ggplot2::aes(ymin = .lo, ymax = .hi), width = 0) +
+  ggplot2::labs(x = "Time", y = y_label)
+')
+  } else {
+    paste0(
+'p <- ggplot2::ggplot(d, ggplot2::aes(x = .time, y = .conc,
+       group = ', deparse(col_map$subject), ', colour = factor(', deparse(color_col), '))) +
+  ggplot2::geom_line(alpha = 0.7) +
+  ggplot2::geom_point(size = 1) +
+  ggplot2::labs(x = "Time", y = y_label, colour = ', deparse(color_by), ')
+')
+  }
+
+  scale_section <- if (y_scale == "log") {
+    '\np <- p + ggplot2::scale_y_log10()  # semi-log; non-positive values dropped\n'
+  } else ""
+
+  paste0(
+'# ============================================================================
+# Figure Reproducibility Script
+# ============================================================================
+# Generated by NCA Assistant v',
+    tryCatch(get("APP_VERSION", envir = globalenv()), error = function(e) "1.2.1"), '
+# Date: ', format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), '
+#
+# This script reproduces the concentration-time figure created in the
+# Visualize Data tab, from the original data file, using the recorded settings.
+#
+# INSTRUCTIONS:
+#   1. Place this script and the data file in the same folder
+#   2. setwd("path/to/your/folder")
+#   3. source("reproduce_figure.R")  -> writes "reproduced_figure.', fmt, '"
+# ============================================================================
+
+
+# --- Step 1: Packages -------------------------------------------------------
+for (pkg in c("ggplot2", "dplyr")) {
+  if (!requireNamespace(pkg, quietly = TRUE))
+    install.packages(pkg, repos = "https://cloud.r-project.org")
+}
+
+
+# --- Step 2: Read the data --------------------------------------------------
+data_file <- "', file_name, '"
+if (!file.exists(data_file)) stop("Data file not found: ", data_file)
+file_ext <- tolower(tools::file_ext(data_file))
+if (file_ext %in% c("csv", "txt")) {
+  raw <- read.csv(data_file, stringsAsFactors = FALSE)
+} else if (file_ext %in% c("xlsx", "xls")) {
+  if (!requireNamespace("readxl", quietly = TRUE))
+    install.packages("readxl", repos = "https://cloud.r-project.org")
+  raw <- as.data.frame(readxl::read_excel(data_file))
+} else if (file_ext == "tsv") {
+  raw <- read.delim(data_file, stringsAsFactors = FALSE)
+}
+
+
+# --- Step 3: Assemble plotting frame ----------------------------------------
+d <- raw
+d$.time <- suppressWarnings(as.numeric(d[[', deparse(col_map$time), ']]))
+d$.conc <- suppressWarnings(as.numeric(d[[', deparse(col_map$conc), ']]))
+', norm_section, '
+d <- d[!is.na(d$.time), ]
+
+
+# --- Step 4: Build the figure -----------------------------------------------
+# Plot type: ', plot_type, ' | Y-axis: ', y_scale, '
+', plot_section, scale_section, '
+p <- p + ggplot2::theme_bw()
+
+
+# --- Step 5: Save -----------------------------------------------------------
+ggplot2::ggsave("reproduced_figure.', fmt, '", plot = p, device = "', fmt, '",
+                width = ', width_in, ', height = ', height_in, ', dpi = ', dpi, ', units = "in")
+cat("Saved reproduced_figure.', fmt, '\\n")
+')
+}
+
+
+#' Generate the figure-provenance HTML document for a Visualize-tab record
+generate_viz_html <- function(viz_settings, col_map, file_name, file_hash,
+                              analyst, study_name, n_subjects, n_obs) {
+  ver   <- tryCatch(get("APP_VERSION", envir = globalenv()), error = function(e) "?")
+  r_ver <- tryCatch(R.version.string, error = function(e) "R")
+  pkg_ver <- function(pkg) tryCatch(as.character(packageVersion(pkg)), error = function(e) "?")
+  vs <- viz_settings
+  yn <- function(x) if (isTRUE(x)) "Yes" else "No"
+
+  paste0('<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<title>Figure Record &mdash; ', htmltools::htmlEscape(study_name), '</title>
+<style>
+  body { font-family: "Segoe UI", Calibri, Arial, sans-serif; max-width: 800px;
+         margin: 2rem auto; padding: 0 1rem; color: #2C3E50; font-size: 14px; line-height: 1.6; }
+  h1 { color: #2C3E50; border-bottom: 3px solid #8E44AD; padding-bottom: 0.5rem; }
+  h2 { color: #8E44AD; margin-top: 2rem; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; }
+  th { background: #f5f5f5; }
+  .info-box { background: #F4ECF7; border-left: 4px solid #8E44AD;
+              padding: 12px 16px; margin: 1rem 0; border-radius: 4px; }
+  .hash { font-family: monospace; background: #f5f5f5; padding: 2px 6px; border-radius: 3px; word-break: break-all; }
+  .footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #ddd; font-size: 12px; color: #7f8c8d; }
+</style></head><body>
+
+<h1>Figure Record</h1>
+<div class="info-box"><strong>What is this document?</strong><br>
+This package contains everything needed to independently reproduce the
+concentration&ndash;time figure. The R script (<code>reproduce_figure.R</code>)
+rebuilds the figure from the original data using the settings below, without the
+NCA Assistant app. The SHA-256 hash verifies the data file is unchanged.</div>
+
+<h2>1. Study Information</h2>
+<table>
+<tr><th>Study name</th><td>', htmltools::htmlEscape(study_name), '</td></tr>
+<tr><th>Analyst</th><td>', htmltools::htmlEscape(analyst), '</td></tr>
+<tr><th>Analysis type</th><td>Figure / Visualization</td></tr>
+<tr><th>Date &amp; time</th><td>', format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), '</td></tr>
+<tr><th>Subjects</th><td>', n_subjects, '</td></tr>
+<tr><th>Observations</th><td>', n_obs, '</td></tr>
+</table>
+
+<h2>2. Data File</h2>
+<table>
+<tr><th>File name</th><td><code>', htmltools::htmlEscape(file_name), '</code></td></tr>
+<tr><th>SHA-256 hash</th><td><span class="hash">', file_hash, '</span></td></tr>
+</table>
+
+<h2>3. Figure Settings</h2>
+<table>
+<tr><th>Plot type</th><td>', vs$plot_type %||% "spaghetti", '</td></tr>
+<tr><th>Y-axis scale</th><td>', vs$y_scale %||% "linear", '</td></tr>
+<tr><th>Colour by</th><td>', vs$color_by %||% "subject", '</td></tr>
+<tr><th>Summary statistic</th><td>', vs$summary_statistic %||% "geomean", '</td></tr>
+<tr><th>Dose-normalized</th><td>', yn(vs$dose_normalized), '</td></tr>
+<tr><th>Colour palette</th><td>', vs$colour_palette %||% "default", '</td></tr>
+<tr><th>Figure size</th><td>', vs$figure_width_in %||% 7, ' &times; ',
+  vs$figure_height_in %||% 5, ' in @ ', vs$dpi %||% 300, ' DPI</td></tr>
+<tr><th>Export format</th><td>', toupper(vs$export_format %||% "png"), '</td></tr>
+<tr><th>Zero/BLQ excluded from geometric mean</th><td>', vs$blq_excluded_n %||% 0, ' observation(s)</td></tr>
+</table>
+
+<h2>4. Software Environment</h2>
+<table>
+<tr><th>NCA Assistant</th><td>v', ver, '</td></tr>
+<tr><th>R</th><td>', r_ver, '</td></tr>
+<tr><th>ggplot2</th><td>', pkg_ver("ggplot2"), '</td></tr>
+<tr><th>dplyr</th><td>', pkg_ver("dplyr"), '</td></tr>
+<tr><th>Operating system</th><td>', sessionInfo()$running, '</td></tr>
+</table>
+
+<h2>5. How to Reproduce</h2>
+<div class="info-box"><ol>
+<li>Place <code>reproduce_figure.R</code> and <code>', htmltools::htmlEscape(file_name), '</code> in the same folder.</li>
+<li>Open R or RStudio and <code>setwd()</code> to that folder.</li>
+<li>Run <code>source("reproduce_figure.R")</code>.</li>
+<li>Compare the generated figure with the one in this package.</li>
+</ol></div>
+
+<div class="footer">Generated by NCA Assistant v', ver, ' on ',
+  format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), '<br>
+Part of the Figure Record &mdash; keep these files together.</div>
+</body></html>')
+}
+
+
+#' Create the Complete Analysis Record zip for a Visualize-tab figure
+#'
+#' @param output_path Path to write the zip file
+#' @param plot_obj A ggplot object (the figure to export)
+#' @param viz_settings The shared$viz_settings list
+#' @param col_map Column mapping
+#' @param original_file_path,original_file_name Source data file
+#' @param blq_rule,lloq BLQ handling applied upstream (for provenance)
+#' @param analyst,study_name Free-text metadata
+#' @param n_subjects,n_obs Counts for the summary
+create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
+                              original_file_path, original_file_name,
+                              blq_rule = "none", lloq = 0,
+                              analyst = "Analyst", study_name = "Untitled Study",
+                              n_subjects = NA, n_obs = NA) {
+
+  tmp <- tempdir()
+  rec_dir <- file.path(tmp, "figure_record")
+  if (dir.exists(rec_dir)) unlink(rec_dir, recursive = TRUE)
+  dir.create(rec_dir, recursive = TRUE)
+
+  fmt <- viz_settings$export_format %||% "png"
+  w   <- viz_settings$figure_width_in  %||% 7
+  h   <- viz_settings$figure_height_in %||% 5
+  dpi <- viz_settings$dpi %||% 300
+
+  # 1. Figure file
+  tryCatch({
+    ggplot2::ggsave(filename = file.path(rec_dir, paste0("figure.", fmt)),
+                    plot = plot_obj, device = fmt,
+                    width = w, height = h, dpi = dpi, units = "in")
+  }, error = function(e) warning("Could not save figure: ", e$message))
+
+  # 2. Figure settings JSON
+  tryCatch({
+    settings_export <- list(
+      schema_version = RECORD_SCHEMA_VERSION,
+      app_version    = tryCatch(get("APP_VERSION", envir = globalenv()), error = function(e) "?"),
+      r_version      = R.version.string,
+      timestamp      = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+      analyst        = analyst,
+      study_name     = study_name,
+      analysis_type  = "Figure / Visualization",
+      input_file     = original_file_name,
+      column_mapping = col_map,
+      blq_rule       = blq_rule,
+      lloq           = lloq,
+      visualization  = viz_settings,
+      packages = list(
+        ggplot2 = tryCatch(as.character(packageVersion("ggplot2")), error = function(e) "?"),
+        dplyr   = tryCatch(as.character(packageVersion("dplyr")), error = function(e) "?")
+      )
+    )
+    writeLines(jsonlite::toJSON(settings_export, pretty = TRUE, auto_unbox = TRUE),
+               file.path(rec_dir, "figure_settings.json"))
+  }, error = function(e) warning("Could not create figure settings JSON: ", e$message))
+
+  # 3. Reproducibility R script
+  tryCatch({
+    script <- generate_viz_script(viz_settings, col_map, original_file_name)
+    writeLines(script, file.path(rec_dir, "reproduce_figure.R"))
+  }, error = function(e) warning("Could not create figure R script: ", e$message))
+
+  # 4 + 6. Data integrity + original data copy
+  file_hash <- "not computed"
+  tryCatch({
+    if (requireNamespace("digest", quietly = TRUE) &&
+        !is.null(original_file_path) && file.exists(original_file_path)) {
+      file_hash <- digest::digest(file = original_file_path, algo = "sha256")
+    }
+    writeLines(paste0(
+      "Data Integrity Verification\n===========================\n\n",
+      "File name:    ", original_file_name, "\n",
+      "SHA-256 hash: ", file_hash, "\n",
+      "Computed at:  ", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), "\n"),
+      file.path(rec_dir, "data_integrity.txt"))
+    if (!is.null(original_file_path) && file.exists(original_file_path)) {
+      file.copy(original_file_path, file.path(rec_dir, original_file_name),
+                overwrite = TRUE)
+    }
+  }, error = function(e) warning("Could not create integrity file: ", e$message))
+
+  # 5. Provenance HTML
+  tryCatch({
+    html <- generate_viz_html(viz_settings, col_map, original_file_name,
+                              file_hash, analyst, study_name, n_subjects, n_obs)
+    writeLines(html, file.path(rec_dir, "figure_provenance.html"))
+  }, error = function(e) warning("Could not create provenance HTML: ", e$message))
+
+  zip_record_dir(rec_dir, output_path)
+  unlink(rec_dir, recursive = TRUE)
   invisible(output_path)
 }
