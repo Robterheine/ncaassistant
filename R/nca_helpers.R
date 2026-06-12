@@ -368,7 +368,18 @@ run_nca <- function(data, col_map, settings) {
       iAUC      = iAUC_df
     )
   }, error = function(e) {
-    warning("NCA calculation failed: ", conditionMessage(e))
+    msg <- conditionMessage(e)
+    # A "lazy-load database ... is corrupt" error is not an analysis problem: the
+    # R session holds a stale handle to NonCompart (typically because the package
+    # was updated while this session had it loaded). Tell the user how to fix it
+    # instead of the misleading generic "check settings".
+    if (grepl("lazy-load|lazy load", msg, ignore.case = TRUE)) {
+      warning("The NonCompart engine could not load (", msg, "). This usually means ",
+              "the R session has a stale package handle — restart R (in RStudio: ",
+              "Session → Restart R) and relaunch the app. No reinstall is normally needed.")
+    } else {
+      warning("NCA calculation failed: ", msg)
+    }
     NULL
   })
   

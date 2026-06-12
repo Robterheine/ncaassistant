@@ -12,7 +12,23 @@
 NONCOMPART_MIN_VERSION    <- "0.7.0"   # floor we expect the tblNCA/sNCA API at
 NONCOMPART_TESTED_VERSION <- "0.8.0"   # version the app is validated against
 
+#' Run the NCA engine on trivial data to confirm it actually loads and executes.
+#' Catches a corrupt/stale install (e.g. "lazy-load database ... is corrupt",
+#' which happens when NonCompart is updated while an R session has it loaded) —
+#' a state that packageVersion() alone cannot detect because it only reads the
+#' DESCRIPTION file, not the lazy-load database the functions live in.
+#' @return NULL if the engine runs, else the error message string.
+noncompart_engine_error <- function() {
+  tryCatch({
+    suppressWarnings(suppressMessages(
+      NonCompart::sNCA(x = c(0, 1, 2, 4), y = c(0, 10, 5, 2), dose = 1)))
+    NULL
+  }, error = function(e) conditionMessage(e))
+}
+
 #' Detect the installed NonCompart version and classify compatibility.
+#' Includes a functional self-test so a corrupt or stale engine is reported
+#' clearly up front, not as a cryptic "NCA failed" mid-analysis.
 #' @return list(version, level = ok|info|warn|error, label, message)
 noncompart_compat <- function() {
   v <- tryCatch(utils::packageVersion("NonCompart"), error = function(e) NULL)
@@ -22,6 +38,28 @@ noncompart_compat <- function() {
                                  "Install it with install.packages(\"NonCompart\").")))
   }
   vs <- as.character(v)
+
+  # Functional self-test — the engine must actually load and run, not merely
+  # report a version. A long-lived R session that updated NonCompart while it was
+  # loaded ends up with a stale lazy-load handle and a "database is corrupt" error
+  # even though the on-disk package is fine.
+  eng_err <- noncompart_engine_error()
+  if (!is.null(eng_err)) {
+    corrupt <- grepl("lazy-load|corrupt|database", eng_err, ignore.case = TRUE)
+    return(list(version = vs, level = "error", label = "Engine error",
+                message = paste0(
+                  "NonCompart ", vs, " is installed but failed to run (", eng_err, "). ",
+                  if (corrupt)
+                    paste0("This usually means your R session has a stale package handle ",
+                           "(e.g. NonCompart was updated while this session was running). ",
+                           "Fix: restart R — in RStudio, Session → Restart R (Cmd/Ctrl+Shift+F10) — ",
+                           "then re-launch the app. If it persists, run ",
+                           "install.packages(\"NonCompart\") and restart R again.")
+                  else
+                    paste0("Try restarting R and reinstalling with ",
+                           "install.packages(\"NonCompart\")."))))
+  }
+
   if (v < package_version(NONCOMPART_MIN_VERSION)) {
     return(list(version = vs, level = "warn", label = "Update recommended",
                 message = paste0("NonCompart ", vs, " is older than the tested minimum ",

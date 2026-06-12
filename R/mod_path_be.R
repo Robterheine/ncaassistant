@@ -429,7 +429,10 @@ path_be_server <- function(id, shared) {
         )
         
         if (is.null(nca_res)) {
-          showNotification("NCA failed.", type = "error"); return()
+          detail <- if (length(nca_warnings_be) > 0) paste(nca_warnings_be, collapse = " ")
+                    else "Check the data and column mapping."
+          showNotification(paste0("NCA failed. ", detail), type = "error", duration = NULL)
+          return()
         }
         
         if (length(nca_warnings_be) > 0) {

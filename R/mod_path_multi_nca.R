@@ -346,7 +346,9 @@ path_multi_nca_server <- function(id, shared) {
         )
         
         if (is.null(result)) {
-          showNotification("NCA failed. Check settings.", type = "error")
+          detail <- if (length(nca_warnings) > 0) paste(nca_warnings, collapse = " ")
+                    else "Check the data and column mapping."
+          showNotification(paste0("NCA failed. ", detail), type = "error", duration = NULL)
           return()
         }
         

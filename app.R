@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.2.4
+# Non-Compartmental Analysis Assistant v1.2.5
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # Designed by Rob ter Heine
@@ -14,7 +14,7 @@
 #   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.2.4"
+APP_VERSION <- "1.2.5"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 # Allow uploads up to 50 MB (Shiny default is 5 MB)
@@ -714,8 +714,19 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.2.4",
+            tags$h6(class = "fw-bold mb-1", "v1.2.5",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "June 2026"),
+            tags$ul(class = "mb-0",
+              tags$li("Engine self-test at startup: the app now actually runs the NCA engine (not just reads its version), so a corrupt or stale NonCompart install — e.g. a “lazy-load database is corrupt” error after the package was updated mid-session — is caught immediately with a clear ‘restart R’ message instead of a confusing mid-analysis failure"),
+              tags$li("Clearer NCA errors: a lazy-load/engine failure in Batch and Bioequivalence now shows the real cause and fix (restart R — in RStudio, Session → Restart R) instead of the misleading ‘NCA failed. Check settings.’"),
+              tags$li("No change to NCA, bioequivalence, or power calculations")
+            )
+          ),
+
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.2.4"),
             tags$p(class = "text-muted mb-1", "June 2026"),
             tags$ul(class = "mb-0",
               tags$li("New: the app now detects the installed NonCompart engine version at startup and reports a clear compatibility status (Validated / Compatible / Update recommended / Not installed) in the About → Runtime Environment panel"),
