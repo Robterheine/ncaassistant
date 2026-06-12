@@ -581,6 +581,44 @@ check("EXP-RS-01", "Repro script: valid R",
 check("EXP-RS-02", "Repro script: key settings",
       { s<-generate_nca_script(theoph_settings,theoph_cm,"example_theoph.csv","rule1",0); grepl("NonCompart",s)&&grepl("Extravascular",s)&&grepl("example_theoph",s) },
       "URS-EXP-02", method="Check contents", expected="Key elements present", critical=TRUE)
+check("EXP-MN-01", "Three-way integrity manifest",
+      tryCatch({
+        td <- file.path(tempdir(),"exp_mn"); if(dir.exists(td)) unlink(td,recursive=TRUE); dir.create(td)
+        zf <- file.path(td,"rec.zip")
+        create_analysis_record(zf, theoph_result, theoph_settings, theoph_cm,
+          "data/example_theoph.csv", "example_theoph.csv", blq_rule="rule1", lloq=0,
+          analyst="Validation", study_name="Manifest Test")
+        ex <- file.path(td,"ex"); dir.create(ex); utils::unzip(zf, exdir=ex)
+        man <- paste(readLines(file.path(ex,"data_integrity.txt")), collapse="\n")
+        n_hash <- length(gregexpr("SHA-256:", man, fixed=TRUE)[[1]])
+        n_hash==3 && grepl("Source data",man) && grepl("Analysis settings",man) && grepl("Results",man)
+      }, error=function(e) FALSE),
+      "URS-EXP-04", method="create_analysis_record -> count SHA-256 entries in data_integrity.txt",
+      expected="3 hashes: source data, settings, results", critical=TRUE)
+check("EXP-CMP-01", "Reproduction auto-comparison",
+      tryCatch({
+        td <- file.path(tempdir(),"exp_cmp"); if(dir.exists(td)) unlink(td,recursive=TRUE); dir.create(td)
+        zf <- file.path(td,"rec.zip")
+        create_analysis_record(zf, theoph_result, theoph_settings, theoph_cm,
+          "data/example_theoph.csv", "example_theoph.csv", blq_rule="rule1", lloq=0)
+        ex <- file.path(td,"ex"); dir.create(ex); utils::unzip(zf, exdir=ex)
+        ref_file <- file.path(ex,"app_results_reference.csv")
+        scr <- paste(readLines(file.path(ex,"reproduce_analysis.R")), collapse="\n")
+        has_cmp <- file.exists(ref_file) && grepl("app_results_reference.csv", scr) &&
+                   grepl("Reproduction check", scr)
+        ref <- read.csv(ref_file, stringsAsFactors=FALSE, check.names=FALSE)
+        rr  <- run_nca(theoph, theoph_cm, theoph_settings)
+        maxrel <- 0
+        for (cn in intersect(names(rr), names(ref))) {
+          a <- suppressWarnings(as.numeric(as.character(rr[[cn]])))
+          b <- suppressWarnings(as.numeric(as.character(ref[[cn]])))
+          both <- is.finite(a) & is.finite(b); if(!any(both)) next
+          maxrel <- max(maxrel, max(abs(a[both]-b[both])/pmax(abs(b[both]),1e-12)))
+        }
+        has_cmp && maxrel < 1e-6
+      }, error=function(e) FALSE),
+      "URS-EXP-02", method="Record bundles app_results_reference.csv; script auto-compares; independent recompute matches",
+      expected="Reference present + comparison in script + max rel diff < 1e-6 (MATCH)", critical=TRUE)
 check("EXP-SM-01", "Summary: N=12", summarize_pk_params(theoph_result,"CMAX")$N[1]==12,
       "URS-EXP-01", method="Theoph N", expected="12", critical=TRUE)
 check("EXP-SM-02", "Summary: Mean>0", summarize_pk_params(theoph_result,"CMAX")$Mean[1]>0,

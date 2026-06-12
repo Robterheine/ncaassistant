@@ -37,7 +37,7 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **178 automated tests** across nine sections, each mapped to a URS requirement:
+The script runs **180 automated tests** across nine sections, each mapped to a URS requirement:
 
 | Section | Code | Tests cover |
 |---------|------|-------------|
@@ -47,7 +47,7 @@ The script runs **178 automated tests** across nine sections, each mapped to a U
 | Bioequivalence | BE | CI construction, TOST logic, crossover ANOVA, forest plot data |
 | v1.1 Features | OQ-NEW | R² slider propagation, half-life recalculation, negative slope rejection, 2-point edge case, override audit trail |
 | Power & Sample Size | PWR | ABE, ABEL, RSABE, NTID designs via PowerTOST |
-| Export & Reproducibility | EXP | JSON settings structure, R script generation, SHA-256 integrity, schema version |
+| Export & Reproducibility | EXP | JSON settings structure, R script generation, SHA-256 integrity, schema version, three-way integrity manifest, reproduced-vs-app comparison |
 | Usability & Code Quality | UI | Module loading, defensive coding checks |
 | Visualisation | VIZ | Plot data construction, dose normalisation, colour palette handling |
 
