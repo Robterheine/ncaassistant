@@ -60,9 +60,24 @@ if (length(missing) > 0) {
 }
 
 # --- Print version info ------------------------------------------------------
+# NonCompart compatibility: 0.8.0 added strict input-type checks. The app coerces
+# defensively so older/newer versions both work; we flag versions below the tested
+# floor so problems surface here rather than as a runtime "NCA failed".
+NONCOMPART_MIN_VERSION    <- "0.7.0"
+NONCOMPART_TESTED_VERSION <- "0.8.0"
+
 cat("--- Engine Versions ---\n")
 cat("R:          ", R.version.string, "\n")
-cat("NonCompart: ", as.character(packageVersion("NonCompart")), "\n")
+nc_v <- packageVersion("NonCompart")
+cat("NonCompart: ", as.character(nc_v),
+    if (nc_v < package_version(NONCOMPART_MIN_VERSION)) {
+      paste0("  [!] older than tested floor ", NONCOMPART_MIN_VERSION,
+             " — consider: install.packages(\"NonCompart\")")
+    } else if (nc_v == package_version(NONCOMPART_TESTED_VERSION)) {
+      "  [validated]"
+    } else {
+      paste0("  [compatible; validated against ", NONCOMPART_TESTED_VERSION, "]")
+    }, "\n")
 cat("ncar:       ", as.character(packageVersion("ncar")), "\n")
 cat("PowerTOST:  ", as.character(packageVersion("PowerTOST")), "\n")
 cat("Shiny:      ", as.character(packageVersion("shiny")), "\n")

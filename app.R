@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.2.3
+# Non-Compartmental Analysis Assistant v1.2.4
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # Designed by Rob ter Heine
@@ -14,7 +14,7 @@
 #   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.2.3"
+APP_VERSION <- "1.2.4"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 # Allow uploads up to 50 MB (Shiny default is 5 MB)
@@ -169,7 +169,19 @@ server <- function(input, output, session) {
     # Visualization settings (written by viz module, read by export_record)
     viz_settings = NULL
   )
-  
+
+  # === NCA ENGINE CHECK ======================================================
+  # Detect the installed NonCompart version once per session and surface a clear
+  # message for an old/missing engine, instead of a cryptic "NCA failed" later.
+  local({
+    nc <- noncompart_compat()
+    if (nc$level %in% c("warn", "error")) {
+      showNotification(
+        tagList(icon("triangle-exclamation"), " ", nc$message),
+        type = "warning", duration = NULL, id = "noncompart_compat")
+    }
+  })
+
   # === NAVIGATION ============================================================
   observeEvent(input$nav_path, {
     shared$current_path <- input$nav_path
@@ -645,9 +657,21 @@ server <- function(input, output, session) {
                     tags$td(R.version$platform)),
             tags$tr(tags$td(class = "fw-bold", "OS:"),
                     tags$td(sessionInfo()$running)),
-            tags$tr(tags$td(class = "fw-bold", "NCA engine:"),
-                    tags$td("NonCompart (validated against WinNonlin\u00AE, ",
-                            "Kim et al. 2018)")),
+            local({
+              nc <- noncompart_compat()
+              badge_class <- switch(nc$level,
+                                    ok = "bg-success", info = "bg-info",
+                                    warn = "bg-warning text-dark", error = "bg-danger",
+                                    "bg-secondary")
+              tags$tr(tags$td(class = "fw-bold", "NCA engine:"),
+                      tags$td(
+                        "NonCompart ", tags$code(nc$version), " ",
+                        tags$span(class = paste("badge", badge_class), nc$label),
+                        tags$div(class = "text-muted", style = "font-size: 0.85em;",
+                                 "Validated against WinNonlin\u00AE (Kim et al. 2018); ",
+                                 "app validated with NonCompart ", NONCOMPART_TESTED_VERSION, ".")
+                      ))
+            }),
             tags$tr(tags$td(class = "fw-bold", "BE engine:"),
                     tags$td("Base R lm() / nlme::lme() with ANOVA-based ",
                             "90% confidence intervals")),
@@ -690,8 +714,19 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.2.3",
+            tags$h6(class = "fw-bold mb-1", "v1.2.4",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "June 2026"),
+            tags$ul(class = "mb-0",
+              tags$li("New: the app now detects the installed NonCompart engine version at startup and reports a clear compatibility status (Validated / Compatible / Update recommended / Not installed) in the About → Runtime Environment panel"),
+              tags$li("An old or missing NonCompart engine now triggers a plain-language warning with the fix (install.packages(\"NonCompart\")) instead of a cryptic NCA error; the launch script prints the same compatibility note"),
+              tags$li("No change to NCA, bioequivalence, or power calculations")
+            )
+          ),
+
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.2.3"),
             tags$p(class = "text-muted mb-1", "June 2026"),
             tags$ul(class = "mb-0",
               tags$li("Bug fix: NCA no longer fails (“NCA failed” / “Check input types!”) under NonCompart 0.8.0, which strictly rejects non-numeric input. run_nca (batch + bioequivalence) and the single-subject NCA now coerce time, concentration, dose, duration, and MW to numeric — and sort by numeric time — before calling NonCompart, so analysis is robust to character-typed columns from any upload path, locale, or package version"),

@@ -2,6 +2,42 @@
 # NCA Assistant — Utility Functions
 # ============================================================================
 
+# --- NonCompart engine compatibility -----------------------------------------
+# NonCompart 0.8.0 introduced a strict input-type check in sNCA() that hard-stops
+# ("Check input types!") on non-numeric time/concentration/dose. run_nca() and the
+# single-subject NCA coerce defensively so older and newer versions both work; this
+# helper detects the installed version and reports a clear compatibility status so
+# version issues surface plainly instead of as a cryptic "NCA failed".
+
+NONCOMPART_MIN_VERSION    <- "0.7.0"   # floor we expect the tblNCA/sNCA API at
+NONCOMPART_TESTED_VERSION <- "0.8.0"   # version the app is validated against
+
+#' Detect the installed NonCompart version and classify compatibility.
+#' @return list(version, level = ok|info|warn|error, label, message)
+noncompart_compat <- function() {
+  v <- tryCatch(utils::packageVersion("NonCompart"), error = function(e) NULL)
+  if (is.null(v)) {
+    return(list(version = "(not installed)", level = "error", label = "Not installed",
+                message = paste0("The NonCompart package is not installed. ",
+                                 "Install it with install.packages(\"NonCompart\").")))
+  }
+  vs <- as.character(v)
+  if (v < package_version(NONCOMPART_MIN_VERSION)) {
+    return(list(version = vs, level = "warn", label = "Update recommended",
+                message = paste0("NonCompart ", vs, " is older than the tested minimum ",
+                                 NONCOMPART_MIN_VERSION, ". If you encounter NCA errors, update with ",
+                                 "install.packages(\"NonCompart\").")))
+  }
+  if (v == package_version(NONCOMPART_TESTED_VERSION)) {
+    return(list(version = vs, level = "ok", label = "Validated",
+                message = paste0("NonCompart ", vs, " — validated.")))
+  }
+  list(version = vs, level = "info", label = "Compatible",
+       message = paste0("NonCompart ", vs, " detected (validated against ",
+                        NONCOMPART_TESTED_VERSION, "). Supported via defensive type handling; ",
+                        "if you see NCA errors, please report this version."))
+}
+
 # --- Parameter name dictionary ------------------------------------------------
 # Maps NonCompart abbreviations to plain-language descriptions.
 
