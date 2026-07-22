@@ -327,11 +327,15 @@ path_power_server <- function(id, shared) {
             class = "alert alert-light py-2 small mb-0",
             style = "border-left: 3px solid #E74C3C;",
             icon("info-circle", class = "text-danger me-1"),
-            tags$strong("Acceptance limits: "), "90\u2013111.11%",
+            tags$strong("Acceptance limits: "),
+            "reference-scaled (90\u2013111.11% at CV", tags$sub("wR"), " \u2248 10%)",
             tags$br(),
             tags$span(class = "text-muted",
-                      "Tighter than standard BE (80\u2013125%). The FDA also requires that ",
-                      "the within-subject variance of the Test is not greater than that ",
+                      "The limits are computed from the within-subject variability of the ",
+                      "Reference product: 90\u2013111.11% at a Reference CV of about 10% ",
+                      "(\u03c3", tags$sub("wR"), " = 0.10), tighter below and wider above, ",
+                      "but never beyond the conventional 80\u2013125%. The FDA also requires ",
+                      "that the within-subject variance of the Test is not greater than that ",
                       "of the Reference (variance ratio test). Both criteria are evaluated ",
                       "together in the simulation.")
           )
@@ -362,23 +366,14 @@ path_power_server <- function(id, shared) {
         } else if (atype == "ntid") {
           tagList(
             tags$p(class = "text-muted small",
-                   "The FDA NTID method uses fixed limits of 90\u2013111.11% (0.90\u20131.111). ",
-                   "These are set by regulation and cannot be changed."),
-            layout_columns(
-              col_widths = c(6, 6),
-              tags$div(
-                tags$label(class = "form-label", "Lower limit"),
-                tags$input(class = "form-control form-control-sm",
-                           value = "0.90", disabled = NA)
-              ),
-              tags$div(
-                tags$label(class = "form-label", "Upper limit"),
-                tags$input(class = "form-control form-control-sm",
-                           value = "1.111", disabled = NA)
-              )
-            ),
-            # Still need theta1/theta2 inputs in DOM for server validation —
-            # hidden, pre-set to NTID values
+                   "The FDA NTID method is reference-scaled: the acceptance limits are ",
+                   "computed from the within-subject variability of the Reference product ",
+                   "(CV", tags$sub("wR"), "). They equal 90.00\u2013111.11% at a Reference CV of ",
+                   "about 10% (\u03c3", tags$sub("wR"), " = 0.10), tighten below that value and ",
+                   "widen above it, but never beyond the conventional 80.00\u2013125.00%. ",
+                   "The limits are calculated during the simulation, not set manually."),
+            # Hidden theta1/theta2 kept in the DOM for server validation only; the
+            # NTID calculation is reference-scaled and does not use these values.
             tags$div(style = "display:none;",
                      numericInput(ns("theta1"), NULL, value = 0.90),
                      numericInput(ns("theta2"), NULL, value = 1.111))
@@ -543,9 +538,9 @@ path_power_server <- function(id, shared) {
     calc_result <- reactiveVal(NULL)
 
     # ---- Resolve correct limits per study type ------------------------------
-    # For NTID the limits are fixed by regulation regardless of user input.
-    # For ABEL/RSABE the theta1/theta2 inputs are hidden placeholders — the
-    # limits are not used by those PowerTOST functions directly.
+    # For NTID, ABEL, and RSABE the acceptance limits are reference-scaled inside
+    # PowerTOST (computed from CVwR); the theta1/theta2 inputs are hidden
+    # placeholders and are not passed to those PowerTOST functions.
     resolve_limits <- function(atype) {
       switch(atype,
         "ntid" = list(theta1 = 0.90, theta2 = 1.111),

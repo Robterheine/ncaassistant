@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.2.6
+# Non-Compartmental Analysis Assistant v1.2.7
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # Designed by Rob ter Heine
@@ -14,7 +14,7 @@
 #   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.2.6"
+APP_VERSION <- "1.2.7"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 # Mirror APP_VERSION into the global environment. When RStudio runs a single-file
@@ -721,8 +721,19 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.2.6",
+            tags$h6(class = "fw-bold mb-1", "v1.2.7",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "June 2026"),
+            tags$ul(class = "mb-0",
+              tags$li("Corrected the Plan a Study note for narrow therapeutic index (NTID) drugs: the FDA method is reference-scaled, not fixed. The acceptance limits are computed from the Reference product's within-subject variability, equalling 90.00–111.11% only at a Reference CV of about 10% (σwR = 0.10), tightening below and widening above, capped at 80.00–125.00%"),
+              tags$li("Removed two disabled input fields that displayed 0.90 and 1.111 as if they were fixed NTID limits, which reinforced the incorrect impression"),
+              tags$li("No change to any calculation: sample size and power already used PowerTOST's reference-scaled NTID method; only the explanatory text was wrong")
+            )
+          ),
+
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.2.6"),
             tags$p(class = "text-muted mb-1", "June 2026"),
             tags$ul(class = "mb-0",
               tags$li("Critical fix: the app could hang on launch or during analysis when run from an interactive R session (e.g. RStudio) — NonCompart's automatic terminal-slope routine falls into an interactive base-graphics picker (“Choose points for terminal slope”) for poor-fit profiles, which blocks the app. NCA calls now pass R²adj = 0 so this interactive picker is never invoked; the automatic best-adjusted-R² slope is used and the user's R² threshold is applied by the app's own half-life review. Verified identical results for well-behaved profiles"),

@@ -582,8 +582,8 @@ check("EXP-DT-02", "Determinism: summary", { s1<-summarize_pk_params(theoph_resu
       "URS-EXP-01", method="Summary twice", expected="Identical", critical=TRUE)
 check("EXP-VR-01", "APP_VERSION queryable", nchar(APP_VERSION)>0&&APP_VERSION!="unknown",
       "URS-EXP-06", method="APP_VERSION from app.R", expected="Non-empty", critical=TRUE)
-check("EXP-VR-02", "APP_VERSION is 1.2.6", APP_VERSION=="1.2.6",
-      "URS-EXP-06", method="=='1.2.6'", expected="1.2.6", critical=FALSE)
+check("EXP-VR-02", "APP_VERSION is 1.2.7", APP_VERSION=="1.2.7",
+      "URS-EXP-06", method="=='1.2.7'", expected="1.2.7", critical=FALSE)
 check("EXP-VR-03", "Package versions", { v<-sapply(c("NonCompart","PowerTOST","nlme"),function(p)as.character(packageVersion(p))); all(nchar(v)>0) },
       "URS-EXP-06", method="packageVersion", expected="All return strings", critical=TRUE)
 check("EXP-SH-01", "SHA-256 computable", nchar(digest(file="validation/validation.R",algo="sha256"))==64,
