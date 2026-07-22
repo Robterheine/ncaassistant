@@ -349,7 +349,7 @@ help_theta0 <- info_btn("help_theta0", "What is the expected T/R ratio?",
   <br><br>
   <ul>
   <li>Type <b>100</b> if you believe the formulations are identical.</li>
-  <li>Type <b>95</b> as a conservative standard assumption (FDA recommended).</li>
+  <li>Type <b>95</b> as a standard assumption.</li>
   <li>Type <b>105</b> if you expect the Test to be slightly higher than Reference.</li>
   </ul>
   <b>When in doubt, use 95.</b> This is the standard conservative assumption 

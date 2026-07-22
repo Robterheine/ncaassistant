@@ -727,7 +727,8 @@ server <- function(input, output, session) {
             tags$ul(class = "mb-0",
               tags$li("Corrected the Plan a Study note for narrow therapeutic index (NTID) drugs: the FDA method is reference-scaled, not fixed. The acceptance limits are computed from the Reference product's within-subject variability, equalling 90.00–111.11% only at a Reference CV of about 10% (σwR = 0.10), tightening below and widening above, capped at 80.00–125.00%"),
               tags$li("Removed two disabled input fields that displayed 0.90 and 1.111 as if they were fixed NTID limits, which reinforced the incorrect impression"),
-              tags$li("No change to any calculation: sample size and power already used PowerTOST's reference-scaled NTID method; only the explanatory text was wrong")
+              tags$li("No change to any calculation: sample size and power already used PowerTOST's reference-scaled NTID method; only the explanatory text was wrong"),
+              tags$li("Removed the unsupported “(FDA recommended)” attribution from the Expected Test/Reference ratio help text; no FDA guidance document could be located that specifically recommends this default")
             )
           ),
 
