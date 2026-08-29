@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.2.7
+# Non-Compartmental Analysis Assistant v1.2.8
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # Designed by Rob ter Heine
@@ -14,7 +14,7 @@
 #   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.2.7"
+APP_VERSION <- "1.2.8"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 # Mirror APP_VERSION into the global environment. When RStudio runs a single-file
@@ -721,8 +721,17 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.2.7",
+            tags$h6(class = "fw-bold mb-1", "v1.2.8",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "August 2026"),
+            tags$ul(class = "mb-0",
+              tags$li("Replaced “conservative” with “conventional” in the Expected Test/Reference ratio help text: assuming a 95% ratio is not universally conservative, since a larger true difference from 100% still needs a larger sample size regardless of what was assumed for planning")
+            )
+          ),
+
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.2.7"),
             tags$p(class = "text-muted mb-1", "June 2026"),
             tags$ul(class = "mb-0",
               tags$li("Corrected the Plan a Study note for narrow therapeutic index (NTID) drugs: the FDA method is reference-scaled, not fixed. The acceptance limits are computed from the Reference product's within-subject variability, equalling 90.00–111.11% only at a Reference CV of about 10% (σwR = 0.10), tightening below and widening above, capped at 80.00–125.00%"),

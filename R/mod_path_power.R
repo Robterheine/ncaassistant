@@ -110,7 +110,7 @@ path_power_ui <- function(id) {
                          value = 95, min = 50, max = 200, step = 1),
             tags$p(class = "text-muted small mt-n2 mb-2",
                    "95 means you expect the Test to be 95% of the Reference. ",
-                   "Use 95 if unsure \u2014 this is the conservative standard assumption."),
+                   "Use 95 if unsure \u2014 this is the conventional assumption."),
 
             # Main CV
             numericInput(ns("cv"),

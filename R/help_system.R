@@ -352,7 +352,7 @@ help_theta0 <- info_btn("help_theta0", "What is the expected T/R ratio?",
   <li>Type <b>95</b> as a standard assumption.</li>
   <li>Type <b>105</b> if you expect the Test to be slightly higher than Reference.</li>
   </ul>
-  <b>When in doubt, use 95.</b> This is the standard conservative assumption 
+  <b>When in doubt, use 95.</b> This is the conventional assumption
   used in most regulatory submissions.")
 
 # --- LAMBDA Z INSPECTOR ----------------------------------------------------
