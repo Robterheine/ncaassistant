@@ -725,7 +725,8 @@ server <- function(input, output, session) {
                     tags$span(class = "badge bg-primary ms-2", "current")),
             tags$p(class = "text-muted mb-1", "August 2026"),
             tags$ul(class = "mb-0",
-              tags$li("Replaced “conservative” with “conventional” in the Expected Test/Reference ratio help text: assuming a 95% ratio is not universally conservative, since a larger true difference from 100% still needs a larger sample size regardless of what was assumed for planning")
+              tags$li("Replaced “conservative” with “conventional” in the Expected Test/Reference ratio help text: assuming a 95% ratio is not universally conservative, since a larger true difference from 100% still needs a larger sample size regardless of what was assumed for planning"),
+              tags$li("Renamed the Plan a Study design labelled “Williams design (3-sequence, 3-period)” to “3-sequence partial replicate (2x3x3)”: a true Williams design needs at least 3 treatments and, for 3 treatments, 6 sequences (PowerTOST's 3x6x3), not the 2-treatment, 3-sequence design (PowerTOST's 2x3x3) this option actually runs")
             )
           ),
 

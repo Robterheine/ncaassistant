@@ -216,14 +216,14 @@ path_power_server <- function(id, shared) {
     valid_designs <- list(
       abe    = c("2x2"    = "Standard 2-period crossover",
                  "2x2x3"  = "3-period crossover",
-                 "2x3x3"  = "Williams design (3-sequence, 3-period)",
+                 "2x3x3"  = "3-sequence partial replicate (2x3x3)",
                  "2x2x4"  = "4-period replicate crossover",
                  "parallel" = "Parallel groups"),
       abel   = c("2x2x3"  = "3-period crossover",
-                 "2x3x3"  = "Williams design (3-sequence, 3-period)",
+                 "2x3x3"  = "3-sequence partial replicate (2x3x3)",
                  "2x2x4"  = "4-period replicate crossover"),
       rsabe  = c("2x2x3"  = "3-period crossover",
-                 "2x3x3"  = "Williams design (3-sequence, 3-period)",
+                 "2x3x3"  = "3-sequence partial replicate (2x3x3)",
                  "2x2x4"  = "4-period replicate crossover"),
       ntid   = c("2x2x4"  = "4-period replicate crossover")
     )
