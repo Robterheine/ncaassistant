@@ -337,13 +337,17 @@ data_upload_server <- function(id, shared) {
         data[[col_map$conc]] <- suppressWarnings(as.numeric(data[[col_map$conc]]))
       }
 
+      # Drop unusable rows and sort BEFORE applying the BLQ rules. Rules 1, 5
+      # and 6 are positional ("first quantifiable", "post-Cmax"), so running
+      # them on file order rather than time order imputes the wrong samples
+      # whenever the upload is not already sorted.
+      data <- data[!is.na(data[[col_map$time]]), ]
+      data <- data[order(data[[col_map$subject]], data[[col_map$time]]), ]
+
       if (input$lloq > 0) {
         data <- apply_blq_rules(data, col_map, rule = input$blq_rule,
                                 lloq = input$lloq)
       }
-      
-      data <- data[!is.na(data[[col_map$time]]), ]
-      data <- data[order(data[[col_map$subject]], data[[col_map$time]]), ]
       
       design <- detect_study_design(data, col_map)
       

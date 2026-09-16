@@ -1,6 +1,6 @@
 # NCA Assistant — Validation Package
 
-This folder contains the validation package for NCA Assistant v1.2.8. It follows a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles for custom software used in a regulated pharmaceutical environment.
+This folder contains the validation package for NCA Assistant v1.3.0. It follows a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles for custom software used in a regulated pharmaceutical environment.
 
 ---
 
@@ -37,7 +37,7 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **181 automated tests** across nine sections, each mapped to a URS requirement:
+The script runs **191 automated tests** across ten sections, each mapped to a URS requirement:
 
 | Section | Code | Tests cover |
 |---------|------|-------------|
@@ -50,6 +50,7 @@ The script runs **181 automated tests** across nine sections, each mapped to a U
 | Export & Reproducibility | EXP | JSON settings structure, R script generation, SHA-256 integrity, schema version, three-way integrity manifest, reproduced-vs-app comparison |
 | Usability & Code Quality | UI | Module loading, defensive coding checks |
 | Visualisation | VIZ | Plot data construction, dose normalisation, colour palette handling |
+| Correctness regressions | REG | Dose-to-subject matching, BLQ rule scoping and ordering, unit validation, execution of the shipped reproducibility script |
 
 In addition, **32 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload, column mapping, the half-life review inspector, the Complete Analysis Record download (across all four analysis paths), and the Visualize Figure Record. The manual test definitions are included in the script for traceability but are marked SKIP in automated runs.
 

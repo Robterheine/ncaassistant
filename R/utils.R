@@ -437,3 +437,70 @@ cdisc_pk_names <- function() {
     stringsAsFactors = FALSE
   )
 }
+
+# --- UNITS -----------------------------------------------------------------
+
+# Units are not cosmetic. NonCompart::Unit() derives a numeric conversion
+# factor from the dose and concentration units and applies it to clearance and
+# volume, so CL/F and Vz/F change by orders of magnitude with the unit strings.
+# Unrecognised spellings make Unit() fail outright, and because the NCA call is
+# wrapped in tryCatch the user only ever saw the generic "NCA failed" message.
+# These are the spellings NonCompart accepts; everything else is rejected up
+# front with an explanation.
+CONC_UNIT_CHOICES <- c("ng/mL", "ug/mL", "mg/mL", "pg/mL",
+                       "ng/L",  "ug/L",  "mg/L",  "g/L",
+                       "nmol/L", "umol/L", "mmol/L", "mol/L",
+                       "nmol/mL", "umol/mL")
+DOSE_UNIT_CHOICES <- c("mg", "ug", "g", "ng", "pg",
+                       "mmol", "umol", "nmol", "mol")
+TIME_UNIT_CHOICES <- c("h", "min", "day", "week", "s")
+
+#' Check that a unit combination is one NonCompart can actually use
+#'
+#' Returns list(valid, message). `message` is user-facing when valid is FALSE.
+validate_units <- function(dose_unit, time_unit, conc_unit, mw = 0) {
+  fail <- function(msg) list(valid = FALSE, message = msg)
+  blank <- function(x) is.null(x) || length(x) != 1 || is.na(x) || !nzchar(trimws(x))
+
+  if (blank(dose_unit) || blank(time_unit) || blank(conc_unit)) {
+    return(fail("Dose, time and concentration units must all be set."))
+  }
+
+  # A dose unit containing "/" (typically mg/kg) makes Unit() return NA rather
+  # than error, which would silently blank the CL/F and Vz/F units.
+  if (grepl("/", dose_unit, fixed = TRUE)) {
+    return(fail(paste0("The dose unit must be a plain amount such as mg, not '", dose_unit,
+                       "'. Body-weight-normalised dosing is not supported directly: enter ",
+                       "the actual amount each subject received, or map a Dose column.")))
+  }
+
+  mw_num <- suppressWarnings(as.numeric(if (is.null(mw)) 0 else mw))
+  if (length(mw_num) != 1 || is.na(mw_num) || mw_num < 0) mw_num <- 0
+
+  molar_warning <- FALSE
+  res <- withCallingHandlers(
+    tryCatch(
+      NonCompart::Unit(code = "CLFO", timeUnit = time_unit, concUnit = conc_unit,
+                       doseUnit = dose_unit, MW = mw_num),
+      error = function(e) NULL),
+    warning = function(w) {
+      if (grepl("[Mm]olecular weight", conditionMessage(w))) molar_warning <<- TRUE
+      invokeRestart("muffleWarning")
+    })
+
+  if (is.null(res)) {
+    return(fail(paste0("'", conc_unit, "' / '", dose_unit, "' is not a unit combination the ",
+                       "NCA engine recognises. Use the listed units; note that the micro ",
+                       "prefix must be typed as 'u' (ug/mL), not 'µ' or 'mcg'.")))
+  }
+  if (molar_warning) {
+    return(fail(paste0("Molar and mass units are mixed ('", conc_unit, "' with '", dose_unit,
+                       "'). Enter the molecular weight so clearance and volume can be ",
+                       "converted, or use matching unit types.")))
+  }
+  if (is.na(res[["Unit"]]) || is.na(res[["Factor"]])) {
+    return(fail(paste0("'", conc_unit, "' / '", dose_unit, "' does not give usable clearance ",
+                       "and volume units. Check both against the listed units.")))
+  }
+  list(valid = TRUE, message = "")
+}

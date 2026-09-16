@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.2.8
+# Non-Compartmental Analysis Assistant v1.3.0
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # Designed by Rob ter Heine
@@ -14,7 +14,7 @@
 #   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.2.8"
+APP_VERSION <- "1.3.0"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 # Mirror APP_VERSION into the global environment. When RStudio runs a single-file
@@ -721,8 +721,23 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.2.8",
+            tags$h6(class = "fw-bold mb-1", "v1.3.0",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "September 2026"),
+            tags$ul(class = "mb-0",
+              tags$li(tags$strong("Correctness fix: "), "when a Dose column was mapped and a Treatment column was present, doses were matched to profiles by position rather than by subject. With ten or more subjects the ordering diverged and each subject could be assigned another subject's dose, giving wrong CL/F, Vz/F and dose-normalised parameters while Cmax, AUC and half-life appeared normal. Doses are now matched by subject ID"),
+              tags$li(tags$strong("Correctness fix: "), "per-subject dosing from a Dose column now works in crossover designs, where it previously stopped with a generic \"NCA failed\" message"),
+              tags$li(tags$strong("Correctness fix: "), "the reproducibility script shipped in the Complete Analysis Record did not reproduce the app for two cases: per-subject doses (every subject received the highest dose in the file) and text entries below the limit of quantification such as \"<0.5\" (silently dropped instead of imputed). Both are corrected, and a validation test now executes the shipped script and compares it against the app"),
+              tags$li(tags$strong("Correctness fix: "), "the BLQ rules that depend on sample order (rules 1, 5 and 6) grouped by subject only, so in a crossover they ran across a subject's Test and Reference periods at once. They now apply to each profile separately, and always in time order rather than file order"),
+              tags$li(tags$strong("Units are now selected, not typed: "), "the concentration and dose units drive a real conversion factor for clearance and volume inside the NCA engine. Free-text entry allowed unsupported spellings such as \u00b5g/mL or mcg/mL, which failed with an unhelpful \"NCA failed\" message. Units are chosen from validated lists, mixed molar and mass units are checked, and a molecular weight can now be entered so molar assays return clearance and volume"),
+              tags$li("Data-quality advice for duplicate time points no longer suggests averaging replicate samples, which would be wrong for a file containing more than one analyte"),
+              tags$li("Ten regression tests added (191 automated tests in total), each reproducing one of the defects above")
+            )
+          ),
+
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.2.8"),
             tags$p(class = "text-muted mb-1", "August 2026"),
             tags$ul(class = "mb-0",
               tags$li("Replaced “conservative” with “conventional” in the Expected Test/Reference ratio help text: assuming a 95% ratio is not universally conservative, since a larger true difference from 100% still needs a larger sample size regardless of what was assumed for planning"),

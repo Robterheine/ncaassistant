@@ -582,8 +582,8 @@ check("EXP-DT-02", "Determinism: summary", { s1<-summarize_pk_params(theoph_resu
       "URS-EXP-01", method="Summary twice", expected="Identical", critical=TRUE)
 check("EXP-VR-01", "APP_VERSION queryable", nchar(APP_VERSION)>0&&APP_VERSION!="unknown",
       "URS-EXP-06", method="APP_VERSION from app.R", expected="Non-empty", critical=TRUE)
-check("EXP-VR-02", "APP_VERSION is 1.2.8", APP_VERSION=="1.2.8",
-      "URS-EXP-06", method="=='1.2.8'", expected="1.2.8", critical=FALSE)
+check("EXP-VR-02", "APP_VERSION is 1.3.0", APP_VERSION=="1.3.0",
+      "URS-EXP-06", method="=='1.3.0'", expected="1.3.0", critical=FALSE)
 check("EXP-VR-03", "Package versions", { v<-sapply(c("NonCompart","PowerTOST","nlme"),function(p)as.character(packageVersion(p))); all(nchar(v)>0) },
       "URS-EXP-06", method="packageVersion", expected="All return strings", critical=TRUE)
 check("EXP-SH-01", "SHA-256 computable", nchar(digest(file="validation/validation.R",algo="sha256"))==64,
@@ -871,6 +871,224 @@ check("VIZ-09","Treatment overlay: crossover data has multiple treatments",
   method = "Crossover example has >=2 treatment levels for overlay", expected = ">=2 treatments")
 
 end_section("VIZ")
+
+# =============================================================================
+# SECTION REG - Correctness regressions (v1.3.0)
+# Each test here reproduces a defect that shipped in an earlier version and
+# would have gone undetected by the rest of the suite. They are written to FAIL
+# if the defect returns, not merely to assert that a function exists.
+# =============================================================================
+start_section("REG")
+
+# --- REG-DOSE-01 / 02: dose must follow the subject, not the position -------
+# tblNCA matches `dose` positionally against unique(key). The key is sorted
+# lexicographically, so with >=10 numeric subjects the grouped dose order and
+# the key order diverge and every subject receives someone else's dose. Only
+# dose-dependent parameters (CL/F, Vz/F, *_DN) are affected, so Cmax and AUC
+# look correct and nothing surfaces to the user.
+reg_profile <- function(s, trt, dose) data.frame(
+  Subject = s, Treatment = trt, Dose = dose,
+  Time = c(0, 0.5, 1, 2, 4, 8, 12, 24),
+  Conc = c(0, 8.1, 14.2, 11.0, 6.4, 2.9, 1.1, 0.3),
+  stringsAsFactors = FALSE)
+reg_cm <- list(subject="Subject", time="Time", conc="Conc",
+               treatment="Treatment", dose="Dose")
+reg_settings <- list(admin_route="extravascular", dose=100, infusion_duration=0,
+                     is_steady_state=FALSE, dose_unit="mg", time_unit="h",
+                     conc_unit="ng/mL", trap_method="linear", r2adj_threshold=0.7,
+                     mw=0, partial_aucs=NULL)
+reg_named_dose <- function(d) {
+  lk <- tapply(d$Dose, as.character(d$Subject), max, na.rm = TRUE)
+  lk[order(as.numeric(names(lk)))]
+}
+# CL/F = Dose / AUCinf. Identical profiles differing only in dose must give
+# CL/F exactly proportional to that subject's own dose.
+reg_ratio_ok <- function(res, truth) {
+  g <- data.frame(k = paste(res$Subject, res$Treatment, sep="||"),
+                  CLFO = suppressWarnings(as.numeric(res$CLFO)),
+                  stringsAsFactors = FALSE)
+  m <- merge(g, truth, by="k")
+  r <- m$CLFO / m$Dose
+  all(is.finite(r)) && max(abs(r - r[1])) < 1e-8
+}
+
+check("REG-DOSE-01", "Per-subject dose follows the subject (parallel, 11 subjects)",
+  tryCatch({
+    d <- do.call(rbind, lapply(1:11, function(s)
+           reg_profile(s, if (s <= 6) "A" else "B", if (s <= 6) 100 else 400)))
+    st <- reg_settings; st$dose <- reg_named_dose(d)
+    res <- run_nca(d, reg_cm, st)
+    truth <- unique(data.frame(k = paste(d$Subject, d$Treatment, sep="||"),
+                               Dose = d$Dose, stringsAsFactors = FALSE))
+    !is.null(res) && nrow(res) == 11 && reg_ratio_ok(res, truth)
+  }, error = function(e) FALSE),
+  "URS-NCA-03", critical = TRUE,
+  method = "11 subjects, 2 dose levels, treatment mapped; CL/F vs own dose",
+  expected = "CL/F proportional to each subject's own dose")
+
+check("REG-DOSE-02", "Per-subject dose works in a crossover (was a hard stop)",
+  tryCatch({
+    d <- do.call(rbind, lapply(1:11, function(s)
+           do.call(rbind, lapply(c("Test","Ref"), function(t)
+             reg_profile(s, t, s * 100)))))
+    st <- reg_settings; st$dose <- reg_named_dose(d)
+    res <- run_nca(d, reg_cm, st)
+    truth <- unique(data.frame(k = paste(d$Subject, d$Treatment, sep="||"),
+                               Dose = d$Dose, stringsAsFactors = FALSE))
+    !is.null(res) && nrow(res) == 22 && reg_ratio_ok(res, truth)
+  }, error = function(e) FALSE),
+  "URS-NCA-03", critical = TRUE,
+  method = "11 subjects x 2 treatments with a mapped Dose column",
+  expected = "22 profiles, each using its own subject's dose")
+
+check("REG-DOSE-03", "Unnamed multi-subject dose vector is refused, not guessed",
+  tryCatch({
+    d <- do.call(rbind, lapply(1:3, function(s) reg_profile(s, "A", s*100)))
+    st <- reg_settings; st$dose <- c(100, 200, 300)   # deliberately unnamed
+    res <- suppressWarnings(run_nca(d, reg_cm, st))
+    is.null(res)
+  }, error = function(e) FALSE),
+  "URS-NCA-03", critical = TRUE,
+  method = "run_nca() with a positional dose vector",
+  expected = "NULL (refused) rather than a positional guess")
+
+# --- REG-BLQ-01: positional BLQ rules operate per profile, not per subject ---
+check("REG-BLQ-01", "BLQ rules treat each crossover profile independently",
+  tryCatch({
+    d <- data.frame(
+      Subject   = rep(1, 8),
+      Time      = c(0,1,2,4, 0,1,2,4),
+      Conc      = c(0.05, 10, 5, 0.05, 0.05, 12, 6, 3),
+      Treatment = rep(c("Test","Ref"), each = 4),
+      stringsAsFactors = FALSE)
+    r  <- apply_blq_rules(d, list(subject="Subject", time="Time", conc="Conc",
+                                  treatment="Treatment"), lloq = 0.1, rule = "rule1")
+    tst <- r$Conc[r$Treatment == "Test"]; ref <- r$Conc[r$Treatment == "Ref"]
+    # Test ends BLQ -> post-last-quantifiable -> NA. Ref starts BLQ -> pre-first -> 0.
+    is.na(tst[4]) && !is.na(ref[1]) && ref[1] == 0
+  }, error = function(e) FALSE),
+  "URS-DAT-04", critical = TRUE,
+  method = "Rule 1 on one subject with Test and Reference periods",
+  expected = "trailing BLQ of Test -> NA; leading BLQ of Reference -> 0")
+
+check("REG-BLQ-02", "Positional BLQ rules are applied in time order, not file order",
+  tryCatch({
+    ord <- data.frame(Subject=rep(1,5), Time=c(0,1,2,4,8),
+                      Conc=c(0.05, 10, 5, 2, 0.05), stringsAsFactors=FALSE)
+    shuf <- ord[c(3,5,1,4,2), ]
+    cm <- list(subject="Subject", time="Time", conc="Conc")
+    a <- apply_blq_rules(ord,  cm, lloq=0.1, rule="rule1")
+    b <- apply_blq_rules(shuf, cm, lloq=0.1, rule="rule1")
+    a <- a[order(a$Time), ]; b <- b[order(b$Time), ]
+    identical(as.numeric(a$Conc), as.numeric(b$Conc))
+  }, error = function(e) FALSE),
+  "URS-DAT-04", critical = TRUE,
+  method = "same profile, rows shuffled, rule 1 applied to both",
+  expected = "identical concentrations after re-sorting")
+
+# --- REG-UNIT-01..03: unit strings drive a real conversion factor -----------
+check("REG-UNIT-01", "Unrecognised unit spellings are rejected before the NCA runs",
+  tryCatch({
+    !validate_units("mg", "h", "µg/mL", 0)$valid &&   # micro sign
+    !validate_units("mg", "h", "mcg/mL", 0)$valid &&
+    !validate_units("mg", "h", "", 0)$valid &&
+    !validate_units("mg/kg", "h", "ng/mL", 0)$valid        # dose unit with "/"
+  }, error = function(e) FALSE),
+  "URS-NCA-05", critical = TRUE,
+  method = "validate_units() on spellings NonCompart::Unit() cannot parse",
+  expected = "all rejected with a message")
+
+check("REG-UNIT-02", "Valid unit combinations are accepted",
+  tryCatch({
+    validate_units("mg", "h", "ng/mL", 0)$valid &&
+    validate_units("ug", "min", "ug/L", 0)$valid &&
+    validate_units("nmol", "h", "nmol/L", 0)$valid
+  }, error = function(e) FALSE),
+  "URS-NCA-05", critical = TRUE,
+  method = "validate_units() on supported combinations",
+  expected = "accepted")
+
+check("REG-UNIT-03", "Molar/mass mixing requires a molecular weight",
+  tryCatch({
+    !validate_units("mg", "h", "nmol/L", 0)$valid &&
+     validate_units("mg", "h", "nmol/L", 500)$valid
+  }, error = function(e) FALSE),
+  "URS-NCA-05", critical = TRUE,
+  method = "molar concentration with a mass dose, MW absent then present",
+  expected = "rejected without MW, accepted with MW")
+
+# --- REG-REP-01: the shipped script must reproduce the app's numbers --------
+# EXP-CMP-01 re-runs run_nca() in-process, so it cannot detect a transcription
+# error in the generated script. This one executes the script as shipped.
+check("REG-REP-01", "Shipped reproduction script reproduces the app's results",
+  tryCatch({
+    wd <- file.path(tempdir(), paste0("regrep", as.integer(runif(1,1,1e6))))
+    dir.create(wd, recursive = TRUE, showWarnings = FALSE)
+    mk <- function(s, trt, dose) data.frame(
+      Subject=s, Treatment=trt, Dose=dose, Time=c(0,0.5,1,2,4,8,12,24),
+      Conc=c("<0.5","8.1","14.2","11.0","6.4","2.9","1.1","<0.5"),
+      stringsAsFactors=FALSE)
+    raw <- do.call(rbind, lapply(1:11, function(s)
+             do.call(rbind, lapply(c("Test","Ref"), function(t) mk(s, t, s*100)))))
+    csv <- file.path(wd, "source.csv"); write.csv(raw, csv, row.names=FALSE)
+
+    cm <- reg_cm; LLOQ <- 0.5
+    d <- read.csv(csv, stringsAsFactors=FALSE)
+    cc <- as.character(d$Conc)
+    msk <- grepl("^<", cc) & is.na(suppressWarnings(as.numeric(cc)))
+    cc[msk] <- "0"
+    d$Conc <- suppressWarnings(as.numeric(cc))
+    d$Time <- suppressWarnings(as.numeric(d$Time))
+    d <- d[!is.na(d$Time), ]
+    d <- d[order(d$Subject, d$Time), ]
+    d <- apply_blq_rules(d, cm, rule="rule1", lloq=LLOQ)
+
+    st <- reg_settings; st$dose <- reg_named_dose(d)
+    app <- run_nca(d, cm, st)
+
+    zp <- file.path(wd, "rec.zip")
+    invisible(create_analysis_record(zp, app, st, cm, csv, "source.csv",
+                                     "rule1", LLOQ, analyst="validation",
+                                     study_name="REG-REP-01"))
+    ex <- file.path(wd, "unz"); dir.create(ex, showWarnings=FALSE)
+    unzip(zp, exdir=ex)
+    owd <- setwd(ex)
+    out <- tryCatch(system2("Rscript", "reproduce_analysis.R", stdout=TRUE, stderr=TRUE),
+                    error=function(e) character(0))
+    setwd(owd)
+
+    rp <- file.path(ex, "reproduced_results.csv")
+    if (!file.exists(rp)) FALSE else {
+      rep <- read.csv(rp, stringsAsFactors=FALSE)
+      ka <- order(paste(app$Subject, app$Treatment)); kb <- order(paste(rep$Subject, rep$Treatment))
+      a <- app[ka, ]; b <- rep[kb, ]
+      if (!identical(paste(a$Subject,a$Treatment), paste(b$Subject,b$Treatment))) FALSE else {
+        cols <- intersect(names(a), names(b)); worst <- 0
+        for (cc2 in cols) {
+          x <- suppressWarnings(as.numeric(a[[cc2]])); y <- suppressWarnings(as.numeric(b[[cc2]]))
+          keep <- !is.na(x) & !is.na(y)
+          if (!any(keep)) next
+          worst <- max(worst, max(abs(x[keep]-y[keep]) / pmax(abs(y[keep]), 1e-12)))
+        }
+        nrow(a) == 22 && worst < 1e-9
+      }
+    }
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = TRUE,
+  method = "build a record, execute reproduce_analysis.R via Rscript, compare all parameters",
+  expected = "max relative difference < 1e-9 across 22 crossover profiles")
+
+# --- REG-QC-01: remediation advice must not suggest averaging analytes ------
+check("REG-QC-01", "Duplicate-time advice does not recommend averaging replicates",
+  tryCatch({
+    src <- paste(readLines("R/data_quality.R", warn = FALSE), collapse = "\n")
+    !grepl("average replicate samples", src, ignore.case = TRUE)
+  }, error = function(e) FALSE),
+  "URS-DAT-07", critical = FALSE,
+  method = "grep R/data_quality.R for the previous remediation wording",
+  expected = "advice points to splitting stacked profiles instead")
+
+end_section("REG")
 
 # =============================================================================
 # Post-execution

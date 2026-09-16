@@ -92,9 +92,11 @@ path_single_nca_ui <- function(id) {
             numericInput(ns("dose"), "Dose", value = 100, min = 0),
             tags$div(id = ns("dose_hint_container"),
                      uiOutput(ns("dose_hint"))),
-            textInput(ns("dose_unit"), "Dose", value = "mg"),
-            textInput(ns("time_unit"), "Time", value = "h"),
-            textInput(ns("conc_unit"), "Conc", value = "ng/mL"),
+            selectInput(ns("dose_unit"), "Dose", choices = DOSE_UNIT_CHOICES, selected = "mg"),
+            selectInput(ns("time_unit"), "Time", choices = TIME_UNIT_CHOICES, selected = "h"),
+            selectInput(ns("conc_unit"), "Conc", choices = CONC_UNIT_CHOICES, selected = "ng/mL"),
+            numericInput(ns("mw"), "Molecular weight (only for molar units)",
+                         value = 0, min = 0, step = 1),
             tags$div(style = "padding-top: 1.7rem;",
                      selectInput(ns("trap_method"), NULL,
                                  choices = c("Linear-up / Log-down" = "log",
@@ -423,6 +425,15 @@ path_single_nca_server <- function(id, shared) {
       t_num <- suppressWarnings(as.numeric(as.character(d$time)))
       c_num <- suppressWarnings(as.numeric(as.character(d$conc)))
       dose_num <- suppressWarnings(as.numeric(input$dose))
+
+      # Units drive a real conversion factor for CL/F and Vz/F, and an
+      # unrecognised spelling makes sNCA fail with an opaque error. Check first.
+      uchk <- validate_units(input$dose_unit, input$time_unit, input$conc_unit, input$mw)
+      if (!uchk$valid) {
+        showNotification(uchk$message, type = "error", duration = 12)
+        return(NULL)
+      }
+
       r <- tryCatch(NonCompart::sNCA(t_num, c_num, dose = dose_num,
                                       adm = adm, down = down,
                                       doseUnit = input$dose_unit,
@@ -434,6 +445,7 @@ path_single_nca_server <- function(id, shared) {
                                       # app in an interactive R session. The user's R² threshold is
                                       # applied by the half-life inspector below (estimate_lambda_z).
                                       R2ADJ = 0,
+                                      MW    = if (is.null(input$mw) || is.na(input$mw)) 0 else input$mw,
                                       dur   = if (input$admin_route == "iv_infusion") input$inf_dur else 0),
                      error = function(e) { showNotification(paste("Error:", e$message), type="error"); NULL })
       

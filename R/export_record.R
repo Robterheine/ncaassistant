@@ -190,15 +190,26 @@ generate_nca_script <- function(settings, col_map, file_name, blq_rule, lloq,
   down <- if (settings$trap_method == "log") "Log" else "Linear"
   
   dose_code <- if (length(settings$dose) > 1) {
-    paste0("# Per-subject doses (from Dose column)\n",
-           "dose_df <- data %>%\n",
-           "  dplyr::group_by(data[[\"", col_map$subject, "\"]]) %>%\n",
-           "  dplyr::summarize(dose = max(data[[\"", col_map$dose, "\"]], na.rm = TRUE),\n",
-           "                   .groups = \"drop\")\n",
-           "dose_vec <- dose_df$dose")
+    paste0("# Per-subject doses, taken from the Dose column and keyed by subject ID.\n",
+           "# tblNCA matches `dose` to profiles POSITIONALLY, so the vector is aligned\n",
+           "# to the profile order further down rather than relying on grouping order.\n",
+           "dose_lookup <- tapply(data[[", deparse(col_map$dose), "]],\n",
+           "                      as.character(data[[", deparse(col_map$subject), "]]),\n",
+           "                      max, na.rm = TRUE)")
   } else {
     paste0("dose_vec <- ", settings$dose, "  # Same dose for all subjects")
   }
+
+  # Align the per-subject doses to the profile order tblNCA will actually see.
+  dose_align_code <- if (length(settings$dose) > 1) {
+    paste0(
+      '\n# Align doses to the profile order (see note above)\n',
+      'data <- data[order(data[[nca_key]], data[[time_col]]), ]\n',
+      'final_keys  <- unique(data[[nca_key]])\n',
+      'subj_by_key <- as.character(data[[', deparse(col_map$subject), ']][match(final_keys, data[[nca_key]])])\n',
+      'dose_vec <- as.numeric(dose_lookup[subj_by_key])\n'
+    )
+  } else ""
   
   blq_desc <- switch(blq_rule,
     "rule1" = "Rule 1: Pre-first-quantifiable = 0, post-last-quantifiable = missing, between = 0",
@@ -321,9 +332,33 @@ cat("Conc column:   ", conc_col, "\\n")
 # BLQ rule applied: ', blq_desc, '
 # LLOQ value: ', lloq, '
 
-# Convert concentration to numeric (BLQ text entries become NA)
-data[[conc_col]] <- suppressWarnings(as.numeric(as.character(data[[conc_col]])))
+lloq_setting <- ', lloq, '
 data[[time_col]] <- suppressWarnings(as.numeric(data[[time_col]]))
+
+# Text BLQ entries such as "<0.195" become NA under as.numeric(), which would
+# hide them from the BLQ rule below. The app rewrites them to a 0 placeholder
+# first (0 < LLOQ, so the rule sees them as BLQ); mirrored here.
+if (lloq_setting > 0) {
+  conc_chr <- as.character(data[[conc_col]])
+  blq_text_mask <- grepl("^<", conc_chr) & is.na(suppressWarnings(as.numeric(conc_chr)))
+  if (any(blq_text_mask)) conc_chr[blq_text_mask] <- "0"
+  data[[conc_col]] <- suppressWarnings(as.numeric(conc_chr))
+} else {
+  data[[conc_col]] <- suppressWarnings(as.numeric(as.character(data[[conc_col]])))
+}
+
+# Drop unusable rows and sort BEFORE applying the BLQ rule: rules 1, 5 and 6
+# are positional, so they must see each profile in time order.
+data <- data[!is.na(data[[time_col]]), ]
+data <- data[order(data[[subject_col]], data[[time_col]]), ]
+
+# A profile is one subject under one treatment. Grouping by subject alone would
+# run the positional rules across both periods of a crossover subject at once.
+prof_key <- ', if (!is.null(col_map$treatment)) {
+  paste0('paste(data[[', deparse(col_map$subject), ']], data[[', deparse(col_map$treatment), ']], sep = "||")')
+} else {
+  'as.character(data[[subject_col]])'
+}, '
 ',
 if (lloq > 0) {
   paste0(
@@ -331,8 +366,8 @@ if (lloq > 0) {
     '# Apply BLQ rule: ', blq_desc, '\n',
     switch(blq_rule,
       "rule1" = paste0(
-        'for (s in unique(data[[subject_col]])) {\n',
-        '  idx <- which(data[[subject_col]] == s)\n',
+        'for (s in unique(prof_key)) {\n',
+        '  idx <- which(prof_key == s)\n',
         '  conc_s <- data[[conc_col]][idx]\n',
         '  is_blq <- !is.na(conc_s) & conc_s < lloq\n',
         '  quant <- which(!is_blq & !is.na(conc_s))\n',
@@ -347,8 +382,8 @@ if (lloq > 0) {
       "rule3" = 'data[[conc_col]][!is.na(data[[conc_col]]) & data[[conc_col]] < lloq] <- NA\n',
       "rule4" = paste0('data[[conc_col]][!is.na(data[[conc_col]]) & data[[conc_col]] < lloq] <- ', lloq/2, '\n'),
       "rule5" = paste0(
-        'for (s in unique(data[[subject_col]])) {\n',
-        '  idx <- which(data[[subject_col]] == s)\n',
+        'for (s in unique(prof_key)) {\n',
+        '  idx <- which(prof_key == s)\n',
         '  is_blq <- !is.na(data[[conc_col]][idx]) & data[[conc_col]][idx] < lloq\n',
         '  tmax_i <- which.max(data[[conc_col]][idx])\n',
         '  pre <- idx[1:tmax_i]; post <- if (tmax_i < length(idx)) idx[(tmax_i+1):length(idx)] else integer(0)\n',
@@ -356,8 +391,8 @@ if (lloq > 0) {
         '  data[[conc_col]][intersect(post, idx[is_blq])] <- NA\n',
         '}\n'),
       "rule6" = paste0(
-        'for (s in unique(data[[subject_col]])) {\n',
-        '  idx <- which(data[[subject_col]] == s)\n',
+        'for (s in unique(prof_key)) {\n',
+        '  idx <- which(prof_key == s)\n',
         '  conc_s <- data[[conc_col]][idx]\n',
         '  is_blq <- !is.na(conc_s) & conc_s < lloq\n',
         '  quant <- which(!is_blq & !is.na(conc_s))\n',
@@ -374,9 +409,6 @@ if (lloq > 0) {
   "# No BLQ processing applied (LLOQ = 0)\n"
 },
 '
-# Remove rows with missing time
-data <- data[!is.na(data[[time_col]]), ]
-data <- data[order(data[[subject_col]], data[[time_col]]), ]
 
 
 # --- Step 6: Set dose --------------------------------------------------------
@@ -390,7 +422,7 @@ data <- data[order(data[[subject_col]], data[[time_col]]), ]
 # Trapezoidal method: ', down, '
 # Minimum R-squared for half-life: ', settings$r2adj_threshold, '
 # Steady state: ', settings$is_steady_state, '
-', composite_key_code, '
+', composite_key_code, dose_align_code, '
 result <- NonCompart::tblNCA(
   data,
   key    = nca_key,

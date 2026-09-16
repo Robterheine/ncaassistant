@@ -59,10 +59,12 @@ path_be_ui <- function(id) {
               
               layout_columns(
                 col_widths = c(4, 4, 4),
-                textInput(ns("dose_unit"), "Dose", value = "mg"),
-                textInput(ns("time_unit"), "Time", value = "h"),
-                textInput(ns("conc_unit"), "Conc", value = "ng/mL")
+                selectInput(ns("dose_unit"), "Dose", choices = DOSE_UNIT_CHOICES, selected = "mg"),
+                selectInput(ns("time_unit"), "Time", choices = TIME_UNIT_CHOICES, selected = "h"),
+                selectInput(ns("conc_unit"), "Conc", choices = CONC_UNIT_CHOICES, selected = "ng/mL")
               ),
+              numericInput(ns("mw"), "Molecular weight (only for molar units)",
+                           value = 0, min = 0, step = 1),
               selectInput(ns("trap_method"),
                           tagList("Trapezoidal method", help_trapezoidal),
                           choices = c("Linear-up / Log-down" = "log",
@@ -402,9 +404,18 @@ path_be_server <- function(id, shared) {
           conc_unit = input$conc_unit,
           trap_method = input$trap_method,
           r2adj_threshold = input$r2adj_be,
-          mw = 0, partial_aucs = NULL
+          mw = input$mw, partial_aucs = NULL
         )
         
+        # Units drive a real conversion factor for CL/F and Vz/F inside NonCompart,
+        # and an unrecognised spelling makes the NCA fail with an opaque message.
+        # Check the combination before running so the user gets a usable error.
+        uchk <- validate_units(input$dose_unit, input$time_unit, input$conc_unit, input$mw)
+        if (!uchk$valid) {
+          showNotification(uchk$message, type = "error", duration = 12)
+          return()
+        }
+
         if (use_data_dose) {
           dose_df <- shared$pk_data %>%
             group_by(.data[[cm$subject]]) %>%
@@ -416,7 +427,12 @@ path_be_server <- function(id, shared) {
               type = "error", duration = 8)
             return()
           }
-          settings$dose <- dose_df$dose
+          # Name the vector by subject so run_nca() matches doses by subject ID
+          # instead of relying on position (see run_nca(): positional matching
+          # silently mis-assigns doses once the key sort order differs).
+          dose_vec <- dose_df$dose
+          names(dose_vec) <- as.character(dose_df[[cm$subject]])
+          settings$dose <- dose_vec
         }
         
         nca_warnings_be <- character(0)

@@ -24,7 +24,28 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
   subj_col <- col_map$subject
   time_col <- col_map$time
   conc_col <- col_map$conc
-  
+
+  # Rules 1, 5 and 6 are positional: they depend on which samples come first
+  # and last within ONE concentration-time profile. A profile is one subject
+  # under one treatment, so in a crossover the grouping must include the
+  # treatment. Grouping by subject alone concatenates a subject's Test and
+  # Reference periods and then applies "first/last quantifiable" (rules 1, 6)
+  # and "Cmax" (rule 5) across both periods at once, which imputes the two
+  # formulations differently and biases the ratio the BE analysis reports.
+  has_trt <- !is.null(col_map$treatment) && col_map$treatment %in% names(data)
+  prof_key <- if (has_trt) {
+    paste(data[[subj_col]], data[[col_map$treatment]], sep = "||")
+  } else {
+    as.character(data[[subj_col]])
+  }
+
+  # These rules are also order-dependent, so each profile is visited in time
+  # order regardless of how the rows happen to be arranged in the file.
+  profile_idx <- function(k) {
+    i <- which(prof_key == k)
+    i[order(suppressWarnings(as.numeric(data[[time_col]][i])))]
+  }
+
   # Identify BLQ values
   data$.is_blq <- !is.na(data[[conc_col]]) & data[[conc_col]] < lloq
   
@@ -42,9 +63,8 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
     
   } else if (rule == "rule5") {
     # Pre-Cmax BLQ -> 0; post-Cmax BLQ -> NA
-    subjects <- unique(data[[subj_col]])
-    for (s in subjects) {
-      idx <- which(data[[subj_col]] == s)
+    for (s in unique(prof_key)) {
+      idx <- profile_idx(s)
       sub <- data[idx, ]
       tmax_idx <- which.max(sub[[conc_col]])
       
@@ -62,9 +82,8 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
   } else if (rule == "rule6") {
     # Rule 6: Pre-first-quantifiable BLQ -> LLOQ/2; all other BLQ -> 0
     # Appropriate for drugs with absorption lag where first samples may be BLQ
-    subjects <- unique(data[[subj_col]])
-    for (s in subjects) {
-      idx <- which(data[[subj_col]] == s)
+    for (s in unique(prof_key)) {
+      idx <- profile_idx(s)
       sub <- data[idx, ]
       quant_idx <- which(!sub$.is_blq & !is.na(sub[[conc_col]]))
       
@@ -87,9 +106,8 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
     
   } else {
     # Rule 1 (default): pre-first-quantifiable -> 0, post-last-quantifiable -> NA
-    subjects <- unique(data[[subj_col]])
-    for (s in subjects) {
-      idx <- which(data[[subj_col]] == s)
+    for (s in unique(prof_key)) {
+      idx <- profile_idx(s)
       sub <- data[idx, ]
       quant_idx <- which(!sub$.is_blq & !is.na(sub[[conc_col]]))
       
@@ -339,8 +357,35 @@ run_nca <- function(data, col_map, settings) {
   # Abort cleanly if no valid profiles remain
   if (nrow(data) == 0 || length(good_keys) == 0) return(NULL)
 
-  # Force numeric dose/duration/MW too (sNCA type-checks these as well).
-  dose_num <- suppressWarnings(as.numeric(settings$dose))
+  # Resolve one dose per profile, in the exact order tblNCA will see the
+  # profiles. tblNCA indexes `dose` POSITIONALLY against unique(key), so a
+  # vector built in any other order (e.g. grouped by subject, while the key is
+  # sorted lexicographically) silently gives each subject someone else's dose:
+  # CL/F, Vz/F and the dose-normalised parameters are then wrong while Cmax,
+  # AUC and half-life look perfectly normal. Callers therefore pass either a
+  # single dose or a vector NAMED by subject ID, and names are matched here.
+  # Matching by name is also what makes per-subject dosing work in a crossover,
+  # where one subject contributes several profiles.
+  final_keys  <- unique(data[[nca_key]])
+  subj_by_key <- as.character(data[[col_map$subject]][match(final_keys, data[[nca_key]])])
+  dose_in <- settings$dose
+
+  if (length(dose_in) <= 1) {
+    dose_num <- suppressWarnings(as.numeric(dose_in))
+  } else if (!is.null(names(dose_in))) {
+    dose_num <- suppressWarnings(as.numeric(dose_in[subj_by_key]))
+    if (anyNA(dose_num)) {
+      warning("No dose value for subject(s): ",
+              paste(unique(subj_by_key[is.na(dose_num)]), collapse = ", "),
+              ". Check the Dose column.")
+      return(NULL)
+    }
+  } else {
+    warning("Per-subject doses must be supplied as a vector named by subject ID. ",
+            "The analysis was stopped rather than risk assigning doses to the ",
+            "wrong subjects.")
+    return(NULL)
+  }
   dur_in   <- if (is.null(settings$infusion_duration)) 0 else settings$infusion_duration
   dur_num  <- suppressWarnings(as.numeric(dur_in))
   if (length(dur_num) == 0 || is.na(dur_num)) dur_num <- 0

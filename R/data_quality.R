@@ -424,7 +424,11 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
         paste(dup_count, "duplicate time points across",
               length(dup_subjects), "subjects"),
         paste0("Subjects: ", paste(head(dup_subjects, 5), collapse = ", ")),
-        "Remove duplicate time points or average replicate samples before analysis.")
+        paste0("Duplicate times usually mean several profiles are stacked in one ",
+               "column: more than one analyte, matrix, period or treatment. Split or ",
+               "filter the file so each subject contributes one profile, or map the ",
+               "Treatment and Period columns. Only average duplicates when they are ",
+               "genuine replicate measurements of the same sample."))
   }
   
   # ===========================================================================
