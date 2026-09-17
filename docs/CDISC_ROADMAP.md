@@ -12,7 +12,7 @@ refusals that look like omissions.
 | Part | Workstream | Status |
 |---|---|---|
 | **A** (§1–9) | CDISC / SDTM interoperability | Phase 0 shipped in v1.3.0 (`58d6f5b`). Phases 1–5 pending. |
-| **B** (§10–15) | Bioequivalence design coverage — replicate designs | Reviewed, decided, not yet built. **This is the next version.** Verified against the code on 2026-09-17 (§10.5). |
+| **B** (§10–15) | Bioequivalence design coverage — replicate designs | Reviewed and decided. **This is the next version.** Verified against the code on 2026-09-17 (§10.5). **Tier 0 shipped** (`a85936b`, `7faf9bf`, `5a73794`); B1–B6 pending. |
 
 The two interact: Part B's implementation is cheaper and cleaner if Part A's
 Phase 1 (extract `R/pipeline.R`) is done first. See §14.
@@ -857,6 +857,21 @@ variance interval assumes CVwT ≈ CVwR.
 ## 12. Implementation plan
 
 ### Tier 0 — Safety fixes, ship first and independently (~1.5 days)
+
+> **Status (2026-09-17): done.** Steps 1–9 implemented in `a85936b` (extraction),
+> `7faf9bf` (D3, D4, D7, D8) and `5a73794` (D5, D6, D9, QC). 19 regression checks
+> added; validation 211/211. Decisions taken while implementing:
+> - **D3:** the point-estimate constraint is on by default for limits wider than
+>   80–125% and can be switched off explicitly (for comparisons with no such
+>   rule, e.g. DDI no-effect boundaries); the choice is recorded per row and in
+>   the settings JSON.
+> - **D8:** untransformed results are shown as a difference in their own units
+>   with "no verdict", not hidden.
+> - **Interim replicate refusal.** The data quality check now raises an ERROR
+>   when a subject receives the same treatment in more than one period (Treatment
+>   and Period mapped). Until B1/B2 land this turns D1's silent merge into a
+>   visible refusal. **Remove this check as part of B2.** It cannot catch a
+>   replicate file uploaded without a Period column mapped.
 
 None of these depend on the replicate work, and D3 is a live false-pass risk.
 Revised 2026-09-17 after the verification in §10.5: step 1 is new and must come
