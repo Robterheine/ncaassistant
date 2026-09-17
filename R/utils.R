@@ -346,7 +346,11 @@ add_units_to_labels <- function(labels, dose_unit = "mg", time_unit = "h", conc_
   )
   for (i in seq_along(labels)) {
     u <- unit_map[labels[i]]
-    if (!is.na(u)) labels[i] <- paste0(labels[i], " (", u, ")")
+    if (is.na(u)) next
+    # "Half-Life (h)" already carries a unit: replace it rather than append
+    # a second one ("Half-Life (h) (h)"), and use the actual time unit.
+    labels[i] <- if (labels[i] == "Half-Life (h)") paste0("Half-Life (", u, ")")
+                 else paste0(labels[i], " (", u, ")")
   }
   labels
 }

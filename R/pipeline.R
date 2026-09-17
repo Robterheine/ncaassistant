@@ -338,6 +338,91 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
   data
 }
 
+#' Terminal-phase points for manual half-life overrides, as tblNCA UsePoints
+#'
+#' @param lz_overrides list of overrides, each with subject, optional
+#'   treatment and period, and time_used (the chosen sampling times)
+#' @return NULL when there are no applicable overrides, otherwise a list with
+#'   one element per profile (NULL = automatic slope), aligned with final_keys.
+#'   Indices refer to the profile's points after NA removal, as in sNCA().
+override_use_points <- function(data, col_map, nca_key, final_keys, lz_overrides) {
+  if (is.null(lz_overrides) || length(lz_overrides) == 0) return(NULL)
+  pk <- profile_key(data, col_map)
+  out <- vector("list", length(final_keys))
+  any_set <- FALSE
+  for (ov in lz_overrides) {
+    if (is.null(ov$subject) || length(ov$time_used) < 2) next
+    match_row <- pk$parts$Subject == as.character(ov$subject)
+    if (!is.null(ov$treatment) && "Treatment" %in% pk$cols)
+      match_row <- match_row & pk$parts$Treatment == as.character(ov$treatment)
+    if (!is.null(ov$period) && "Period" %in% pk$cols)
+      match_row <- match_row & pk$parts$Period == as.character(ov$period)
+    k <- unique(data[[nca_key]][match_row])
+    if (length(k) != 1) next
+    i <- match(k, final_keys)
+    if (is.na(i)) next
+    rows <- data[data[[nca_key]] == k, , drop = FALSE]
+    x <- rows[[col_map$time]]; y <- rows[[col_map$conc]]
+    keep <- !(is.na(x) | is.na(y))
+    x <- x[keep]; y <- y[keep]
+    tu <- as.numeric(unlist(ov$time_used))
+    chosen <- which(y > 0 & vapply(x, function(t) any(abs(t - tu) <= 1e-9 * max(1, abs(t))), logical(1)))
+    if (length(chosen) >= 2) { out[[i]] <- chosen; any_set <- TRUE }
+  }
+  if (any_set) out else NULL
+}
+
+#' NCA for one profile given as vectors (single-subject analysis)
+#'
+#' Same NonCompart call and options as run_nca(), so a profile analysed on
+#' its own gives the same result as in the batch table.
+#' @param time_used Optional sampling times for a manual half-life override
+run_single_nca <- function(time, conc, settings, time_used = NULL) {
+  adm <- switch(settings$admin_route, "extravascular" = "Extravascular",
+                "iv_bolus" = "Bolus", "iv_infusion" = "Infusion", "Extravascular")
+  down <- switch(settings$trap_method, "linear" = "Linear", "log" = "Log", "Linear")
+  t_num <- suppressWarnings(as.numeric(as.character(time)))
+  c_num <- suppressWarnings(as.numeric(as.character(conc)))
+  ord <- order(t_num); t_num <- t_num[ord]; c_num <- c_num[ord]
+  use <- NULL
+  if (length(time_used) >= 2) {
+    keep <- !(is.na(t_num) | is.na(c_num))
+    xf <- t_num[keep]; yf <- c_num[keep]
+    tu <- as.numeric(unlist(time_used))
+    use <- which(yf > 0 & vapply(xf, function(t) any(abs(t - tu) <= 1e-9 * max(1, abs(t))), logical(1)))
+    if (length(use) < 2) use <- NULL
+  }
+  num0 <- function(v) { v <- suppressWarnings(as.numeric(v)); if (length(v) == 0 || is.na(v)) 0 else v }
+  NonCompart::sNCA(t_num, c_num, dose = num0(settings$dose), adm = adm, down = down,
+                   dur = if (adm == "Infusion") num0(settings$infusion_duration) else 0,
+                   doseUnit = settings$dose_unit, timeUnit = settings$time_unit,
+                   concUnit = settings$conc_unit, SS = isTRUE(settings$is_steady_state),
+                   # R2ADJ = 0 avoids NonCompart's interactive slope picker (see run_nca)
+                   R2ADJ = 0, MW = num0(settings$mw), UsePoints = use)
+}
+
+#' Steady-state summary parameters added to a single-profile NCA result
+#'
+#' tau is taken as the sampled interval (last minus first time); CAVG =
+#' AUClast / tau; fluctuation and swing from Cmax and the minimum observed
+#' concentration.
+add_steady_state_parameters <- function(r, time, conc) {
+  tau    <- max(time, na.rm = TRUE) - min(time, na.rm = TRUE)
+  auclst <- as.numeric(r["AUCLST"])
+  cmax   <- as.numeric(r["CMAX"])
+  cmin   <- min(conc[!is.na(conc)], na.rm = TRUE)
+  cavg   <- if (tau > 0 && !is.na(auclst)) auclst / tau else NA
+  fluct  <- if (!is.na(cavg) && cavg > 0) (cmax - cmin) / cavg * 100 else NA
+  swing  <- if (!is.na(cmin) && cmin > 0) (cmax - cmin) / cmin else NA
+  c(r,
+    AUCTAU  = auclst,
+    TAU     = tau,
+    CAVG    = if (is.finite(cavg)) cavg else NA,
+    CMIN_SS = cmin,
+    FLUCTP  = if (is.finite(fluct)) fluct else NA,
+    SWING   = if (is.finite(swing)) swing else NA)
+}
+
 #' Run NCA for all subjects using NonCompart::tblNCA
 #'
 #' Wrapper that handles column mapping, options, and returns clean output.
@@ -346,7 +431,7 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
 #' @param col_map Column mapping
 #' @param settings List of NCA settings
 #' @return Data frame of NCA results
-run_nca <- function(data, col_map, settings) {
+run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
   
   # Build iAUC if specified
   iAUC_df <- ""
@@ -466,6 +551,12 @@ run_nca <- function(data, col_map, settings) {
   mw_num   <- suppressWarnings(as.numeric(mw_in))
   if (length(mw_num) == 0 || is.na(mw_num)) mw_num <- 0
 
+  # Manual half-life overrides: pass the chosen points to NonCompart
+  # (UsePoints), so the slope and every parameter that depends on it (AUCinf,
+  # extrapolated %, AUMC, MRT, CL, V, predicted-Clast variants) are computed by
+  # NonCompart itself, with its unit conversions, exactly as for automatic fits.
+  use_points <- override_use_points(data, col_map, nca_key, final_keys, lz_overrides)
+
   # Run NCA via NonCompart
   result <- tryCatch({
     tblNCA(
@@ -492,7 +583,8 @@ run_nca <- function(data, col_map, settings) {
       R2ADJ     = 0,
       MW        = mw_num,
       SS        = settings$is_steady_state,
-      iAUC      = iAUC_df
+      iAUC      = iAUC_df,
+      UsePoints = use_points
     )
   }, error = function(e) {
     msg <- conditionMessage(e)

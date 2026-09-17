@@ -396,6 +396,16 @@ path_single_nca_server <- function(id, shared) {
     
     # NCA
     nca_res <- reactiveVal(NULL)
+    # NCA settings from the inputs, in the shape run_single_nca() expects
+    single_settings <- function() {
+      list(admin_route = input$admin_route,
+           dose = suppressWarnings(as.numeric(input$dose)),
+           infusion_duration = if (input$admin_route == "iv_infusion") input$inf_dur else 0,
+           is_steady_state = isTRUE(input$is_ss),
+           dose_unit = input$dose_unit, time_unit = input$time_unit, conc_unit = input$conc_unit,
+           trap_method = input$trap_method,
+           mw = if (is.null(input$mw) || is.na(input$mw)) 0 else input$mw)
+    }
     observeEvent(input$run_nca, {
       local$lz_override <- NULL  # reset manual override on fresh NCA
       d <- tc(); req(length(d$time) >= 2)
@@ -406,14 +416,10 @@ path_single_nca_server <- function(id, shared) {
         return()
       }
       
-      adm <- switch(input$admin_route, "extravascular"="Extravascular",
-                     "iv_bolus"="Bolus", "iv_infusion"="Infusion")
-      down <- switch(input$trap_method, "linear"="Linear", "log"="Log")
       # NonCompart 0.8.0 hard-stops ("Check input types!") unless time, conc, and
       # dose are numeric. Coerce defensively so a stray character value can't fail NCA.
       t_num <- suppressWarnings(as.numeric(as.character(d$time)))
       c_num <- suppressWarnings(as.numeric(as.character(d$conc)))
-      dose_num <- suppressWarnings(as.numeric(input$dose))
 
       # Units drive a real conversion factor for CL/F and Vz/F, and an
       # unrecognised spelling makes sNCA fail with an opaque error. Check first.
@@ -423,39 +429,12 @@ path_single_nca_server <- function(id, shared) {
         return(NULL)
       }
 
-      r <- tryCatch(NonCompart::sNCA(t_num, c_num, dose = dose_num,
-                                      adm = adm, down = down,
-                                      doseUnit = input$dose_unit,
-                                      timeUnit = input$time_unit,
-                                      concUnit = input$conc_unit,
-                                      SS = isTRUE(input$is_ss),
-                                      # R2ADJ = 0: never let NonCompart open its interactive
-                                      # terminal-slope picker (DetSlope/identify), which blocks the
-                                      # app in an interactive R session. The user's R² threshold is
-                                      # applied by the half-life inspector below (estimate_lambda_z).
-                                      R2ADJ = 0,
-                                      MW    = if (is.null(input$mw) || is.na(input$mw)) 0 else input$mw,
-                                      dur   = if (input$admin_route == "iv_infusion") input$inf_dur else 0),
+      settings <- single_settings()
+      r <- tryCatch(run_single_nca(t_num, c_num, settings),
                      error = function(e) { showNotification(paste("Error:", e$message), type="error"); NULL })
       
       # For steady-state: derive tau-based parameters (use coerced numerics)
-      if (!is.null(r) && isTRUE(input$is_ss)) {
-        tau   <- max(t_num, na.rm = TRUE) - min(t_num, na.rm = TRUE)
-        auclst <- as.numeric(r["AUCLST"])
-        cmax   <- as.numeric(r["CMAX"])
-        cmin   <- min(c_num[!is.na(c_num)], na.rm = TRUE)
-        cavg   <- if (tau > 0 && !is.na(auclst)) auclst / tau else NA
-        fluct  <- if (!is.na(cavg) && cavg > 0) (cmax - cmin) / cavg * 100 else NA
-        swing  <- if (!is.na(cmin) && cmin > 0) (cmax - cmin) / cmin else NA
-        
-        r <- c(r,
-               AUCTAU  = auclst,
-               TAU     = tau,
-               CAVG    = if (is.finite(cavg)) cavg else NA,
-               CMIN_SS = cmin,
-               FLUCTP  = if (is.finite(fluct)) fluct else NA,
-               SWING   = if (is.finite(swing)) swing else NA)
-      }
+      if (!is.null(r) && isTRUE(input$is_ss)) r <- add_steady_state_parameters(r, t_num, c_num)
       
       nca_res(r)
     })
@@ -642,52 +621,18 @@ path_single_nca_server <- function(id, shared) {
       # Store override (field names must match what lz_plot/lz_status consume)
       local$lz_override <- override
       
-      # Update NCA results with new lambda_z-dependent parameters
-      r <- nca_res()
-      if (!is.null(r)) {
-        auclst <- as.numeric(r["AUCLST"])
-        clast  <- as.numeric(r["CLST"])
-        dose_val <- input$dose
-        
-        # Recalculate derived parameters
-        r["LAMZ"]    <- lambda_z_new
-        r["LAMZHL"]  <- half_life_new
-        r["R2ADJ"]   <- r2adj
-        r["LAMZNPT"] <- n_pts
-        
-        # AUC extrapolated: AUClast + Clast / lambda_z
-        if (!is.na(clast) && lambda_z_new > 0) {
-          auc_extrap <- clast / lambda_z_new
-          aucifo <- auclst + auc_extrap
-          r["AUCIFO"]  <- aucifo
-          r["AUCPEO"]  <- auc_extrap / aucifo * 100
-          
-          # CL/F and Vz/F
-          if (dose_val > 0) {
-            r["CLFO"] <- dose_val / aucifo
-            r["VZFO"] <- dose_val / (aucifo * lambda_z_new)
-          }
-          
-          # MRT
-          aumclst <- as.numeric(r["AUMCLST"])
-          if (!is.na(aumclst)) {
-            aumc_extrap <- clast * max(t_sel) / lambda_z_new + clast / lambda_z_new^2
-            aumcifo <- aumclst + aumc_extrap
-            r["AUMCIFO"] <- aumcifo
-            r["MRTEVLST"] <- aumclst / auclst
-            r["MRTEVIFO"] <- aumcifo / aucifo
-          }
+      # Recompute with NonCompart on the chosen points: the slope and every
+      # dependent parameter (AUCinf, CL, V, MRT, ...) with NonCompart's units,
+      # identical to the batch analysis and the reproduction script.
+      if (!is.null(nca_res())) {
+        t_num <- suppressWarnings(as.numeric(as.character(d$time)))
+        c_num <- suppressWarnings(as.numeric(as.character(d$conc)))
+        r <- tryCatch(run_single_nca(t_num, c_num, single_settings(), time_used = t_sel),
+                      error = function(e) NULL)
+        if (!is.null(r)) {
+          if (isTRUE(input$is_ss)) r <- add_steady_state_parameters(r, t_num, c_num)
+          nca_res(r)
         }
-        
-        # Update steady-state derived params if applicable
-        if (isTRUE(input$is_ss) && !is.null(r["AUCTAU"])) {
-          tau <- as.numeric(r["TAU"])
-          if (!is.na(tau) && tau > 0) {
-            r["CAVG"] <- auclst / tau
-          }
-        }
-        
-        nca_res(r)
       }
       
       showNotification(

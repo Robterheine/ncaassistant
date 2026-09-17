@@ -370,6 +370,7 @@ path_be_server <- function(id, shared) {
     # built from this snapshot, not from the inputs at download time, which may
     # have changed since (and which never held the per-subject dose vector).
     be_run_settings <- reactiveVal(NULL)
+    be_nca_settings <- reactiveVal(NULL)   # NCA settings of the last run (for recalculation)
     
     observeEvent(input$run_be, {
       req(shared$pk_data, shared$col_map, shared$col_map$treatment)
@@ -461,7 +462,7 @@ path_be_server <- function(id, shared) {
         
         nca_warnings_be <- character(0)
         nca_res <- withCallingHandlers(
-          run_nca(shared$pk_data, cm, settings),
+          run_nca(shared$pk_data, cm, settings, lz_overrides = lz_state$overrides_log),
           warning = function(w) {
             nca_warnings_be <<- c(nca_warnings_be, conditionMessage(w))
             invokeRestart("muffleWarning")
@@ -482,6 +483,7 @@ path_be_server <- function(id, shared) {
         }
         
         be_nca_result(nca_res)
+        be_nca_settings(settings)
         shared$nca_results <- nca_res
         gc()  # Free NCA intermediates before BE analysis
         
@@ -1006,6 +1008,12 @@ path_be_server <- function(id, shared) {
     
     # --- Half-Life Review for BE ---
     lz_state <- reactiveValues(override = NULL, overrides_log = list())
+    # Overrides belong to one data set: clear them when new data are processed,
+    # so they can never be applied to matching profiles of a different file.
+    observeEvent(shared$pk_data, {
+      lz_state$overrides_log <- list()
+      lz_state$override <- NULL
+    }, ignoreNULL = FALSE)
     
     # Update profile selector after NCA runs
     observe({
@@ -1144,31 +1152,18 @@ path_be_server <- function(id, shared) {
         adjusted_lambda_z = as.numeric(lz_new),
         original_r2adj = if (!is.na(orig_lz$r2adj)) as.numeric(orig_lz$r2adj) else NA,
         adjusted_r2adj = if (!is.na(r2adj)) as.numeric(r2adj) else NA,
-        points_used = length(t_sel)
+        points_used = length(t_sel),
+        time_used = as.numeric(t_sel)
       ))
       
-      # Update NCA results
-      r <- be_nca_result()
-      if (!is.null(r)) {
-        row_idx <- profile_result_row(r, sel)
-        if (length(row_idx) == 1) {
-          r$LAMZ[row_idx]    <- lz_new
-          r$LAMZHL[row_idx]  <- hl_new
-          if ("R2ADJ" %in% names(r)) r$R2ADJ[row_idx] <- r2adj
-          if ("LAMZNPT" %in% names(r)) r$LAMZNPT[row_idx] <- n_pts
-          auclst <- as.numeric(r$AUCLST[row_idx])
-          clast  <- as.numeric(r$CLST[row_idx])
-          if (!is.na(clast) && lz_new > 0) {
-            aucifo <- auclst + clast / lz_new
-            r$AUCIFO[row_idx] <- aucifo
-            if ("CLFO" %in% names(r)) {
-              dose_col <- if ("DOSE" %in% names(r)) as.numeric(r$DOSE[row_idx]) else NA
-              dose_val <- if (!is.na(dose_col)) dose_col else input$dose
-              if (is.null(dose_val)) dose_val <- 100
-              r$CLFO[row_idx] <- dose_val / aucifo
-              r$VZFO[row_idx] <- dose_val / (aucifo * lz_new)
-            }
-          }
+      # Recompute with every logged override applied. NonCompart fits the chosen
+      # points and derives all dependent parameters (AUCinf, CL, V, MRT, ...)
+      # with its own unit conversions, exactly as the reproduction script does.
+      settings <- be_nca_settings()
+      if (!is.null(settings)) {
+        r <- suppressWarnings(run_nca(shared$pk_data, shared$col_map, settings,
+                                      lz_overrides = lz_state$overrides_log))
+        if (!is.null(r)) {
           be_nca_result(r)
           shared$nca_results <- r
         }

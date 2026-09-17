@@ -171,6 +171,13 @@ estimate_lambda_z <- function(time, conc, r2adj_threshold = 0.7,
 #' @param dose Numeric dose value (or vector per subject)
 #' @return Data frame with additional _DN columns
 add_dose_normalized <- function(nca_result, dose) {
+  # A per-subject dose vector is matched to each profile by subject ID. A
+  # crossover has several profiles per subject, and the result is sorted by
+  # profile key, so dividing by position would use other subjects' doses.
+  if (length(dose) > 1 && !is.null(names(dose))) {
+    subj <- if ("Subject" %in% names(nca_result)) nca_result$Subject else nca_result[[1]]
+    dose <- as.numeric(dose[as.character(subj)])
+  }
   # Parameters that should be dose-normalized
   dn_params <- c("CMAX", "AUCLST", "AUCIFO", "AUCIFP",
                   "AUMCLST", "AUMCIFO", "AUMCIFP")

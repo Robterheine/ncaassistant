@@ -603,6 +603,83 @@ check("OQ-84", "Repro script contains override section",
       { ov<-list("S1"=list(profile="S1",original_lambda_z=0.08,adjusted_lambda_z=0.1,original_r2adj=0.95,adjusted_r2adj=0.99,points_used=4)); script<-generate_nca_script(theoph_settings,theoph_cm,"example_theoph.csv","rule1",0,lz_overrides=ov); grepl("override|Override|S1",script,ignore.case=TRUE) },
       "URS-EXP-07", method="generate_nca_script with lz_overrides -> check script content", expected="Override section in script", critical=FALSE)
 
+# --- NCA-OV: half-life overrides are computed by NonCompart (UsePoints) --------
+lz_d  <- read.csv(file.path("validation", "fixtures", "be_2x2x2_crossover.csv"), stringsAsFactors = FALSE)
+lz_cm <- list(subject = "Subject", time = "Time", conc = "Conc", treatment = "Treatment", period = "Period")
+lz_st <- list(admin_route = "extravascular", dose = 100, infusion_duration = 0, is_steady_state = FALSE,
+              dose_unit = "mg", time_unit = "h", conc_unit = "ng/mL", trap_method = "log",
+              r2adj_threshold = 0.7, mw = 0)
+lz_base <- suppressWarnings(run_nca(lz_d, lz_cm, lz_st))
+lz_prof <- lz_d[lz_d$Subject == 1 & lz_d$Period == 1, ]
+lz_prof <- lz_prof[order(lz_prof$Time), ]
+check("NCA-OV-01", "Override on the automatically chosen points reproduces the automatic result",
+  tryCatch({
+    i <- which(lz_base$Subject == "1" & lz_base$Period == "1")
+    tu <- lz_prof$Time[lz_prof$Time >= lz_base$LAMZLL[i] & lz_prof$Time <= lz_base$LAMZUL[i] & lz_prof$Conc > 0]
+    ov <- list(list(subject = "1", treatment = lz_base$Treatment[i], period = "1", time_used = tu))
+    r <- suppressWarnings(run_nca(lz_d, lz_cm, lz_st, lz_overrides = ov))
+    num <- names(lz_base)[sapply(lz_base, is.numeric)]
+    isTRUE(all.equal(lz_base[num], r[num], tolerance = 1e-12))
+  }, error = function(e) FALSE),
+  "URS-NCA-12", critical = TRUE,
+  method = "time_used = points NonCompart selected itself", expected = "identical results")
+check("NCA-OV-02", "Override: slope from the chosen points; all dependent parameters in NonCompart units",
+  tryCatch({
+    tu <- c(8, 12, 16)
+    ov <- list(list(subject = "1", treatment = "Test", period = "1", time_used = tu))
+    r <- suppressWarnings(run_nca(lz_d, lz_cm, lz_st, lz_overrides = ov))
+    i <- which(r$Subject == "1" & r$Period == "1")
+    p <- lz_prof[lz_prof$Time %in% tu, ]
+    lz <- -unname(coef(lm(log(Conc) ~ Time, data = p))[2])
+    abs(r$LAMZ[i] - lz) < 1e-10 && r$LAMZNPT[i] == 3 &&
+      abs(r$CLFO[i] * r$AUCIFO[i] / 100 - 1000) < 1e-6 &&
+      abs(r$AUCIFP[i] - (r$AUCLST[i] + r$CLSTP[i] / r$LAMZ[i])) < 1e-8 &&
+      abs(r$VZFO[i] * r$LAMZ[i] * r$AUCIFO[i] / 100 - 1000) < 1e-6
+  }, error = function(e) FALSE),
+  "URS-NCA-12", critical = TRUE,
+  method = "time_used 8/12/16 h on subject 1 period 1 (mg, ng/mL)",
+  expected = "LAMZ = lm slope; CL/F x AUCinf = 1000 x dose; AUCIFP and Vz/F consistent")
+check("NCA-OV-03", "Override changes only the chosen profile",
+  tryCatch({
+    ov <- list(list(subject = "1", treatment = "Test", period = "1", time_used = c(8, 12, 16)))
+    r <- suppressWarnings(run_nca(lz_d, lz_cm, lz_st, lz_overrides = ov))
+    other <- !(r$Subject == "1" & r$Period == "1")
+    num <- names(lz_base)[sapply(lz_base, is.numeric)]
+    isTRUE(all.equal(lz_base[other, num], r[other, num], tolerance = 1e-12)) &&
+      lz_base$LAMZ[!other] != r$LAMZ[!other]
+  }, error = function(e) FALSE),
+  "URS-NCA-12", critical = TRUE, method = "compare all other profiles", expected = "unchanged")
+check("NCA-OV-04", "IV bolus override updates CL and V (CLO, VZO)",
+  tryCatch({
+    st <- lz_st; st$admin_route <- "iv_bolus"
+    b <- suppressWarnings(run_nca(lz_d, lz_cm, st))
+    ov <- list(list(subject = "1", treatment = "Test", period = "1", time_used = c(8, 12, 16)))
+    r <- suppressWarnings(run_nca(lz_d, lz_cm, st, lz_overrides = ov))
+    i <- which(r$Subject == "1" & r$Period == "1")
+    r$CLO[i] != b$CLO[i] && abs(r$CLO[i] * r$AUCIFO[i] / 100 - 1000) < 1e-6
+  }, error = function(e) FALSE),
+  "URS-NCA-12", critical = TRUE, method = "adm = Bolus", expected = "CLO recomputed consistently")
+check("NCA-OV-05", "Single-subject and batch analyses agree, with and without an override",
+  tryCatch({
+    i <- which(lz_base$Subject == "1" & lz_base$Period == "1")
+    s0 <- run_single_nca(lz_prof$Time, lz_prof$Conc, lz_st)
+    s1 <- run_single_nca(lz_prof$Time, lz_prof$Conc, lz_st, time_used = c(8, 12, 16))
+    ov <- list(list(subject = "1", treatment = "Test", period = "1", time_used = c(8, 12, 16)))
+    b1 <- suppressWarnings(run_nca(lz_d, lz_cm, lz_st, lz_overrides = ov))
+    num <- intersect(names(s0), names(lz_base))
+    isTRUE(all.equal(unname(as.numeric(s0[num])), unname(as.numeric(lz_base[i, num])), tolerance = 1e-12)) &&
+      isTRUE(all.equal(unname(as.numeric(s1[num])), unname(as.numeric(b1[i, num])), tolerance = 1e-12))
+  }, error = function(e) FALSE),
+  "URS-NCA-12", critical = TRUE, method = "run_single_nca vs run_nca on the same profile",
+  expected = "identical parameters")
+check("NCA-OV-06", "Modules no longer compute half-life-dependent parameters by hand",
+  tryCatch({
+    src <- unlist(lapply(c("R/mod_path_be.R", "R/mod_path_multi_nca.R", "R/mod_path_single_nca.R"),
+                         readLines, warn = FALSE))
+    !any(grepl("dose_val\\s*/\\s*aucifo|auclst \\+ clast|clast / lambda_z", src))
+  }, error = function(e) FALSE),
+  "URS-NCA-12", critical = FALSE, method = "source inspection", expected = "no hand-written AUCinf / CL formulas")
+
 end_section("OQ-NEW")
 
 # =============================================================================
@@ -1027,6 +1104,23 @@ check("REG-DOSE-03", "Unnamed multi-subject dose vector is refused, not guessed"
   "URS-NCA-03", critical = TRUE,
   method = "run_nca() with a positional dose vector",
   expected = "NULL (refused) rather than a positional guess")
+
+# --- REG-DOSE-04: dose-normalised parameters use each subject's own dose -----
+check("REG-DOSE-04", "Dose-normalised parameters match each profile to its subject's dose",
+  tryCatch({
+    d <- read.csv(file.path("validation", "fixtures", "be_2x2x2_crossover.csv"), stringsAsFactors = FALSE)
+    d$Dose <- d$Subject * 10
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc", treatment = "Treatment",
+               period = "Period", dose = "Dose")
+    st <- reg_settings; st$dose <- dose_by_subject(d, cm)
+    r <- suppressWarnings(run_nca(d, cm, st))
+    dn <- add_dose_normalized(as.data.frame(r), st$dose)
+    truth <- as.numeric(r$CMAX) / (as.numeric(r$Subject) * 10)
+    nrow(r) == 24 && max(abs(dn$CMAX_DN - truth)) < 1e-12
+  }, error = function(e) FALSE),
+  "URS-NCA-05", critical = TRUE,
+  method = "12-subject crossover, dose = subject x 10, named per-subject dose vector",
+  expected = "CMAX_DN = CMAX / own dose for all 24 profiles")
 
 # --- REG-BLQ-01: positional BLQ rules operate per profile, not per subject ---
 check("REG-BLQ-01", "BLQ rules treat each crossover profile independently",
