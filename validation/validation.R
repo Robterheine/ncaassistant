@@ -22,8 +22,10 @@ if (!file.exists("app.R") || !dir.exists("R")) {
   Rscript validation/validation.R")
 }
 
+# replicateBE is a validation-only dependency (reference implementation for
+# the replicate-design checks in section REP); the app does not use it.
 required_pkgs <- c("NonCompart", "PowerTOST", "nlme", "digest", "rmarkdown",
-                   "openxlsx", "jsonlite", "readxl", "dplyr", "knitr")
+                   "openxlsx", "jsonlite", "readxl", "dplyr", "knitr", "replicateBE")
 missing <- required_pkgs[!sapply(required_pkgs, requireNamespace, quietly = TRUE)]
 if (length(missing) > 0) {
   cat("Installing:", paste(missing, collapse=", "), "
@@ -1676,6 +1678,38 @@ check("REP-DES-05", "Partial and full 3-period replicates give identical ABE res
   "URS-BE-03", critical = FALSE,
   method = "same data fitted under 2x3x3, 2x2x3 and legacy crossover_3period",
   expected = "identical estimates (one Method A model)")
+
+# B6: agreement with the reference implementation on its 30 reference data sets
+check("REP-RBE-01", "EMA Method A and CVwR agree with replicateBE on all 30 reference data sets",
+  tryCatch({
+    worst <- 0; df_ok <- TRUE; n_sets <- 0
+    for (nm in sprintf("rds%02d", 1:30)) {
+      d <- getExportedValue("replicateBE", nm)   # lazy-loaded reference data set
+      ma <- suppressMessages(suppressWarnings(replicateBE::method.A(
+        data = d, print = FALSE, details = TRUE, verbose = FALSE, plot.bxp = FALSE)))
+      b <- data.frame(Subject = as.character(d$subject), Period = as.character(d$period),
+                      Sequence = as.character(d$sequence),
+                      Treatment = factor(ifelse(d$treatment == "T", "Test", "Reference"),
+                                         levels = c("Reference", "Test")),
+                      PK = d$PK, stringsAsFactors = FALSE)
+      f <- fit_be_parameter(b, "PK", "2x2x4", trt_col = "Treatment", subj_col = "Subject",
+                            per_col = "Period", seq_col = "Sequence")$estimate
+      v <- be_variability_diagnostic(b, "PK", trt_col = "Treatment", subj_col = "Subject",
+                                     per_col = "Period", seq_col = "Sequence")
+      g <- function(col) if (col %in% names(ma)) as.numeric(ma[1, col]) else NA_real_
+      diffs <- c(f$pe - g("PE(%)"), f$ci_lo - g("CL.lo(%)"), f$ci_hi - g("CL.hi(%)"),
+                 v$CVwR - g("CVwR(%)"), v$CVwT - g("CVwT(%)"), v$ABEL_lower - g("L(%)"),
+                 v$ABEL_upper - g("U(%)"))
+      worst <- max(worst, abs(diffs), na.rm = TRUE)
+      df_ok <- df_ok && f$dfe == g("DF")
+      n_sets <- n_sets + 1
+    }
+    n_sets == 30 && df_ok && worst < 1e-8
+  }, error = function(e) FALSE),
+  "URS-BE-03, URS-BE-09", critical = TRUE,
+  method = paste("replicateBE::method.A on rds01-rds30 vs fit_be_parameter and",
+                 "be_variability_diagnostic (PE, 90% CI, DF, CVwR, CVwT, ABEL limits)"),
+  expected = "identical DF; all other values within 1e-8")
 
 end_section("REP")
 

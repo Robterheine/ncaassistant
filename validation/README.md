@@ -29,7 +29,9 @@ Or from within R:
 source("validation/validation.R")
 ```
 
-The script installs any missing packages automatically. Required packages: `NonCompart`, `PowerTOST`, `nlme`, `digest`, `openxlsx`, `jsonlite`, `readxl`, `dplyr`, `knitr`.
+The script installs any missing packages automatically. Required packages: `NonCompart`, `PowerTOST`, `nlme`, `digest`, `openxlsx`, `jsonlite`, `readxl`, `dplyr`, `knitr`, `replicateBE`. `replicateBE` is needed only for validation: it is the reference implementation that the replicate-design checks compare against (section REP); the app itself does not use it.
+
+Test data for crossover and replicate designs live in `validation/fixtures/`, not `data/`. `make_fixtures.R` generates them deterministically and `make_reference_values.R` records the matching `replicateBE::method.A` results; both the generators and their outputs are committed.
 
 On completion the script prints a results summary to the console and writes `validation/validation_results.csv`.
 
@@ -99,7 +101,7 @@ The documents are provided without version numbers in headers or filenames so th
 
 ## File Integrity
 
-The validation script computes SHA-256 hashes of `validation.R` itself and the six core R source files it sources (`R/utils.R`, `R/nca_helpers.R`, `R/data_quality.R`, `R/export_record.R`, `R/mod_data_upload.R`, `R/be_analysis.R`). These hashes are printed at the start of each run and recorded in `validation_results.csv`. Retain these alongside the results as evidence that the validated source files were not modified between qualification and use.
+The validation script computes SHA-256 hashes of `validation.R` itself and the seven core R source files it sources (`R/utils.R`, `R/nca_helpers.R`, `R/data_quality.R`, `R/export_record.R`, `R/mod_data_upload.R`, `R/designs.R`, `R/be_analysis.R`). These hashes are printed at the start of each run and recorded in `validation_results.csv`. Retain these alongside the results as evidence that the validated source files were not modified between qualification and use.
 
 ---
 
