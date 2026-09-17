@@ -1106,6 +1106,11 @@ skip_manual("MAN-41","Paired comparison","Run Bioequivalence with design Paired 
 skip_manual("MAN-42","Scaled planning uses both CVs","Plan a Study: EMA ABEL, 2x2x4, Test CV 25, Reference CV 40, ratio 95, power 80","Label reads Test product CV; N = 14","URS-PWR-01")
 skip_manual("MAN-43","CV from BE analysis","Run Bioequivalence (log-transformed); open Plan a Study","Button offers the Cmax within-subject CV from the BE analysis; after uploading new data the button is gone","URS-PWR-05")
 skip_manual("MAN-44","CDISC parameter codes","Run any NCA; open the CDISC codes panel and the Excel download","Codes and CT release 2026-03-27 shown; parameters without a code marked","URS-GEN-06")
+skip_manual("MAN-45","Partial AUCs in All Subjects","Upload validation/fixtures/be_2x2x2_crossover.csv (LLOQ 0.5); All Subjects: 2 intervals, 0-1.5 with Cmax and 12-t; run","Columns Partial AUC 0-1.5, Cmax 0-1.5, Tmax 0-1.5, Partial AUC 12-t with units, in the table, summary and Excel; AUCINT in the CDISC codes; zero note for 12-t where Tlast is 12 h","URS-NCA-13")
+skip_manual("MAN-46","Invalid partial AUC interval","Enter start 2 and end 1, then run; tick steady state with tau 12 and enter 0-24","Error message; no analysis run","URS-NCA-14")
+skip_manual("MAN-47","Partial AUCs in Bioequivalence","Bioequivalence on the same file: 0-1.5 pivotal with Cmax, 4-t supportive; run once","Both partial AUCs and Cmax 0-1.5 compared on the first run; YES/NO for pivotal, no verdict (grey in the forest plot) for supportive","URS-BE-10")
+skip_manual("MAN-48","Record with partial AUCs","Download the Complete Analysis Record after MAN-47","reproduction_check.txt says MATCH; intervals and roles in analysis_settings.json and the HTML summary","URS-EXP-08")
+skip_manual("MAN-49","Partial AUC help and shading","Open 'What is a partial AUC?'; in Visualize Data choose Summary Plot and tick shading","Help text shown; intervals shaded; the suggested legend names the shaded intervals","URS-VIZ-08")
 
 end_section("MAN")
 
@@ -3238,6 +3243,20 @@ check("PAUC-17", "Figures shade the partial AUC intervals, also in the Figure Re
   }, error = function(e) FALSE),
   "URS-VIZ-08", critical = FALSE, method = "partial_auc_shading(); summary figure record with two shaded intervals",
   expected = "0-1.5 and 4-36 (t drawn to the last time); script shades them; figure produced")
+
+check("PAUC-18", "Methods page, help and Data Guide describe partial AUCs as implemented",
+  tryCatch({
+    has <- function(f, keys) { m <- paste(rev3_code(f), collapse = " "); all(vapply(keys, grepl, logical(1), m, fixed = TRUE)) }
+    has("R/mod_methods.R", c("minus the AUC from 0 to the start of the interval", "Partial AUCs were ",
+                             "not extrapolated", "intersection-union test", "no estimate and no conclusion",
+                             "more than half of its samples were set by the BLQ rule", "Hopefl R, et al.")) &&
+      has("R/help_system.R", c("help_partial_auc", "the app does not extrapolate", "Pivotal or supportive")) &&
+      has("R/mod_data_guide.R", c("Planning a partial AUC", "A partial AUC cutoff with no sample near it",
+                                  "Partial AUC intervals must lie within 0 to")) &&
+      has("R/mod_partial_auc.R", c("help_partial_auc", "End at the last measurable concentration (t)"))
+  }, error = function(e) FALSE),
+  "URS-GEN-03", critical = FALSE, method = "search Methods, help, Data Guide and the interval editor",
+  expected = "all statements present")
 
 end_section("PAUC")
 

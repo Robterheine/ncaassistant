@@ -245,8 +245,8 @@ help_steady_state <- info_btn("help_steady_state", "When is data 'steady-state'?
 help_partial_auc <- info_btn("help_partial_auc", "What is a partial AUC?",
   "A <b>partial AUC</b> is the area under the curve over part of the profile, for
   example the first 30 minutes (AUC 0&ndash;0.5 h), or from 4 h to the last measurable
-  concentration (AUC 4 h&ndash;t). It shows whether two products give the same exposure
-  early or late, even when Cmax and total AUC agree.
+  concentration (AUC 4 h&ndash;t). It shows whether two products give the same early or
+  late exposure, even when Cmax and total AUC agree.
   <br><br>
   <b>Where the times come from:</b> the protocol, or the product-specific guidance for
   the drug. Do not pick them after looking at the data.

@@ -261,15 +261,15 @@ paste0('<p>Steady-state analysis with a dosing interval &tau; = ', settings$tau,
 &lambda;<sub>z</sub> beyond the last sample). Clearance and volume were calculated from AUC<sub>&tau;</sub>;
 C<sub>avg</sub> = AUC<sub>&tau;</sub>/&tau;.</p>') else "",
 if (!is.null(pauc)) paste0('<p>Partial AUCs were calculated over the intervals in section 3, with the
-same trapezoidal method as AUC<sub>0&ndash;t</sub>. An interval ending at t ends at the last measurable
-concentration of each profile, and its partial AUC is AUC<sub>0&ndash;t</sub> minus the AUC from 0 to the
+same trapezoidal method as AUC<sub>0&ndash;t</sub>. An interval ending at t ended at the last measurable
+concentration of each profile; its partial AUC was AUC<sub>0&ndash;t</sub> minus the AUC from 0 to the
 start. At a cutoff between two samples the concentration was interpolated. Partial AUCs were not
-extrapolated: when an interval reaches beyond the last measurable concentration, no value is reported.',
+extrapolated: when an interval reached beyond the last measurable concentration, no value was reported.',
 if (identical(analysis_type, "Bioequivalence")) ' In the bioequivalence analysis partial AUCs were
-analysed with the same model as the other metrics. Pivotal intervals received a verdict; supportive
-intervals a ratio and confidence interval only. A metric with a value of zero in any profile received no
+analysed with the same model as the other metrics. Pivotal intervals received a verdict, supportive
+intervals only a ratio and confidence interval. A metric with a value of zero in any profile received no
 estimate and no verdict, because zero cannot be log-transformed.' else "",
-' The intervals are recorded as entered. The app cannot check that they were pre-specified in the
+' The intervals are recorded as entered; the app cannot check that they were pre-specified in the
 protocol.</p>') else "",
 if (lloq > 0) paste0('<p>Concentrations below the LLOQ (', lloq, ' ', settings$conc_unit,
   ') were handled using ', blq_desc, '.</p>') else "",

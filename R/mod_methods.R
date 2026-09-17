@@ -120,6 +120,21 @@ methods_ui <- function() {
                "mono-exponential elimination phase (Yeh and Kwan, 1978) and is the default ",
                "in this application."),
         
+        tags$h6(class = "fw-semibold mt-3", "Partial AUC"),
+        eq("AUC", tags$sub("t1\u2013t2"), " over [t", tags$sub("1"), ", t", tags$sub("2"),
+           "];  AUC", tags$sub("t1\u2013t"), " = AUC", tags$sub("0\u2013t"), " \u2212 AUC", tags$sub("0\u2013t1")),
+        tags$p(class = "small",
+               "Partial AUCs were calculated over intervals entered by the analyst from the protocol or the ",
+               "product-specific guidance; the application did not select intervals from the data. The same ",
+               "trapezoidal method as for AUC", tags$sub("0\u2013t"), " was used. When a cutoff did not coincide ",
+               "with a sampling time, the concentration at the cutoff was interpolated: linearly, or log-linearly ",
+               "on a declining segment when the linear-up/log-down method was selected. An interval could end at t, ",
+               "the time of the last measurable concentration of each profile; this partial AUC was calculated as ",
+               "AUC", tags$sub("0\u2013t"), " minus the AUC from 0 to the start of the interval. Partial AUCs were ",
+               "not extrapolated: when an interval ended, or started, after the last measurable concentration, no ",
+               "value was reported. Optionally, the highest observed concentration within an interval and its time ",
+               "were reported, without interpolation."),
+
         tags$h6(class = "fw-semibold mt-3", "Terminal Elimination Rate Constant (\u03BB", tags$sub("z"), ")"),
         tags$p(
           "The terminal elimination rate constant (\u03BB", tags$sub("z"), ") was estimated ",
@@ -247,7 +262,9 @@ methods_ui <- function() {
                "the AUC was extrapolated to \u03C4 with \u03BB", tags$sub("z"), " (and not reported when that ",
                "fit was rejected by the R\u00B2 rule). A pre-dose sample at time 0 is needed. ",
                "C", tags$sub("min"), " was the lowest observed concentration between 0 and \u03C4, and ",
-               "CL/F and V", tags$sub("z"), "/F were calculated from AUC", tags$sub("\u03C4"), "."),
+               "CL/F and V", tags$sub("z"), "/F were calculated from AUC", tags$sub("\u03C4"), ". ",
+               "Partial AUCs at steady state had to lie within 0\u2013\u03C4. Unlike AUC", tags$sub("\u03C4"),
+               ", they were not extrapolated when the last sample preceded the end of the interval."),
         
         tags$h6(class = "fw-semibold mt-3", "Average Concentration"),
         eq("C", tags$sub("avg"), " = AUC", tags$sub("\u03C4"), " / \u03C4"),
@@ -334,6 +351,11 @@ methods_ui <- function() {
         tags$p(class = "small",
                "The LLOQ value and the rule applied were recorded and are included in the ",
                "exported audit trail and analysis report."),
+        tags$p(class = "small",
+               "The BLQ rule has a large effect on partial AUCs. Early intervals often contain BLQ samples, ",
+               "which Rule 1 sets to zero and Rule 6 to LLOQ/2. Late intervals over a plateau near the LLOQ can ",
+               "contain BLQ samples between quantifiable ones, which Rule 1 sets to zero. The application notes ",
+               "an interval when more than half of its samples were set by the BLQ rule."),
         
         ref_box(
           tags$strong("Further reading: "),
@@ -526,6 +548,17 @@ methods_ui <- function() {
                " \u2265 1.25) are rejected, which occurs precisely when the 90% CI ",
                "falls entirely within [80.00%, 125.00%]."),
         
+        tags$h6(class = "fw-semibold mt-3", "Partial AUCs"),
+        tags$p(class = "small",
+               "Partial AUCs, and the maximum concentration within an interval, were log-transformed and analysed ",
+               "with the same model and confidence interval as the other parameters. The analyst marked each ",
+               "interval as pivotal or supportive: a pivotal metric received a bioequivalence conclusion, a ",
+               "supportive metric only its ratio and confidence interval. When several metrics were pivotal, each ",
+               "had to meet the acceptance limits on its own. This is an intersection-union test, so no adjustment ",
+               "for multiplicity was made. A metric with a value of zero in any profile of the comparison received ",
+               "no estimate and no conclusion, because zero cannot be log-transformed and leaving such profiles out ",
+               "would bias the ratio."),
+
         tags$h6(class = "fw-semibold mt-3", "Bioequivalence Conclusion"),
         tags$p(
           "Bioequivalence was concluded if the 90% confidence interval for the geometric ",
@@ -555,7 +588,10 @@ methods_ui <- function() {
           tags$br(),
           "EMA. Guideline on the Investigation of Bioequivalence. CPMP/EWP/QWP/1401/98 Rev. 1. 2010.",
           tags$br(),
-          "FDA. Statistical Approaches to Establishing Bioequivalence. Guidance for Industry. May 2026."
+          "FDA. Statistical Approaches to Establishing Bioequivalence. Guidance for Industry. May 2026.",
+          tags$br(),
+          "Hopefl R, et al. A 2024 update on US FDA implementation of partial area under the curve into ",
+          "bioavailability and bioequivalence assessments. ", tags$em("Clin Pharmacol Ther"), ". 2025;117:1185\u201393."
         )
       ),
       
@@ -589,6 +625,10 @@ methods_ui <- function() {
                "Power was computed as the probability of rejecting both one-sided null hypotheses ",
                "simultaneously, evaluated exactly via Owen\u2019s Q function."),
         
+        tags$p(class = "small",
+               "For a pivotal partial AUC, the sample size was based on the within-subject CV of that partial AUC, ",
+               "which can be higher than that of AUC", tags$sub("0\u2013t"), " (Hopefl et al., 2025)."),
+
         tags$h6(class = "fw-semibold mt-3",
                 "Highly Variable Drugs \u2014 EMA (ABEL)"),
         tags$p(class = "small",
@@ -744,11 +784,28 @@ methods_ui <- function() {
           )
         ),
         
+        tags$h6(class = "fw-semibold mt-3", "Partial AUC"),
+        tags$div(
+          class = "border rounded p-3 bg-light mb-3",
+          style = "font-size: 0.88rem;",
+          tags$p(
+            "Partial AUCs were calculated over [state the intervals, e.g., 0\u201330 min and 30 min\u20132 h], as ",
+            "specified in the [protocol / product-specific guidance] (Hopefl et al., 2025), using the [linear-up/log-down] trapezoidal ",
+            "method. [An interval ending at t ended at the last measurable concentration of each profile.] ",
+            "Partial AUCs were not extrapolated beyond the last measurable concentration. Concentrations below ",
+            "the LLOQ were handled according to [state the rule]. [State the metric(s)] [was/were] pivotal and ",
+            "[state the metric(s)] supportive; each pivotal metric had to meet the acceptance limits of ",
+            "80.00\u2013125.00%."
+          )
+        ),
+
         tags$h6(class = "fw-semibold mt-3", "References for your manuscript"),
         tags$div(
           class = "border rounded p-3 bg-light small",
           tags$p("Kim H, Han S, Cho YS, Yoon SK, Bae KS. Development of R packages: 'NonCompart' and ",
                  "'ncar' for noncompartmental analysis (NCA). ", tags$em("Transl Clin Pharmacol"), ". 2018;26(1):10\u201315."),
+          tags$p("Hopefl R, et al. A 2024 update on US FDA implementation of partial area under the curve into ",
+                 "bioavailability and bioequivalence assessments. ", tags$em("Clin Pharmacol Ther"), ". 2025;117:1185\u201393."),
           tags$p("Labes D, Sch\u00FCtz H, Lang B. PowerTOST: Power and Sample Size for ",
                  "(Bio)Equivalence Studies. R package version ",
                  pkg_ver("PowerTOST"), "."),

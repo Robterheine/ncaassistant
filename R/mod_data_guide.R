@@ -275,6 +275,15 @@ data_guide_ui <- function() {
           "value per profile; if it varies within a profile, the app uses the largest value."
         ),
 
+        tags$div(
+          class = "alert alert-info py-2 small",
+          tags$strong("Planning a partial AUC: "),
+          "if the protocol asks for a partial AUC, take samples at the cutoff times (for example at 30 min ",
+          "for AUC 0\u201330 min). A cutoff between two samples is interpolated, and the result then depends on ",
+          "the trapezoidal method. A late interval that ends after the last measurable concentration gets no ",
+          "value, because the app does not extrapolate."
+        ),
+
         tags$h6(class = "fw-semibold mt-4", "Actual or nominal times?"),
         tags$p(class = "small",
                "Use the actual sampling times for the NCA (0.48 h rather than the protocol's 0.5 h); ",
@@ -360,6 +369,15 @@ data_guide_ui <- function() {
           tags$strong("Time starts at 0 in every period. "),
           "If period 2 starts on day 8, its pre-dose sample is time 0, not 192 h. ",
           "The app refuses profiles that do not start near time zero."
+        ),
+
+        tags$div(
+          class = "alert alert-info py-2 small",
+          tags$strong("Planning a partial AUC: "),
+          "if the protocol asks for a partial AUC, take samples at the cutoff times (for example at 30 min ",
+          "for AUC 0\u201330 min). A cutoff between two samples is interpolated, and the result then depends on ",
+          "the trapezoidal method. A late interval that ends after the last measurable concentration gets no ",
+          "value, because the app does not extrapolate."
         ),
 
         tags$h6(class = "fw-semibold mt-3", "Why Period and Sequence?"),
@@ -589,7 +607,8 @@ data_guide_ui <- function() {
                "The same columns as for several subjects. Time 0 is just before the dose of the sampled ",
                "interval, not the first dose of the treatment. Include the pre-dose sample at time 0 and ",
                "sample up to the end of the dosing interval (\u03C4). In the app you enter \u03C4; AUC\u03C4 is ",
-               "calculated from 0 to \u03C4, and extrapolated when the last sample is missing (for example BLQ)."),
+               "calculated from 0 to \u03C4, and extrapolated when the last sample is missing (for example BLQ). ",
+               "Partial AUC intervals must lie within 0 to \u03C4."),
         ex_table(data.frame(
           Subject = c("S01","S01","S01","S01","S01","S02","S02","S02","S02","S02"),
           Time    = c(0, 0.5, 1, 4, 12, 0, 0.5, 1, 4, 12),
@@ -868,6 +887,14 @@ data_guide_ui <- function() {
           tags$p(class = "small",
                  "All concentrations need the same unit, and the units selected in the app must match the file: ",
                  "they determine the conversion factor for clearance and volume.")
+        ),
+        tags$div(
+          class = "border-start border-4 border-danger ps-3 mb-4",
+          tags$h6(class = "fw-bold text-danger", "9. A partial AUC cutoff with no sample near it"),
+          tags$p(class = "small",
+                 "The protocol asks for AUC 0\u201330 min, but samples were taken at 15 and 60 min. The app ",
+                 "interpolates the concentration at 30 min, so the value depends on the trapezoidal method and can ",
+                 "differ from what a sample at 30 min would have shown. Plan samples at the cutoff times.")
         )
       )
     ),
