@@ -1346,6 +1346,34 @@ no further verification. The regulatory claims do:
 
 ---
 
+## 15.1 Adversarial review (2026-09-17)
+
+After all phases, the app was reviewed adversarially with probe scripts
+(statistics, data processing, interlocks, ADNCA import, records). Verified
+correct: CIs against manual fits (balanced, unbalanced, fixed, mixed, 90/95%),
+missing/zero responses, ABEL limits at 30% and 50% against PowerTOST, parallel
+and paired designs, D8 no-verdict, asymmetric widened limits, time-format
+checks on plain numbers, loud handling of unreadable decimal formats.
+
+Defects found and fixed (tests REV-01..10, each confirmed failing first):
+
+| ID | Defect | Silent? | Origin | Fix |
+|---|---|---|---|---|
+| REV-01 | A subject's doses that differ between periods were replaced by the subject's maximum: CL/F, Vz/F, dose-normalised values of the lower-dose periods wrong (4× in a 50/200 mg crossover) | yes | pre-existing | `dose_by_profile()`: one dose per subject × treatment × period, matched by profile key in `run_nca()` and `add_dose_normalized()`; records `dose_source = "per_profile"` |
+| REV-02 | BLQ text other than `<x` (`BLQ`, `ND`, ...) became missing although the Data Guide and QC said it was handled; AUClast −6.5% on the Guide's example with rule 4. `NS` (no sample) was counted as BLQ | yes | pre-existing | `is_blq_text()`: `<x`, BLQ, BQL, BLOQ, ND, NQ → BLQ rule; NS/N/A/MISSING stay missing and are reported separately; same definition in QC, pipeline and ADNCA import |
+| REV-03 | Unit interlock matched any name containing "unit" (Community, Opportunity), refusing valid files | no (refusal) | Phase 2 | match unit columns only |
+| REV-04 | Verdict used unrounded CI limits while the table showed rounded ones | at the limit | pre-existing | `be_limits_pass()` compares limits rounded to 2 decimals (FDA *Statistical Approaches to Establishing Bioequivalence*, May 2026); same for the PE constraint |
+| REV-05 | A failed mixed model silently fell back to fixed effects | yes | pre-existing | `Model` column in results and downloads; warning in the app |
+| REV-06 | "Subjects" counted subjects without both treatments in a fixed-effects crossover | labelling | Part B | count subjects that contribute to the comparison |
+| REV-07 | Leading/trailing spaces created extra subjects/treatments | no | pre-existing | trimmed in `prepare_pk_dataset()` and QC |
+| REV-08 | Profile-start refusal did not explain steady-state timing | — | Phase 2 | message mentions time since the most recent dose |
+| REV-09 | Record fallback copy of a decimal-comma upload reproduced as DIFFERENT | no | Phase 1 | `write_record_fallback()` |
+| REV-10 | Browser-supplied file name used in record paths | — | pre-existing | `basename()` |
+
+**Results change** for existing files with per-period doses (REV-01), with BLQ
+text other than `<x` when an LLOQ is set (REV-02), or with a CI limit that
+rounds onto the acceptance limit (REV-04). Record this in the version history.
+
 ## 16. Combined order across both workstreams
 
 Reconciling Part A and Part B. Part B is the next version; Part A resumes after.

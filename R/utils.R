@@ -235,7 +235,8 @@ rename_be_columns <- function(df) {
     "PE_Constraint" = "PE within 80\u2013125%",
     "Bioequivalent" = "Bioequivalent?",
     "MSE"           = "Residual Variance",
-    "DF"            = "Degrees of Freedom"
+    "DF"            = "Degrees of Freedom",
+    "Model"         = "Model"
   )
   nm <- names(df)
   for (i in seq_along(nm)) {

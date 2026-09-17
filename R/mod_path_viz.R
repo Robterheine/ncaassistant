@@ -972,9 +972,8 @@ path_viz_server <- function(id, shared) {
           # Fallback: persist raw data to a temp file if the original is gone
           if (is.null(original_path) || !file.exists(original_path)) {
             original_path <- file.path(tempdir(), original_name)
-            if (!is.null(shared$raw_data))
-              write.csv(shared$raw_data, original_path, row.names = FALSE)
-            read_args <- list()  # the fallback copy is a standard CSV (already converted)
+            read_args <- if (!is.null(shared$raw_data))
+              write_record_fallback(shared$raw_data, original_path, read_args) else list()
             adnca_rec <- NULL
           }
 

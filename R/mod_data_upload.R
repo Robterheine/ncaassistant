@@ -96,7 +96,7 @@ data_upload_ui <- function(id) {
                           choices = NULL),
               selectInput(ns("col_period"), "Period", choices = NULL),
               selectInput(ns("col_sequence"), "Sequence", choices = NULL),
-              selectInput(ns("col_dose"), "Dose (per subject)", choices = NULL)
+              selectInput(ns("col_dose"), "Dose", choices = NULL)
             )
           ),
           

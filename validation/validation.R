@@ -278,16 +278,16 @@ check("DAT-PREP-02", "Rows without a time are dropped, counted, and data sorted 
       identical(ds$data$Subject, c(1, 1, 1, 2, 2, 2)) && identical(ds$data$Time, c(0, 1, 2, 0, 1, 4))
   }, error = function(e) FALSE),
   "URS-DAT-02", critical = TRUE, method = "unsorted input with one NA time", expected = "6 rows, sorted")
-check("DAT-PREP-03", "'<x' BLQ text reaches the BLQ rule; other text becomes missing",
+check("DAT-PREP-03", "BLQ text ('<x', 'BLQ') reaches the BLQ rule",
   tryCatch({
     ds <- prepare_pk_dataset(prep_raw, prep_cm, list(lloq = 0.5, blq_rule = "rule4"))
     d <- ds$data
-    ds$blq$text_tokens_converted == 2 &&
+    ds$blq$text_tokens_converted == 3 &&
       identical(d$Conc[d$Subject == 2 & d$Time %in% c(0, 4)], c(0.25, 0.25)) &&
-      is.na(d$Conc[d$Subject == 1 & d$Time == 2])
+      identical(d$Conc[d$Subject == 1 & d$Time == 2], 0.25)
   }, error = function(e) FALSE),
   "URS-DAT-04", critical = TRUE, method = "rule 4 (LLOQ/2) with '<0.5', '<0,5' and 'BLQ'",
-  expected = "'<' entries -> 0.25; 'BLQ' -> NA")
+  expected = "'<' entries and 'BLQ' -> 0.25")
 check("DAT-PREP-04", "Without an LLOQ no BLQ rule is applied and text becomes missing",
   tryCatch({
     ds <- prepare_pk_dataset(prep_raw, prep_cm, list(lloq = 0))
@@ -2415,6 +2415,143 @@ check("ADNCA-05", "Single-subject and figure records from an ADNCA import reprod
   "URS-EXP-04", critical = TRUE, method = "F1 with NRRLT", expected = "MATCH; FIGURE CREATED")
 
 end_section("CONV")
+
+# =============================================================================
+# SECTION REV: defects found in the adversarial review (2026-09-17)
+# =============================================================================
+start_section("REV")
+
+rev_st <- list(admin_route = "extravascular", dose = 100, infusion_duration = 0, is_steady_state = FALSE,
+               dose_unit = "mg", time_unit = "h", conc_unit = "ng/mL", trap_method = "log",
+               r2adj_threshold = 0.7, mw = 0)
+rev_dp <- data.frame(Subject = rep(1:2, each = 12), Treatment = rep(rep(c("Low", "High"), each = 6), 2),
+                     Period = rep(rep(1:2, each = 6), 2), Time = rep(c(0, 1, 2, 4, 8, 12), 4),
+                     Conc = c(0, 10, 8, 5, 2, 1, 0, 40, 32, 20, 8, 4, 0, 12, 9, 6, 2.4, 1.2, 0, 44, 35, 22, 9, 4.4),
+                     Dose = rep(rep(c(50, 200), each = 6), 2))
+rev_dcm <- list(subject = "Subject", time = "Time", conc = "Conc", treatment = "Treatment", period = "Period", dose = "Dose")
+
+check("REV-01", "Doses that differ between periods are used per profile",
+  tryCatch({
+    st <- rev_st; st$dose <- dose_by_profile(rev_dp, rev_dcm)
+    r <- suppressWarnings(run_nca(rev_dp, rev_dcm, st))
+    own <- ifelse(r$Treatment == "Low", 50, 200)
+    dn <- add_dose_normalized(as.data.frame(r), st$dose)
+    max(abs(as.numeric(r$CMAX) / as.numeric(r$CMAXD) - own)) < 1e-9 &&
+      max(abs(dn$CMAX_DN - as.numeric(r$CMAX) / own)) < 1e-12 &&
+      identical(unname(dose_by_profile(read.csv(file.path("validation", "fixtures", "be_2x2x2_crossover.csv")),
+                                       list(subject = "Subject", time = "Time", conc = "Conc", treatment = "Treatment",
+                                            period = "Period", dose = "Dose"))[1:2]), c(100, 100))
+  }, error = function(e) FALSE),
+  "URS-NCA-05", critical = TRUE, method = "crossover with 50 mg and 200 mg periods per subject",
+  expected = "each profile uses its own period's dose (CMAX/CMAXD and CMAX_DN)")
+check("REV-01b", "Per-profile doses reproduce from the Analysis Record",
+  tryCatch({
+    st <- rev_st; st$dose <- dose_by_profile(rev_dp, rev_dcm); st$dose_source <- "per_profile"
+    r <- rec_build(df = rev_dp, cm = rev_dcm, st = st)
+    js <- jsonlite::fromJSON(file.path(r$ex, "analysis_settings.json"))
+    identical(js$dose_source, "per_profile") && grepl("Result: MATCH", rec_check_text(r$ex))
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = TRUE, method = "record for the per-period dose example", expected = "per_profile; MATCH")
+check("REV-02", "BLQ text ('BLQ', 'ND', ...) is handled like '<LLOQ'; 'NS' stays missing",
+  tryCatch({
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc"); tt <- c(0, 0.5, 1, 2, 4, 8, 12, 24)
+    auc <- function(conc, rule) {
+      ds <- prepare_pk_dataset(data.frame(Subject = 1, Time = tt, Conc = conc, stringsAsFactors = FALSE), cm,
+                               list(lloq = 0.5, blq_rule = rule))
+      as.numeric(suppressWarnings(run_nca(ds$data, cm, rev_st))$AUCLST)
+    }
+    lt <- c("<0.5", "<0.5", "4.2", "18.5", "12.1", "2.8", "0.9", "<0.5")
+    same <- all(sapply(c("rule1", "rule4", "rule6"), function(rule)
+      abs(auc(c("BLQ", "ND", lt[3:7], "bql"), rule) - auc(lt, rule)) < 1e-12))
+    ns <- prepare_pk_dataset(data.frame(Subject = 1, Time = tt, Conc = c("NS", "<0.5", lt[3:8]), stringsAsFactors = FALSE),
+                             cm, list(lloq = 0.5, blq_rule = "rule4"))
+    same && is.na(ns$data$Conc[1]) && ns$data$Conc[2] == 0.25 &&
+      blq_text_summary(c("BLQ", "ND", "NS", "<0.5", "3"))$n_blq_text == 3
+  }, error = function(e) FALSE),
+  "URS-DAT-04", critical = TRUE, method = "Data Guide example with 'BLQ'/'ND'/'bql' vs '<0.5' under rules 1, 4, 6; 'NS'",
+  expected = "identical AUClast; NS missing; NS not counted as BLQ")
+check("REV-03", "Unit check only looks at unit columns",
+  tryCatch({
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc")
+    base <- data.frame(Subject = rep(1:2, each = 3), Time = rep(c(0, 1, 2), 2), Conc = c(0, 5, 4, 0, 6, 5))
+    fp <- transform(base, Community = rep(c("A", "B"), each = 3), Opportunity = rep(c("x", "y"), 3), Unity = 1:6)
+    hits <- sapply(c("Unit", "Units", "Conc_Unit", "TimeUnit", "time.units", "AVALU"), function(nm) {
+      d <- base; d[[nm]] <- rep(c("ng/mL", "mg/L"), each = 3); nrow(interlock_mixed_units(d)) == 1 })
+    nrow(interlock_mixed_units(fp)) == 0 && all(hits)
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "Community/Opportunity/Unity vs real unit column names",
+  expected = "no finding for the first; a finding for each unit column")
+check("REV-04", "Acceptance is judged on CI limits rounded to two decimals (FDA, May 2026)",
+  tryCatch({
+    be_limits_pass(79.996, 110, 80, 125) && !be_limits_pass(79.994, 110, 80, 125) &&
+      be_limits_pass(90, 125.004, 80, 125) && !be_limits_pass(90, 125.006, 80, 125) &&
+      any(grepl("be_limits_pass(", readLines("R/be_analysis.R"), fixed = TRUE))
+  }, error = function(e) FALSE),
+  "URS-BE-04", critical = TRUE, method = "limits just inside/outside after rounding",
+  expected = "79.996 and 125.004 pass; 79.994 and 125.006 fail")
+check("REV-05", "The result states which model was fitted, including a failed mixed model",
+  tryCatch({
+    d <- be_input(be_d)
+    fx <- fit_be_parameter(d, "CMAX", "2x2x2", "fixed", "Treatment", "Subject", "Period", "Sequence")$row$Model
+    mx <- fit_be_parameter(d, "CMAX", "2x2x2", "mixed", "Treatment", "Subject", "Period", "Sequence")$row$Model
+    suppressMessages(trace("lme", quote(stop("forced failure")), where = asNamespace("nlme"), print = FALSE))
+    fb <- tryCatch(fit_be_parameter(d, "CMAX", "2x2x2", "mixed", "Treatment", "Subject", "Period", "Sequence")$row$Model,
+                   finally = suppressMessages(untrace("lme", where = asNamespace("nlme"))))
+    identical(fx, "fixed effects") && identical(mx, "mixed effects") && grepl("^fixed effects .*mixed model", fb)
+  }, error = function(e) FALSE),
+  "URS-BE-05", critical = FALSE, method = "fixed, mixed, and mixed with lme forced to fail",
+  expected = "Model column says what was fitted")
+check("REV-06", "Subjects counted are those that contribute to the comparison",
+  tryCatch({
+    d <- be_input(be_d); d <- d[!(d$Subject == "1" & d$Treatment == "R"), ]
+    f <- fit_be_parameter(d, "CMAX", "2x2x2", "fixed", "Treatment", "Subject", "Period", "Sequence")$row
+    m <- fit_be_parameter(d, "CMAX", "2x2x2", "mixed", "Treatment", "Subject", "Period", "Sequence")$row
+    f$N_Test == 23 && f$N_Ref == 23 && m$N_Test == 24 && m$N_Ref == 23
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = FALSE, method = "24-subject 2x2 with one subject missing Reference",
+  expected = "fixed model counts 23 complete subjects; mixed model uses all 24")
+check("REV-07", "Leading/trailing spaces in IDs and design labels do not create extra levels",
+  tryCatch({
+    d <- data.frame(Subject = c("S1 ", "S1", "S1", "S1", "S1", "S1"), Treatment = c("Test", "Test ", " Test", "Reference", "Reference", "Reference"),
+                    Period = c(1, 1, 1, 2, 2, 2), Time = c(0, 1, 2, 0, 1, 2), Conc = c(0, 5, 4, 0, 6, 5))
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc", treatment = "Treatment", period = "Period")
+    ds <- prepare_pk_dataset(d, cm, list())
+    qc <- run_data_quality_check(d, cm)
+    length(unique(ds$data$Treatment)) == 2 && length(unique(ds$data$Subject)) == 1 &&
+      any(grepl("2 treatments", qc$findings$Message))
+  }, error = function(e) FALSE),
+  "URS-DAT-02", critical = FALSE, method = "'S1 ' and ' Test'/'Test '", expected = "one subject, two treatments")
+check("REV-08", "Profile-start refusal explains steady-state timing",
+  tryCatch({
+    ss <- data.frame(Subject = rep(1:2, each = 5), Time = rep(c(168, 169, 172, 180, 192), 2), Conc = 5:14)
+    f <- run_interlocks(ss, list(subject = "Subject", time = "Time", conc = "Conc"))
+    any(f$Severity == "ERROR" & grepl("steady.state", f$Action, ignore.case = TRUE))
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = FALSE, method = "steady-state profile timed from the first dose", expected = "action mentions steady state")
+check("REV-09", "Record fallback copy of a decimal-comma upload stays readable",
+  tryCatch({
+    raw <- data.frame(Subject = 1, Time = c(0, 1, 2), Conc = c("<0,5", "4,25", "3,5"), stringsAsFactors = FALSE)
+    f <- tempfile(fileext = ".csv")
+    ra <- write_record_fallback(raw, f, list(sep = ";", dec = ","))
+    ds <- prepare_pk_dataset(read_pk_file(f, ra), list(subject = "Subject", time = "Time", conc = "Conc"),
+                             list(lloq = 0.5, blq_rule = "rule1", read_args = ra))
+    identical(ds$data$Conc, c(0, 4.25, 3.5))
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = FALSE, method = "write_record_fallback() then read back", expected = "numbers preserved")
+check("REV-10", "Uploaded file names cannot place files outside the record",
+  tryCatch({
+    wd <- file.path(tempdir(), paste0("rev10", as.integer(runif(1, 1, 1e6)))); dir.create(wd)
+    src <- file.path(wd, "data.csv"); write.csv(theoph, src, row.names = FALSE)
+    zp <- file.path(wd, "rec.zip")
+    suppressWarnings(create_analysis_record(zp, theoph_result, theoph_settings, theoph_cm, src, "../escaped.csv",
+                                            blq_rule = "rule1", lloq = 0))
+    ex <- rec_unzip(zp); js <- jsonlite::fromJSON(file.path(ex, "analysis_settings.json"))
+    !file.exists(file.path(tempdir(), "escaped.csv")) && file.exists(file.path(ex, "escaped.csv")) &&
+      identical(js$input_file, "escaped.csv")
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = FALSE, method = "original_file_name = '../escaped.csv'", expected = "file stays inside the record")
+
+end_section("REV")
 
 # =============================================================================
 # Post-execution

@@ -340,16 +340,17 @@ path_multi_nca_server <- function(id, shared) {
       }
 
       if (use_data_dose) {
-        dose_vec <- suppressWarnings(dose_by_subject(shared$pk_data, shared$col_map))
+        dose_vec <- suppressWarnings(dose_by_profile(shared$pk_data, shared$col_map))
         if (any(!is.finite(dose_vec) | dose_vec <= 0)) {
           showNotification(
             "Some subjects have missing or zero dose values. Check the Dose column in your data.",
             type = "error", duration = 8)
           return()
         }
-        # Named by subject: run_nca() matches doses by subject ID, never by
-        # position (dose_by_subject() is also what the reproduction uses)
+        # One dose per profile (subject x treatment x period), matched by profile
+        # key in run_nca(); a subject may get different doses in different periods
         settings$dose <- dose_vec
+        settings$dose_source <- "per_profile"
       }
       
       withProgress(message = "Running NCA on all subjects...", value = 0.5, {
@@ -891,10 +892,8 @@ path_multi_nca_server <- function(id, shared) {
           # Fallback: save shared$raw_data to temp file
           if (is.null(original_path) || !file.exists(original_path)) {
             original_path <- file.path(tempdir(), original_name)
-            if (!is.null(shared$raw_data)) {
-              write.csv(shared$raw_data, original_path, row.names = FALSE)
-            }
-            read_args <- list()  # the fallback copy is a standard CSV (already converted)
+            read_args <- if (!is.null(shared$raw_data))
+              write_record_fallback(shared$raw_data, original_path, read_args) else list()
             adnca_rec <- NULL
           }
           

@@ -146,7 +146,9 @@ add_dose_normalized <- function(nca_result, dose) {
   # profile key, so dividing by position would use other subjects' doses.
   if (length(dose) > 1 && !is.null(names(dose))) {
     subj <- if ("Subject" %in% names(nca_result)) nca_result$Subject else nca_result[[1]]
-    dose <- as.numeric(dose[as.character(subj)])
+    cols <- intersect(c("Subject", "Treatment", "Period"), names(nca_result))
+    key <- if (length(cols) > 1) do.call(paste, c(lapply(nca_result[cols], as.character), sep = "||")) else as.character(subj)
+    dose <- as.numeric(if (all(key %in% names(dose))) dose[key] else dose[as.character(subj)])
   }
   # Parameters that should be dose-normalized
   dn_params <- c("CMAX", "AUCLST", "AUCIFO", "AUCIFP",

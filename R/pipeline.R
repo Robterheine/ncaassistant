@@ -50,13 +50,24 @@ normalise_decimal_comma <- function(x, dec) {
   x
 }
 
+#' Text that means "below the limit of quantification"
+#'
+#' "<x", BLQ, BQL, BLOQ, ND (not detected) and NQ (not quantifiable), in any
+#' case. NS (no sample), N/A and MISSING are NOT BLQ: they stay missing.
+BLQ_TEXT_PATTERN <- "^\\s*(<|(BLQ|BQL|BLOQ|ND|NQ)\\b)"
+is_blq_text <- function(x) {
+  x <- as.character(x)
+  !is.na(x) & grepl(BLQ_TEXT_PATTERN, x, ignore.case = TRUE, perl = TRUE) &
+    is.na(suppressWarnings(as.numeric(x)))
+}
+
 #' Count BLQ text entries and suggest an LLOQ from "<x" values
 #'
 #' @param conc_raw Concentration column as uploaded
 #' @return list(n_blq_text, suggested_lloq (NULL if none))
 blq_text_summary <- function(conc_raw) {
   conc_chr <- as.character(conc_raw)
-  n_blq_text <- sum(grepl("^(BLQ|BQL|<|BLOQ|NS|ND|NQ)", conc_chr, ignore.case = TRUE))
+  n_blq_text <- sum(is_blq_text(conc_chr))
   suggested <- NULL
   lt_vals <- conc_chr[grepl("^<", conc_chr)]
   if (length(lt_vals) > 0) {
@@ -88,21 +99,26 @@ prepare_pk_dataset <- function(raw, col_map, opts = list()) {
   rule <- if (is.null(opts$blq_rule)) "rule1" else opts$blq_rule
 
   data <- raw
+  # Leading/trailing spaces in IDs and design labels ("Test " vs "Test") would
+  # otherwise create extra subjects, treatments or periods
+  for (cc in unique(c(col_map$subject, col_map$treatment, col_map$period, col_map$sequence))) {
+    if (!is.null(cc) && cc %in% names(data) && (is.character(data[[cc]]) || is.factor(data[[cc]])))
+      data[[cc]] <- trimws(as.character(data[[cc]]))
+  }
   dec <- opts$read_args$dec
   data[[col_map$time]] <- normalise_decimal_comma(data[[col_map$time]], dec)
   data[[col_map$conc]] <- normalise_decimal_comma(data[[col_map$conc]], dec)
   data[[col_map$time]] <- suppressWarnings(as.numeric(data[[col_map$time]]))
 
-  # Pre-process BLQ text entries before numeric conversion. Values like
-  # "<0,195" (European decimal) or "<0.1" become NA after as.numeric(), so
-  # apply_blq_rules would never see them as BLQ (it checks !is.na(x) & x <
-  # lloq). Setting them to 0 ensures they are flagged, and the selected rule
-  # then decides their value.
+  # Pre-process BLQ text entries before numeric conversion. Text such as
+  # "<0,195", "<0.1", "BLQ" or "ND" becomes NA under as.numeric(), so
+  # apply_blq_rules would never see it as BLQ (it checks !is.na(x) & x <
+  # lloq). Setting it to 0 ensures it is flagged, and the selected rule then
+  # decides its value. "NS" (no sample) and similar stay missing.
   n_text <- 0L
   if (lloq > 0) {
     conc_raw_chr <- as.character(data[[col_map$conc]])
-    blq_text_mask <- grepl("^<", conc_raw_chr) &
-                     is.na(suppressWarnings(as.numeric(conc_raw_chr)))
+    blq_text_mask <- is_blq_text(conc_raw_chr)
     n_text <- sum(blq_text_mask)
     if (any(blq_text_mask)) {
       conc_raw_chr[blq_text_mask] <- "0"  # placeholder: 0 < lloq -> BLQ
@@ -158,7 +174,21 @@ prepare_pk_dataset <- function(raw, col_map, opts = list()) {
   )
 }
 
+#' One dose per profile: the maximum of the Dose column within each profile
+#' (subject x treatment x period, as mapped), named by profile key
+#'
+#' A subject can receive different doses in different periods (e.g. a
+#' dose-proportionality crossover); each profile then uses its own dose.
+#' run_nca() matches these names to its profile keys.
+dose_by_profile <- function(data, col_map) {
+  d <- suppressWarnings(as.numeric(data[[col_map$dose]]))
+  key <- profile_key(data, col_map)$key
+  v <- tapply(d, key, max, na.rm = TRUE)
+  stats::setNames(as.numeric(v), names(v))
+}
+
 #' One dose per subject: the maximum of the Dose column, named by subject ID
+#' (kept for records made before per-profile doses)
 #'
 #' run_nca() matches a multi-element dose vector by these names.
 dose_by_subject <- function(data, col_map) {
@@ -586,7 +616,10 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
   if (length(dose_in) <= 1) {
     dose_num <- suppressWarnings(as.numeric(dose_in))
   } else if (!is.null(names(dose_in))) {
-    dose_num <- suppressWarnings(as.numeric(dose_in[subj_by_key]))
+    # Named by profile key (dose_by_profile) or by subject (dose_by_subject)
+    by_profile <- all(as.character(final_keys) %in% names(dose_in))
+    dose_num <- suppressWarnings(as.numeric(
+      if (by_profile) dose_in[as.character(final_keys)] else dose_in[subj_by_key]))
     if (anyNA(dose_num)) {
       warning("No dose value for subject(s): ",
               paste(unique(subj_by_key[is.na(dose_num)]), collapse = ", "),
@@ -754,7 +787,8 @@ read_record_input <- function(rec) {
 #' Per-subject doses are recomputed from the Dose column with
 #' dose_by_subject(), exactly as the app computed them.
 record_nca_settings <- function(rec, data, col_map) {
-  dose <- if (identical(rec$dose_source, "per_subject")) dose_by_subject(data, col_map) else rec$dose
+  dose <- if (identical(rec$dose_source, "per_profile")) dose_by_profile(data, col_map) else
+          if (identical(rec$dose_source, "per_subject")) dose_by_subject(data, col_map) else rec$dose
   list(admin_route = rec$admin_route, dose = dose,
        infusion_duration = if (is.null(rec$infusion_dur)) 0 else rec$infusion_dur,
        is_steady_state = isTRUE(rec$steady_state),

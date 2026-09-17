@@ -59,6 +59,16 @@ build_be_data <- function(nca_res, pk_data, col_map) {
        per_col = if ("Period" %in% keys) "Period" else NULL, seq_col = seq_col)
 }
 
+#' Is a confidence interval within the acceptance limits?
+#'
+#' The limits are compared after rounding the CI to two decimals, as in FDA
+#' "Statistical Approaches to Establishing Bioequivalence" (May 2026): "the
+#' rounded confidence interval value should be at least 80.00 percent and not
+#' more than 125.00 percent". The table shows the same rounded values.
+be_limits_pass <- function(ci_lo, ci_hi, lower, upper) {
+  round(ci_lo, 2) >= lower && round(ci_hi, 2) <= upper
+}
+
 #' Fit the BE model for one PK parameter and derive the CI and verdict
 #'
 #' @param be_data   Data frame at NCA-profile grain with the design columns
@@ -107,6 +117,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
 
   # Every row carries the same columns, so rows for parameters that could not
   # be estimated bind with the rest instead of breaking rbind().
+  model_label <- NA_character_
   make_row <- function(pe = NA, lo = NA, hi = NA, n_t = NA, n_r = NA, o_t = NA, o_r = NA,
                        pe_status = NA, verdict = NA, mse = NA, dfe = NA) {
     data.frame(
@@ -117,7 +128,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
       BE_Lower = if (has_limits) be_lower else NA,
       BE_Upper = if (has_limits) be_upper else NA,
       PE_Constraint = pe_status, Bioequivalent = verdict,
-      MSE = mse, DF = dfe, stringsAsFactors = FALSE)
+      MSE = mse, DF = dfe, Model = model_label, stringsAsFactors = FALSE)
   }
 
   # Subject, Period and Sequence are classification factors in the ANOVA
@@ -167,10 +178,12 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
     # random effect on Sequence, which is already a fixed effect, and left the
     # Sequence row of the ANOVA with zero denominator degrees of freedom.
     random_f <- paste0("~1|", subj_col)
+    mixed_error <- NULL
     fit <- tryCatch(
       nlme::lme(fixed = as.formula(paste(".response~", paste(fixed_terms, collapse = "+"))),
                 random = as.formula(random_f), data = be_data, na.action = na.exclude),
       error = function(e) {
+        mixed_error <<- conditionMessage(e)
         tryCatch(lm(as.formula(paste(".response~", paste(c(fixed_terms, subj_col), collapse = "+"))),
                     data = be_data, na.action = na.exclude), error = function(e2) NULL)
       })
@@ -184,6 +197,8 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
                        data = be_data, na.action = na.exclude), error = function(e) NULL)
   }
 
+  model_label <- if (inherits(fit, "lme")) "mixed effects" else
+    if (use_mixed) paste0("fixed effects (mixed model failed to fit: ", mixed_error, ")") else "fixed effects"
   if (is.null(fit)) {
     out$row <- make_row()
     return(out)
@@ -223,8 +238,16 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   # replicate designs, where a subject receives a treatment more than once.
   has_ref <- be_data[[trt_col]] == trt_levels[1] & !is.na(be_data$.response)
   has_tst <- be_data[[trt_col]] == trt_levels[2] & !is.na(be_data$.response)
-  n1 <- length(unique(be_data[[subj_col]][has_ref])); o1 <- sum(has_ref)
-  n2 <- length(unique(be_data[[subj_col]][has_tst])); o2 <- sum(has_tst)
+  o1 <- sum(has_ref); o2 <- sum(has_tst)
+  subj_ref <- unique(as.character(be_data[[subj_col]][has_ref]))
+  subj_tst <- unique(as.character(be_data[[subj_col]][has_tst]))
+  if (model_family != "parallel" && !inherits(fit, "lme")) {
+    # With subject as a fixed effect only subjects observed under both
+    # treatments contribute to the comparison; count those
+    both <- intersect(subj_ref, subj_tst); n1 <- length(both); n2 <- length(both)
+  } else {
+    n1 <- length(subj_ref); n2 <- length(subj_tst)
+  }
 
   coef_result <- tryCatch({
     if (is_lme) {
@@ -270,14 +293,14 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   pe <- unname(pe); ci_lo_p <- unname(ci_lo_p); ci_hi_p <- unname(ci_hi_p)
 
   if (has_limits) {
-    ci_pass <- ci_lo_p >= be_lower && ci_hi_p <= be_upper
+    ci_pass <- be_limits_pass(ci_lo_p, ci_hi_p, be_lower, be_upper)
     # A CI inside 80-125% already puts the point estimate inside it. Wider
     # limits (ABEL-style, or fixed widened Cmax limits) do not, so the
     # constraint is applied unless the user has explicitly switched it off.
     if (!widened) {
       pe_status <- "not required"; be_pass <- ci_pass
     } else if (isTRUE(pe_constraint)) {
-      pe_ok <- pe >= 80 && pe <= 125
+      pe_ok <- round(pe, 2) >= 80 && round(pe, 2) <= 125
       pe_status <- if (pe_ok) "YES" else "NO"; be_pass <- ci_pass && pe_ok
     } else {
       pe_status <- "not applied"; be_pass <- ci_pass

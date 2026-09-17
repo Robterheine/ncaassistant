@@ -443,16 +443,17 @@ path_be_server <- function(id, shared) {
         }
 
         if (use_data_dose) {
-          dose_vec <- suppressWarnings(dose_by_subject(shared$pk_data, cm))
+          dose_vec <- suppressWarnings(dose_by_profile(shared$pk_data, cm))
           if (any(!is.finite(dose_vec) | dose_vec <= 0)) {
             showNotification(
               "Some subjects have missing or zero dose values. Check the Dose column in your data.",
               type = "error", duration = 8)
             return()
           }
-          # Named by subject: run_nca() matches doses by subject ID, never by
-          # position (dose_by_subject() is also what the reproduction uses)
+          # One dose per profile (subject x treatment x period), matched by profile
+          # key in run_nca(); a subject may get different doses in different periods
           settings$dose <- dose_vec
+          settings$dose_source <- "per_profile"
         }
         
         nca_warnings_be <- character(0)
@@ -615,6 +616,11 @@ path_be_server <- function(id, shared) {
             be_upper      = input$be_upper,
             pe_constraint = !identical(input$pe_constraint, FALSE),
             diff_unit     = diff_unit_for(param))
+          if (!is.na(fit_out$row$Model) && grepl("mixed model failed", fit_out$row$Model)) {
+            showNotification(paste0(friendly_name(param), ": the mixed model could not be fitted; ",
+                                    "fixed effects were used instead. See the Model column in the downloads."),
+                             type = "warning", duration = 12)
+          }
           if (!is.null(fit_out$reason)) {
             showNotification(
               paste0("Could not compute BE results for ", friendly_name(param), ": ", fit_out$reason),
@@ -1254,8 +1260,8 @@ path_be_server <- function(id, shared) {
           if (is.null(original_path) || !file.exists(original_path)) {
             original_path <- file.path(tempdir(), original_name)
             if (!is.null(shared$raw_data))
-              write.csv(shared$raw_data, original_path, row.names = FALSE)
-            read_args <- list()  # the fallback copy is a standard CSV (already converted)
+              read_args <- write_record_fallback(shared$raw_data, original_path, read_args)
+            else read_args <- list()
             adnca_rec <- NULL
           }
           

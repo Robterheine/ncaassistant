@@ -228,10 +228,10 @@ adnca_convert <- function(d, time, paramcd = NULL, pcspec = NULL, zero_predose =
     blq_text <- NULL
     for (v in intersect(c("PCORRES", "PCSTRESC", "AVALC"), names(d))) {
       txt <- as.character(d[[v]])
-      if (any(grepl("^\\s*(<|BLQ|BQL|BLOQ)", txt[miss], ignore.case = TRUE))) { blq_text <- txt; break }
+      if (any(grepl("^\\s*(<|(BLQ|BQL|BLOQ|ND|NQ)\\b)", txt[miss], ignore.case = TRUE, perl = TRUE))) { blq_text <- txt; break }
     }
     is_blq <- if (is.null(blq_text)) rep(FALSE, nrow(d)) else
-      miss & grepl("^\\s*(<|BLQ|BQL|BLOQ)", blq_text, ignore.case = TRUE)
+      miss & grepl("^\\s*(<|(BLQ|BQL|BLOQ|ND|NQ)\\b)", blq_text, ignore.case = TRUE, perl = TRUE)
     if (any(miss & !is_blq))
       refuse(sum(miss & !is_blq), " record(s) have AVAL missing without a BLQ result. A missing ",
              "value can mean 'not taken' or 'below LLOQ'; resolve these upstream.")

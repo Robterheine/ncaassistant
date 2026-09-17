@@ -41,6 +41,11 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
   for (cc in unique(c(col_map$time, col_map$conc))) {
     if (!is.null(cc) && cc %in% names(data)) data[[cc]] <- normalise_decimal_comma(data[[cc]], dec)
   }
+  # IDs and design labels are trimmed as in prepare_pk_dataset()
+  for (cc in unique(c(col_map$subject, col_map$treatment, col_map$period, col_map$sequence))) {
+    if (!is.null(cc) && cc %in% names(data) && (is.character(data[[cc]]) || is.factor(data[[cc]])))
+      data[[cc]] <- trimws(as.character(data[[cc]]))
+  }
   
   # ===========================================================================
   # 1. BASIC STRUCTURE CHECKS
@@ -194,10 +199,19 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
   # Check for BLQ strings
   if (is.character(conc_raw) || is.factor(conc_raw)) {
     conc_char <- as.character(conc_raw)
-    blq_pattern <- grepl("^(BLQ|BQL|<|BLOQ|NS|ND|NQ|N/?A|MISSING)", conc_char,
-                         ignore.case = TRUE)
+    # BLQ text as defined in R/pipeline.R (is_blq_text): "<x", BLQ, BQL, BLOQ,
+    # ND, NQ. "No sample" text stays missing and is reported separately.
+    blq_pattern <- is_blq_text(conc_char)
+    missing_pattern <- !blq_pattern & grepl("^\\s*(NS|N/?A|MISSING|NOT DONE|NR)\\s*$", conc_char,
+                                            ignore.case = TRUE)
+    if (any(missing_pattern)) {
+      add("INFO", "Concentration",
+          paste(sum(missing_pattern), "entries marked as no sample / missing"),
+          paste0("Values found: ", paste(head(unique(conc_char[missing_pattern]), 5), collapse = ", ")),
+          "These are treated as missing values, not as BLQ.")
+    }
     n_blq_str <- sum(blq_pattern)
-    n_other_str <- sum(!blq_pattern & is.na(suppressWarnings(as.numeric(conc_char))) &
+    n_other_str <- sum(!blq_pattern & !missing_pattern & is.na(suppressWarnings(as.numeric(conc_char))) &
                          !is.na(conc_char) & conc_char != "")
     
     if (n_blq_str > 0) {
@@ -236,7 +250,7 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
     }
     
     if (n_other_str > 0) {
-      bad_conc <- unique(conc_char[!blq_pattern &
+      bad_conc <- unique(conc_char[!blq_pattern & !missing_pattern &
                                      is.na(suppressWarnings(as.numeric(conc_char))) &
                                      !is.na(conc_char) & conc_char != ""])
       add("ERROR", "Concentration",

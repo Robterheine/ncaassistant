@@ -353,6 +353,9 @@ create_analysis_record <- function(output_path, results, settings, col_map,
                                     read_args = NULL,
                                     adnca = NULL) {
   
+  # The name comes from the browser: keep only the file name, never a path
+  original_file_name <- basename(original_file_name)
+
   # Create temp directory
   tmp <- tempdir()
   rec_dir <- file.path(tmp, "analysis_record")
@@ -431,7 +434,8 @@ create_analysis_record <- function(output_path, results, settings, col_map,
                           if (!is.null(col_map$period)) "Period"),
       admin_route     = settings$admin_route,
       dose            = settings$dose,
-      dose_source     = if (length(settings$dose) > 1) "per_subject" else "single",
+      dose_source     = if (!is.null(settings$dose_source)) settings$dose_source else
+                          if (length(settings$dose) > 1) "per_subject" else "single",
       dose_unit       = settings$dose_unit,
       time_unit       = settings$time_unit,
       conc_unit       = settings$conc_unit,
@@ -536,6 +540,7 @@ create_single_analysis_record <- function(output_path, result, settings,
                                            read_args = NULL,
                                            adnca = NULL) {
 
+  original_file_name <- basename(original_file_name)
   tmp <- tempdir()
   rec_dir <- file.path(tmp, "analysis_record")
   if (dir.exists(rec_dir)) unlink(rec_dir, recursive = TRUE)
@@ -766,6 +771,7 @@ create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
                               analyst = "Analyst", study_name = "Untitled Study",
                               n_subjects = NA, n_obs = NA, read_args = NULL, adnca = NULL) {
 
+  original_file_name <- basename(original_file_name)
   tmp <- tempdir()
   rec_dir <- file.path(tmp, "figure_record")
   if (dir.exists(rec_dir)) unlink(rec_dir, recursive = TRUE)
@@ -1005,6 +1011,20 @@ run_reproduction_check <- function(rec_dir, script, outputs = "reproduced_result
   writeLines(lines, file.path(rec_dir, "reproduction_check.txt"))
   unlink(file.path(rec_dir, c(outputs, figure)))
   verdict
+}
+
+#' Write the uploaded table when the original upload file is no longer available
+#'
+#' The copy is a standard CSV (comma separator, point decimal mark). When the
+#' upload used a decimal comma, decimal-comma numbers stored as text are
+#' rewritten with a point first, so the copy reads back to the same values.
+#' @return read arguments for the copy (always the defaults)
+write_record_fallback <- function(raw, path, read_args = list()) {
+  if (identical(read_args$dec, ",")) {
+    for (cc in names(raw)) raw[[cc]] <- normalise_decimal_comma(raw[[cc]], ",")
+  }
+  utils::write.csv(raw, path, row.names = FALSE)
+  list()
 }
 
 #' Copy the pipeline code into a record folder as nca_pipeline.R

@@ -72,7 +72,11 @@ interlock_adnca_shape <- function(data) {
 #' ug/L), because the app cannot tell equivalent from non-equivalent.
 interlock_mixed_units <- function(data) {
   nm <- names(data)
-  unit_cols <- nm[grepl("unit", nm, ignore.case = TRUE) |
+  # A unit column is named Unit(s), has Unit(s) as a separate word (Conc_Unit,
+  # time.units) or as a CamelCase suffix (TimeUnit), or is a CDISC unit
+  # variable. "Community" or "Opportunity" are not unit columns.
+  unit_cols <- nm[grepl("(^|[_. ])units?($|[_. ])", nm, ignore.case = TRUE) |
+                  grepl("[a-z]Units?$", nm) |
                   toupper(nm) %in% c("AVALU", "PCSTRESU", "PCORRESU", "RRLTU", "DOSEU", "EXDOSU",
                                      "CONCU", "TIMEU")]
   out <- list()
@@ -151,8 +155,9 @@ interlock_profile_start <- function(data, col_map) {
                    if (length(bad) > 5) paste0("; + ", length(bad) - 5, " more") else "")
   action <- paste0("Time must be measured from the dose of each profile. In a crossover, ",
                    "use time since the dose of that period, not since the first dose of the study ",
-                   "(in CDISC terms: ARRLT or NRRLT, not AFRLT). Very large times may be dates or ",
-                   "date-times stored as numbers.")
+                   "(in CDISC terms: ARRLT or NRRLT, not AFRLT). For steady-state data, use time ",
+                   "since the most recent dose (time 0 = just before that dose), not since the first ",
+                   "dose. Very large times may be dates or date-times stored as numbers.")
   out <- list()
   if (any(!sparse)) {
     out[[1]] <- .finding("ERROR", "Time",
