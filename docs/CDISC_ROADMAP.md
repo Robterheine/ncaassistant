@@ -1001,6 +1001,15 @@ gap for this app's academic and hospital audience than reference scaling will
 ever be** — and it shares the same root fix, period-aware keying. Worth
 revisiting after Part B, not during.
 
+> **Revisited 2026-09-17, decision with the maintainer: not added.** The goal
+> is that Plan a Study and Bioequivalence Testing offer the same designs, and
+> they do: both menus come from `R/designs.R` (2×2, 2×2×3, 2×3×3, 2×2×4,
+> parallel; paired comparison analysis-only by design), enforced by REP-DES-02.
+> Multi-treatment designs (3×3, 3×6×3, 4×4) and the rarely used two-treatment
+> designs PowerTOST also knows (2×4×4, Balaam's 2×4×2, Liu's 2×2×2r) are in
+> neither module and will not be added. The NCA already handles more than two
+> treatments per subject; only the BE comparison is limited to two.
+
 ### 11.6 Do not "fix" the type I error inflation
 
 The statistician's simulations found α inflated above nominal in two situations:
@@ -1360,3 +1369,9 @@ Reconciling Part A and Part B. Part B is the next version; Part A resumes after.
 7. **Revisit multi-treatment designs** (§11.5) — ranked by the clinical
    pharmacologist as a bigger real gap for this audience than reference scaling,
    and it shares Part B's period-aware keying as its root fix.
+
+**Status 2026-09-17:** items 1 and 3–7 are done or decided (Tier 0, Part B,
+Part A Phases 1–3, Phase 4 as parameter codes, Phase 5 not built, the
+converter, multi-treatment designs not added). What remains is item 2 together
+with the final documentation pass: README, user manual, URS, validation
+documents (IQ/OQ/PQ), the §6 overclaims, and the version bump.
