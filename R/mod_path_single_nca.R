@@ -684,25 +684,19 @@ path_single_nca_server <- function(id, shared) {
           r <- nca_res()
           d <- tc()
 
-          settings <- list(
-            admin_route = input$admin_route,
-            dose = input$dose,
-            infusion_duration = if (!is.null(input$inf_dur) && input$admin_route == "iv_infusion") input$inf_dur else 0,
-            is_steady_state = isTRUE(input$is_ss),
-            dose_unit = input$dose_unit,
-            time_unit = input$time_unit,
-            conc_unit = input$conc_unit,
-            trap_method = input$trap_method,
-            r2adj_threshold = input$r2adj,
-            n_obs = length(d$time)
-          )
+          settings <- single_settings()
+          settings$r2adj_threshold <- input$r2adj
+          settings$n_obs <- length(d$time)
 
-          subject_label <- if (!is.null(shared$pk_data) && !is.null(shared$col_map)) {
+          subject_label <- if (identical(input$data_mode, "uploaded") &&
+                               !is.null(shared$pk_data) && !is.null(shared$col_map)) {
             input$sel_profile %||% "Subject"
           } else { "Manual Entry" }
 
           # File source: uploaded dataset vs. manual entry
-          has_file <- !is.null(shared$study_info) && !is.null(shared$study_info$file_name)
+          # Uploaded only when this analysis used the uploaded data (not manual entry)
+          has_file <- identical(input$data_mode, "uploaded") &&
+            !is.null(shared$study_info) && !is.null(shared$study_info$file_name)
           original_name <- if (has_file) shared$study_info$file_name else "manual_entry.csv"
           original_path <- if (has_file) shared$study_info$file_path else NULL
 
@@ -731,7 +725,7 @@ path_single_nca_server <- function(id, shared) {
 
           setProgress(0.7, message = "Building record...")
 
-          create_single_analysis_record(
+          rec_out <- create_single_analysis_record(
             output_path        = file,
             result             = r,
             settings           = settings,
@@ -744,8 +738,11 @@ path_single_nca_server <- function(id, shared) {
             lloq               = lloq,
             analyst            = if (nchar(input$record_analyst) > 0) input$record_analyst else "Analyst",
             study_name         = if (nchar(input$record_study) > 0) input$record_study else "Untitled Study",
-            lz_override        = lz_override
+            lz_override        = lz_override,
+            col_map            = if (has_file) shared$col_map else NULL,
+            read_args          = if (has_file) shared$study_info$read_args else NULL
           )
+          notify_reproduction(rec_out)
         })
       }
     )

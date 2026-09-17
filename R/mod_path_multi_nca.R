@@ -339,21 +339,15 @@ path_multi_nca_server <- function(id, shared) {
       }
 
       if (use_data_dose) {
-        dose_df <- shared$pk_data %>%
-          group_by(.data[[shared$col_map$subject]]) %>%
-          summarize(dose = max(.data[[shared$col_map$dose]], na.rm = TRUE),
-                    .groups = "drop")
-        if (any(!is.finite(dose_df$dose) | dose_df$dose <= 0)) {
+        dose_vec <- suppressWarnings(dose_by_subject(shared$pk_data, shared$col_map))
+        if (any(!is.finite(dose_vec) | dose_vec <= 0)) {
           showNotification(
             "Some subjects have missing or zero dose values. Check the Dose column in your data.",
             type = "error", duration = 8)
           return()
         }
-        # Name the vector by subject so run_nca() matches doses by subject ID
-        # instead of relying on position (see run_nca(): positional matching
-        # silently mis-assigns doses once the key sort order differs).
-        dose_vec <- dose_df$dose
-        names(dose_vec) <- as.character(dose_df[[shared$col_map$subject]])
+        # Named by subject: run_nca() matches doses by subject ID, never by
+        # position (dose_by_subject() is also what the reproduction uses)
         settings$dose <- dose_vec
       }
       
@@ -881,6 +875,7 @@ path_multi_nca_server <- function(id, shared) {
           si <- shared$study_info
           original_name <- si$file_name
           original_path <- si$file_path
+          read_args <- si$read_args
           
           # Fallback: save shared$raw_data to temp file
           if (is.null(original_path) || !file.exists(original_path)) {
@@ -888,11 +883,12 @@ path_multi_nca_server <- function(id, shared) {
             if (!is.null(shared$raw_data)) {
               write.csv(shared$raw_data, original_path, row.names = FALSE)
             }
+            read_args <- list()  # the fallback copy is a standard CSV
           }
           
           setProgress(0.6, message = "Building R script and summary...")
           
-          create_analysis_record(
+          rec_out <- create_analysis_record(
             output_path    = file,
             results        = r,
             settings       = settings,
@@ -905,8 +901,10 @@ path_multi_nca_server <- function(id, shared) {
             study_name     = if (nchar(input$record_study) > 0) input$record_study else "Untitled Study",
             summary_stats  = summ,
             lz_overrides   = if (length(lz_state$overrides_log) > 0) lz_state$overrides_log else NULL,
-            viz_settings   = shared$viz_settings
+            viz_settings   = shared$viz_settings,
+            read_args      = read_args
           )
+          notify_reproduction(rec_out)
         })
       }
     )

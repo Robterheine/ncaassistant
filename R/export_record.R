@@ -102,587 +102,9 @@ write_integrity_manifest <- function(rec_dir, artifacts) {
   invisible(hashes)
 }
 
-#' Generate the R code block that auto-compares reproduced vs app results
-#'
-#' Bundled into the reproduction script. Reads app_results_reference.csv (the
-#' app's own computed results, shipped in the record) and reports the maximum
-#' relative difference and a MATCH/CLOSE/DIFFERENT verdict.
-#'
-#' @param mode "table" (data frame, batch/BE) or "vector" (single subject)
-.comparison_block <- function(mode = "table") {
-  if (mode == "vector") {
-'
-# --- Automated check: reproduced vs app results -----------------------------
-# The record ships the app\'s own results (app_results_reference.csv). This block
-# compares the reproduction against them and reports whether they agree.
-ref_file <- "app_results_reference.csv"
-if (file.exists(ref_file)) {
-  app_ref <- read.csv(ref_file, stringsAsFactors = FALSE)
-  common  <- intersect(names(result), app_ref$Parameter)
-  a <- suppressWarnings(as.numeric(result[common]))
-  b <- suppressWarnings(as.numeric(app_ref$Value[match(common, app_ref$Parameter)]))
-  both <- is.finite(a) & is.finite(b)
-  if (any(both)) {
-    rel <- abs(a[both] - b[both]) / pmax(abs(b[both]), 1e-12)
-    max_rel <- max(rel)
-    verdict <- if (max_rel < 1e-6) "MATCH" else if (max_rel < 1e-3) "CLOSE" else "DIFFERENT"
-    cat("\\n--- Reproduction check: reproduced vs app ---\\n")
-    cat(sprintf("Compared %d parameters. Max relative difference: %.3g -> %s\\n",
-                sum(both), max_rel, verdict))
-    cat(if (verdict == "MATCH") "The standalone reproduction matches the app output.\\n"
-        else "Review the parameters above for differences.\\n")
-  }
-} else {
-  cat("\\n(app_results_reference.csv not found - compare reproduced_results.csv with results.xlsx manually.)\\n")
-}
-'
-  } else {
-'
-# --- Automated check: reproduced vs app results -----------------------------
-# The record ships the app\'s own results (app_results_reference.csv). This block
-# compares the reproduction against them and reports whether they agree.
-ref_file <- "app_results_reference.csv"
-if (file.exists(ref_file)) {
-  app_ref <- read.csv(ref_file, stringsAsFactors = FALSE, check.names = FALSE)
-  shared_cols <- intersect(names(result), names(app_ref))
-  # Align rows on the profile key (Subject, Treatment, Period) rather than
-  # trusting both tables to be in the same order.
-  key_cols <- intersect(c("Subject", "Treatment", "Period"), shared_cols)
-  if (length(key_cols) > 0 && nrow(result) == nrow(app_ref)) {
-    k_res <- do.call(paste, c(lapply(result[key_cols], as.character), sep = "||"))
-    k_app <- do.call(paste, c(lapply(app_ref[key_cols], as.character), sep = "||"))
-    ord <- match(k_res, k_app)
-    if (!anyNA(ord) && !anyDuplicated(ord)) app_ref <- app_ref[ord, , drop = FALSE]
-    shared_cols <- setdiff(shared_cols, key_cols)
-  }
-  if (nrow(result) == nrow(app_ref) && length(shared_cols) > 0) {
-    max_rel <- 0; n_cmp <- 0; n_par <- 0
-    for (cn in shared_cols) {
-      a <- suppressWarnings(as.numeric(as.character(result[[cn]])))
-      b <- suppressWarnings(as.numeric(as.character(app_ref[[cn]])))
-      both <- is.finite(a) & is.finite(b)
-      if (!any(both)) next
-      n_par <- n_par + 1
-      rel <- abs(a[both] - b[both]) / pmax(abs(b[both]), 1e-12)
-      max_rel <- max(max_rel, max(rel)); n_cmp <- n_cmp + sum(both)
-    }
-    verdict <- if (max_rel < 1e-6) "MATCH" else if (max_rel < 1e-3) "CLOSE" else "DIFFERENT"
-    cat("\\n--- Reproduction check: reproduced vs app (", nrow(result), " rows) ---\\n", sep = "")
-    cat(sprintf("Compared %d numeric values across %d parameters. Max relative difference: %.3g -> %s\\n",
-                n_cmp, n_par, max_rel, verdict))
-    cat(if (verdict == "MATCH") "The standalone reproduction matches the app output.\\n"
-        else "Review the parameters above for differences.\\n")
-  } else {
-    cat("\\nRow/column layout differs from app reference - compare reproduced_results.csv with results.xlsx manually.\\n")
-  }
-} else {
-  cat("\\n(app_results_reference.csv not found - compare reproduced_results.csv with results.xlsx manually.)\\n")
-}
-'
-  }
-}
-
-#' Generate the standalone reproducibility R script for NCA
-#' @param settings List of NCA settings
-#' @param col_map Column mapping
-#' @param file_name Original data file name
-#' @param blq_rule BLQ rule used
-#' @param lloq LLOQ value
-#' @param lz_overrides Named list of lambda_z overrides (subject -> list)
-#' @param data_sha256 Recorded SHA-256 of the source data (for an integrity check)
-#' @return Character string containing the complete R script
-generate_nca_script <- function(settings, col_map, file_name, blq_rule, lloq,
-                                 lz_overrides = NULL, data_sha256 = NULL) {
-  
-  adm_map <- c(extravascular = "Extravascular", iv_bolus = "Bolus",
-                iv_infusion = "Infusion")
-  adm <- adm_map[settings$admin_route]
-  down <- if (settings$trap_method == "log") "Log" else "Linear"
-  
-  dose_code <- if (length(settings$dose) > 1) {
-    paste0("# Per-subject doses, taken from the Dose column and keyed by subject ID.\n",
-           "# tblNCA matches `dose` to profiles POSITIONALLY, so the vector is aligned\n",
-           "# to the profile order further down rather than relying on grouping order.\n",
-           "dose_lookup <- tapply(data[[", deparse(col_map$dose), "]],\n",
-           "                      as.character(data[[", deparse(col_map$subject), "]]),\n",
-           "                      max, na.rm = TRUE)")
-  } else {
-    paste0("dose_vec <- ", settings$dose, "  # Same dose for all subjects")
-  }
-
-  # Align the per-subject doses to the profile order tblNCA will actually see.
-  dose_align_code <- if (length(settings$dose) > 1) {
-    paste0(
-      '\n# Align doses to the profile order (see note above)\n',
-      'data <- data[order(data[[nca_key]], data[[time_col]]), ]\n',
-      'final_keys  <- unique(data[[nca_key]])\n',
-      'subj_by_key <- as.character(data[[', deparse(col_map$subject), ']][match(final_keys, data[[nca_key]])])\n',
-      'dose_vec <- as.numeric(dose_lookup[subj_by_key])\n'
-    )
-  } else ""
-  
-  blq_desc <- switch(blq_rule,
-    "rule1" = "Rule 1: Pre-first-quantifiable = 0, post-last-quantifiable = missing, between = 0",
-    "rule2" = "Rule 2: All BLQ = 0",
-    "rule3" = "Rule 3: All BLQ = excluded (NA)",
-    "rule4" = "Rule 4: All BLQ = LLOQ/2",
-    "rule5" = "Rule 5: Pre-Cmax = 0, post-Cmax = missing",
-    "rule6" = "Rule 6: Pre-first-quantifiable = LLOQ/2, rest = 0",
-    paste("Unknown rule:", blq_rule)
-  )
-  
-  # The profile key is the app's own profile_key() function, written into the
-  # script verbatim, so the app and the script cannot disagree about what a
-  # profile is (subject x treatment x period).
-  profile_key_code <- paste0(
-    "\n# A profile is one subject under one treatment in one period. This is the\n",
-    "# app's profile_key() function, copied verbatim.\n",
-    "profile_key <- ", paste(deparse(profile_key), collapse = "\n"), "\n")
-
-  composite_key_code <- paste0(
-    '\n# Profile key: one NCA profile per subject x treatment x period (as mapped)\n',
-    'pk <- profile_key(data, col_map)\n',
-    'if (length(pk$cols) > 1) {\n',
-    '  data$.nca_key <- pk$key\n',
-    '  key_parts <- unique(cbind(.nca_key = pk$key, pk$parts))\n',
-    '  nca_key <- ".nca_key"\n',
-    '} else {\n',
-    '  nca_key <- subject_col\n',
-    '}\n'
-  )
-
-  split_code <- paste0(
-    '\n# Restore Subject / Treatment / Period by matching the key (not by splitting it)\n',
-    'if (nca_key == ".nca_key") {\n',
-    '  idx <- match(as.character(result[[1]]), key_parts$.nca_key)\n',
-    '  result[[1]] <- NULL\n',
-    '  for (cc in pk$cols) result[[cc]] <- key_parts[[cc]][idx]\n',
-    '  result <- result[, c(pk$cols, setdiff(names(result), pk$cols))]\n',
-    '}\n'
-  )
-
-  script <- paste0(
-'# ============================================================================
-# NCA Analysis Reproducibility Script
-# ============================================================================
-# Generated by NCA Assistant
-# Date: ', format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), '
-#
-# This script independently reproduces the NCA analysis performed in the app.
-# It requires only R and the NonCompart package (installed automatically).
-#
-# INSTRUCTIONS:
-#   1. Place this script and the data file in the same folder
-#   2. Open R or RStudio
-#   3. Set your working directory to that folder:
-#        setwd("path/to/your/folder")
-#   4. Run this script:
-#        source("reproduce_analysis.R")
-#   5. The script produces "reproduced_results.csv" for comparison
-# ============================================================================
 
 
-# --- Step 1: Install required packages (if not already installed) -----------
 
-required_packages <- c("NonCompart", "dplyr")
-for (pkg in required_packages) {
-  if (!requireNamespace(pkg, quietly = TRUE)) {
-    install.packages(pkg, repos = "https://cloud.r-project.org")
-  }
-}
-library(NonCompart)
-
-
-# --- Step 2: Read the original data file ------------------------------------
-
-data_file <- "', file_name, '"
-
-if (!file.exists(data_file)) {
-  stop("Data file not found: ", data_file, 
-       "\\nPlace the original data file in the same folder as this script.")
-}
-
-file_ext <- tolower(tools::file_ext(data_file))
-if (file_ext %in% c("csv", "txt")) {
-  data <- read.csv(data_file, stringsAsFactors = FALSE)
-} else if (file_ext %in% c("xlsx", "xls")) {
-  if (!requireNamespace("readxl", quietly = TRUE))
-    install.packages("readxl", repos = "https://cloud.r-project.org")
-  data <- readxl::read_excel(data_file)
-  data <- as.data.frame(data)
-} else if (file_ext == "tsv") {
-  data <- read.delim(data_file, stringsAsFactors = FALSE)
-}
-
-cat("Data loaded:", nrow(data), "rows,", ncol(data), "columns\\n")
-
-
-# --- Step 3: Verify data integrity ------------------------------------------
-
-recorded_data_sha256 <- "', if (!is.null(data_sha256)) data_sha256 else "", '"
-if (requireNamespace("digest", quietly = TRUE)) {
-  file_hash <- digest::digest(file = data_file, algo = "sha256")
-  cat("SHA-256 hash (recomputed):", file_hash, "\\n")
-  if (nzchar(recorded_data_sha256)) {
-    cat("SHA-256 hash (recorded):  ", recorded_data_sha256, "\\n")
-    if (identical(file_hash, recorded_data_sha256)) {
-      cat("Data integrity: MATCH - the data file is unchanged since the analysis.\\n")
-    } else {
-      cat("Data integrity: MISMATCH - this data file differs from the analysed file!\\n")
-    }
-  }
-} else {
-  cat("Install the digest package to verify data integrity: install.packages(\\"digest\\")\\n")
-}
-
-
-# --- Step 4: Column mapping --------------------------------------------------
-# These are the columns identified during the analysis.
-
-subject_col <- ', deparse(col_map$subject), '
-time_col    <- ', deparse(col_map$time), '
-conc_col    <- ', deparse(col_map$conc), '
-col_map <- list(subject = subject_col, time = time_col, conc = conc_col,
-                treatment = ', deparse(col_map$treatment), ',
-                period    = ', deparse(col_map$period), ')
-', profile_key_code, '
-cat("Subject column:", subject_col, "\\n")
-cat("Time column:   ", time_col, "\\n")
-cat("Conc column:   ", conc_col, "\\n")
-
-
-# --- Step 5: Handle BLQ values -----------------------------------------------
-# BLQ rule applied: ', blq_desc, '
-# LLOQ value: ', lloq, '
-
-lloq_setting <- ', lloq, '
-data[[time_col]] <- suppressWarnings(as.numeric(data[[time_col]]))
-
-# Text BLQ entries such as "<0.195" become NA under as.numeric(), which would
-# hide them from the BLQ rule below. The app rewrites them to a 0 placeholder
-# first (0 < LLOQ, so the rule sees them as BLQ); mirrored here.
-if (lloq_setting > 0) {
-  conc_chr <- as.character(data[[conc_col]])
-  blq_text_mask <- grepl("^<", conc_chr) & is.na(suppressWarnings(as.numeric(conc_chr)))
-  if (any(blq_text_mask)) conc_chr[blq_text_mask] <- "0"
-  data[[conc_col]] <- suppressWarnings(as.numeric(conc_chr))
-} else {
-  data[[conc_col]] <- suppressWarnings(as.numeric(as.character(data[[conc_col]])))
-}
-
-# Drop unusable rows and sort BEFORE applying the BLQ rule: rules 1, 5 and 6
-# are positional, so they must see each profile in time order.
-data <- data[!is.na(data[[time_col]]), ]
-data <- data[order(data[[subject_col]], data[[time_col]]), ]
-
-# Positional BLQ rules act on one profile at a time (subject x treatment x period).
-prof_key <- profile_key(data, col_map)$key
-',
-if (lloq > 0) {
-  paste0(
-    'lloq <- ', lloq, '\n',
-    '# Apply BLQ rule: ', blq_desc, '\n',
-    switch(blq_rule,
-      "rule1" = paste0(
-        'for (s in unique(prof_key)) {\n',
-        '  idx <- which(prof_key == s)\n',
-        '  conc_s <- data[[conc_col]][idx]\n',
-        '  is_blq <- !is.na(conc_s) & conc_s < lloq\n',
-        '  quant <- which(!is_blq & !is.na(conc_s))\n',
-        '  if (length(quant) == 0) { data[[conc_col]][idx[is_blq]] <- NA; next }\n',
-        '  first_q <- min(quant); last_q <- max(quant)\n',
-        '  if (first_q > 1) data[[conc_col]][idx[1:(first_q-1)]][is_blq[1:(first_q-1)]] <- 0\n',
-        '  if (last_q < length(idx)) data[[conc_col]][idx[(last_q+1):length(idx)]][is_blq[(last_q+1):length(idx)]] <- NA\n',
-        '  between <- first_q:last_q\n',
-        '  data[[conc_col]][idx[between]][is_blq[between]] <- 0\n',
-        '}\n'),
-      "rule2" = 'data[[conc_col]][!is.na(data[[conc_col]]) & data[[conc_col]] < lloq] <- 0\n',
-      "rule3" = 'data[[conc_col]][!is.na(data[[conc_col]]) & data[[conc_col]] < lloq] <- NA\n',
-      "rule4" = paste0('data[[conc_col]][!is.na(data[[conc_col]]) & data[[conc_col]] < lloq] <- ', lloq/2, '\n'),
-      "rule5" = paste0(
-        'for (s in unique(prof_key)) {\n',
-        '  idx <- which(prof_key == s)\n',
-        '  is_blq <- !is.na(data[[conc_col]][idx]) & data[[conc_col]][idx] < lloq\n',
-        '  tmax_i <- which.max(data[[conc_col]][idx])\n',
-        '  pre <- idx[1:tmax_i]; post <- if (tmax_i < length(idx)) idx[(tmax_i+1):length(idx)] else integer(0)\n',
-        '  data[[conc_col]][intersect(pre, idx[is_blq])] <- 0\n',
-        '  data[[conc_col]][intersect(post, idx[is_blq])] <- NA\n',
-        '}\n'),
-      "rule6" = paste0(
-        'for (s in unique(prof_key)) {\n',
-        '  idx <- which(prof_key == s)\n',
-        '  conc_s <- data[[conc_col]][idx]\n',
-        '  is_blq <- !is.na(conc_s) & conc_s < lloq\n',
-        '  quant <- which(!is_blq & !is.na(conc_s))\n',
-        '  if (length(quant) == 0) { data[[conc_col]][idx[is_blq]] <- ', lloq/2, '; next }\n',
-        '  first_q <- min(quant)\n',
-        '  if (first_q > 1) data[[conc_col]][idx[1:(first_q-1)]][is_blq[1:(first_q-1)]] <- ', lloq/2, '\n',
-        '  from_q <- first_q:length(idx)\n',
-        '  data[[conc_col]][idx[from_q]][is_blq[from_q]] <- 0\n',
-        '}\n'),
-      ""
-    )
-  )
-} else {
-  "# No BLQ processing applied (LLOQ = 0)\n"
-},
-'
-
-
-# --- Step 6: Set dose --------------------------------------------------------
-
-', dose_code, '
-
-
-# --- Step 7: Run Non-Compartmental Analysis -----------------------------------
-# Engine: NonCompart::tblNCA (Kim et al., Transl Clin Pharmacol, 2018)
-# Administration: ', adm, '
-# Trapezoidal method: ', down, '
-# Minimum R-squared for half-life: ', settings$r2adj_threshold, '
-# Steady state: ', settings$is_steady_state, '
-', composite_key_code, dose_align_code, '
-result <- NonCompart::tblNCA(
-  data,
-  key    = nca_key,
-  colTime = time_col,
-  colConc = conc_col,
-  dose    = dose_vec,
-  adm     = "', adm, '",
-  dur     = ', settings$infusion_duration, ',
-  doseUnit = "', settings$dose_unit, '",
-  timeUnit = "', settings$time_unit, '",
-  concUnit = "', settings$conc_unit, '",
-  down     = "', down, '",
-  R2ADJ    = 0,  # matches the app: avoids NonCompart\'s interactive DetSlope() picker
-  SS       = ', toupper(as.character(settings$is_steady_state)), '
-)
-', split_code, '
-
-# --- Step 8: Apply manual lambda_z overrides (if any) -----------------------
-', if (!is.null(lz_overrides) && length(lz_overrides) > 0) {
-  override_lines <- sapply(names(lz_overrides), function(k) {
-    ov <- lz_overrides[[k]]
-    profile <- ov$profile
-    lz_val <- ov$adjusted_lambda_z
-    orig_val <- if (!is.na(ov$original_lambda_z)) ov$original_lambda_z else "NA"
-    paste0(
-      '# Override: ', profile, ' (original \u03bbz = ', signif(as.numeric(orig_val), 5),
-      ' -> adjusted \u03bbz = ', signif(lz_val, 5), ', ', ov$points_used, ' points)\n',
-      if (!is.null(ov$subject)) {
-        # Match on the profile's own parts, including Period for replicates
-        conds <- c(paste0('as.character(result$Subject) == ', deparse(as.character(ov$subject))),
-                   if (!is.null(ov$treatment))
-                     paste0('as.character(result$Treatment) == ', deparse(as.character(ov$treatment))),
-                   if (!is.null(ov$period))
-                     paste0('as.character(result$Period) == ', deparse(as.character(ov$period))))
-        paste0('idx <- which(', paste(conds, collapse = ' & '), ')')
-      } else if (grepl(" \\| ", profile)) {
-        parts <- strsplit(profile, " \\| ")[[1]]
-        paste0('idx <- which(result$Subject == "', trimws(parts[1]),
-               '" & result$Treatment == "', trimws(parts[2]), '")')
-      } else {
-        paste0('idx <- which(result[[1]] == "', profile, '")')
-      },
-      '\nif (length(idx) == 1) {\n',
-      '  result$LAMZ[idx]   <- ', signif(lz_val, 8), '\n',
-      '  result$LAMZHL[idx] <- log(2) / ', signif(lz_val, 8), '\n',
-      '  clast <- as.numeric(result$CLST[idx])\n',
-      '  auclst <- as.numeric(result$AUCLST[idx])\n',
-      '  if (!is.na(clast) && ', signif(lz_val, 8), ' > 0) {\n',
-      '    result$AUCIFO[idx] <- auclst + clast / ', signif(lz_val, 8), '\n',
-      '  }\n',
-      '}\n')
-  })
-  paste0('\ncat("Applying ", ', length(lz_overrides), ', " manual lambda_z override(s)...\\n")\n',
-         paste(override_lines, collapse = "\n"))
-} else "", '
-
-# --- Step 9: Save results ----------------------------------------------------
-
-write.csv(result, "reproduced_results.csv", row.names = FALSE)
-cat("\\nResults saved to: reproduced_results.csv\\n")
-cat("Profiles analyzed:", nrow(result), "\\n")
-
-# --- Step 10: Compare reproduced results with the app -----------------------',
-.comparison_block("table"), '
-cat("\\nDone.\\n")
-')
-
-  script
-}
-
-
-#' Generate standalone R script for single-subject NCA
-#' @param time_vec Numeric vector of time values
-#' @param conc_vec Numeric vector of concentration values
-#' @param settings List of NCA settings
-#' @param subject_label Label for the subject
-#' @param file_name Original file name (or NULL for manual entry)
-generate_single_nca_script <- function(time_vec, conc_vec, settings,
-                                        subject_label = "Subject",
-                                        file_name = NULL,
-                                        lz_override = NULL,
-                                        data_sha256 = NULL) {
-
-  adm_map <- c(extravascular = "Extravascular", iv_bolus = "Bolus",
-                iv_infusion = "Infusion")
-  adm <- adm_map[settings$admin_route]
-  down <- if (settings$trap_method == "log") "Log" else "Linear"
-  r2_thresh <- settings$r2adj_threshold %||% 0.7
-
-  time_str <- paste(time_vec, collapse = ", ")
-  conc_str <- paste(conc_vec, collapse = ", ")
-
-  # Optional manual lambda-z override block. The app refits the terminal phase
-  # using the points the analyst selected; reproduce that here so the script
-  # output matches the app exactly.
-  override_section <- if (!is.null(lz_override) &&
-                          !is.null(lz_override$time_used) &&
-                          length(lz_override$time_used) >= 2) {
-    sel_times <- paste(signif(as.numeric(lz_override$time_used), 10), collapse = ", ")
-    paste0(
-'
-
-# --- Step 3b: Apply manual lambda-z override --------------------------------
-# The terminal elimination phase was adjusted manually in the app using the
-# time points listed below (', length(lz_override$time_used), ' points). This block refits lambda-z
-# on exactly those points and recomputes the dependent parameters.
-
-sel_times <- c(', sel_times, ')
-ov_mask <- time %in% sel_times & !is.na(conc) & conc > 0
-if (sum(ov_mask) >= 2) {
-  ov_fit   <- lm(log(conc[ov_mask]) ~ time[ov_mask])
-  lambda_z <- as.numeric(-coef(ov_fit)[2])
-  result["LAMZ"]   <- lambda_z
-  result["LAMZHL"] <- log(2) / lambda_z
-  clast  <- as.numeric(result["CLST"])
-  auclst <- as.numeric(result["AUCLST"])
-  if (!is.na(clast) && !is.na(auclst) && lambda_z > 0) {
-    aucifo <- auclst + clast / lambda_z
-    result["AUCIFO"] <- aucifo
-    result["AUCPEO"] <- (clast / lambda_z) / aucifo * 100
-    if (', settings$dose, ' > 0) {
-      result["CLFO"] <- ', settings$dose, ' / aucifo
-      result["VZFO"] <- ', settings$dose, ' / (aucifo * lambda_z)
-    }
-  }
-  cat("Applied manual lambda-z override on", sum(ov_mask), "points; t-half =",
-      round(log(2) / lambda_z, 4), "\\n")
-}
-')
-  } else ""
-  
-  data_section <- if (!is.null(file_name) && nchar(file_name) > 0) {
-    paste0(
-'# --- Step 2: Read the data file and extract this subject ---
-
-data_file <- "', file_name, '"
-if (!file.exists(data_file)) {
-  stop("Data file not found: ", data_file)
-}
-
-file_ext <- tolower(tools::file_ext(data_file))
-if (file_ext %in% c("csv", "txt")) {
-  data <- read.csv(data_file, stringsAsFactors = FALSE)
-} else if (file_ext %in% c("xlsx", "xls")) {
-  if (!requireNamespace("readxl", quietly = TRUE))
-    install.packages("readxl", repos = "https://cloud.r-project.org")
-  data <- as.data.frame(readxl::read_excel(data_file))
-}
-
-# Verify data integrity against the hash recorded at analysis time
-recorded_data_sha256 <- "', if (!is.null(data_sha256)) data_sha256 else "", '"
-if (nzchar(recorded_data_sha256) && requireNamespace("digest", quietly = TRUE)) {
-  file_hash <- digest::digest(file = data_file, algo = "sha256")
-  cat("SHA-256 (recomputed):", file_hash, "\\n")
-  cat("SHA-256 (recorded):  ", recorded_data_sha256, "\\n")
-  cat(if (identical(file_hash, recorded_data_sha256))
-        "Data integrity: MATCH - the data file is unchanged since the analysis.\\n"
-      else "Data integrity: MISMATCH - this data file differs from the analysed file!\\n")
-}
-
-# The analysis was performed on the following data:
-time <- c(', time_str, ')
-conc <- c(', conc_str, ')
-cat("Subject: ', subject_label, '\\n")
-cat("Time points:", length(time), "\\n")
-')
-  } else {
-    paste0(
-'# --- Step 2: Data (entered manually in the app) ---
-
-time <- c(', time_str, ')
-conc <- c(', conc_str, ')
-cat("Subject: ', subject_label, '\\n")
-cat("Time points:", length(time), "\\n")
-')
-  }
-  
-  paste0(
-'# ============================================================================
-# Single-Subject NCA Reproducibility Script
-# ============================================================================
-# Generated by NCA Assistant
-# Date: ', format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), '
-#
-# This script reproduces the single-subject NCA performed in the app.
-#
-# INSTRUCTIONS:
-#   1. Open R or RStudio
-#   2. Run this script: source("reproduce_analysis.R")
-# ============================================================================
-
-
-# --- Step 1: Install required packages ---
-
-if (!requireNamespace("NonCompart", quietly = TRUE)) {
-  install.packages("NonCompart", repos = "https://cloud.r-project.org")
-}
-library(NonCompart)
-
-', data_section, '
-
-# --- Step 3: Run Non-Compartmental Analysis ---
-# Engine: NonCompart::sNCA
-# Administration: ', adm, '
-# Trapezoidal method: ', down, '
-# Steady state: ', settings$is_steady_state, '
-
-result <- NonCompart::sNCA(
-  x        = time,
-  y        = conc,
-  dose     = ', settings$dose, ',
-  adm      = "', adm, '",
-  dur      = ', settings$infusion_duration, ',
-  doseUnit = "', settings$dose_unit, '",
-  timeUnit = "', settings$time_unit, '",
-  concUnit = "', settings$conc_unit, '",
-  down     = "', down, '",
-  R2ADJ    = 0,  # matches the app: avoids NonCompart\'s interactive DetSlope() picker
-  SS       = ', toupper(as.character(settings$is_steady_state)), '
-)
-', override_section, '
-
-# --- Step 4: Display results ---
-
-result_df <- data.frame(
-  Parameter = names(result),
-  Value     = as.character(result),
-  stringsAsFactors = FALSE
-)
-write.csv(result_df, "reproduced_results.csv", row.names = FALSE)
-cat("\\nResults saved to: reproduced_results.csv\\n")
-cat("Parameters computed:", length(result), "\\n")
-cat("\\nKey parameters:\\n")
-for (p in c("CMAX", "TMAX", "AUCLST", "AUCIFO", "LAMZHL", "CLFO", "VZFO")) {
-  if (p %in% names(result)) cat(sprintf("  %s = %s\\n", p, result[p]))
-}
-
-# --- Step 5: Compare reproduced results with the app ------------------------',
-.comparison_block("vector"), '
-cat("\\nDone.\\n")
-')
-}
 
 
 #' Generate the analysis summary HTML document
@@ -690,7 +112,7 @@ cat("\\nDone.\\n")
 generate_summary_html <- function(settings, col_map, file_name, file_hash,
                                    blq_rule, lloq, analyst, study_name,
                                    n_subjects, n_obs, analysis_type = "NCA",
-                                   lz_overrides = NULL) {
+                                   lz_overrides = NULL, reproduction = NULL) {
   
   ver <- tryCatch(get("APP_VERSION", envir = globalenv()), error = function(e) "?")
   r_ver <- tryCatch(R.version.string, error = function(e) "R")
@@ -745,10 +167,16 @@ generate_summary_html <- function(settings, col_map, file_name, file_hash,
 
 <div class="info-box">
 <strong>What is this document?</strong><br>
-This package contains everything needed to independently reproduce the pharmacokinetic
-analysis. The R script (<code>reproduce_analysis.R</code>) repeats the exact same analysis
-step by step, without requiring the NCA Assistant app. The SHA-256 hash verifies that
-the data file has not been modified since the analysis was performed.
+This package contains everything needed to reproduce the pharmacokinetic analysis
+without the NCA Assistant app. <code>reproduce_analysis.R</code> runs the app\'s own
+pipeline code (<code>nca_pipeline.R</code>, shipped in this package) with the settings in
+<code>analysis_settings.json</code> and compares the result with the app\'s. SHA-256 hashes
+verify that the data file and the pipeline code are the ones used.
+', if (!is.null(reproduction)) paste0('<br><br>\n<strong>Reproduction check at export:</strong> ',
+  htmltools::htmlEscape(reproduction), ' (details in <code>reproduction_check.txt</code>). ',
+  'This demonstrates reproducibility, not independent verification: the same algorithms and ',
+  'packages are re-executed.') else '', '
+
 ', if (identical(analysis_type, "Bioequivalence")) paste0('<br><br>
 <strong>Scope:</strong> the script recomputes the NCA parameters. The bioequivalence
 statistics (ANOVA, confidence intervals and verdict) are recorded in <code>results.xlsx</code>
@@ -916,7 +344,8 @@ create_analysis_record <- function(output_path, results, settings, col_map,
                                     be_results = NULL,
                                     be_settings = NULL,
                                     lz_overrides = NULL,
-                                    viz_settings = NULL) {
+                                    viz_settings = NULL,
+                                    read_args = NULL) {
   
   # Create temp directory
   tmp <- tempdir()
@@ -929,9 +358,15 @@ create_analysis_record <- function(output_path, results, settings, col_map,
   n_obs <- if (!is.null(settings$n_obs)) settings$n_obs else "?"
   analysis_type <- if (!is.null(be_results)) "Bioequivalence" else "Non-Compartmental Analysis"
 
-  # SHA-256 of the source data file — embedded in the reproduce script (so it can
-  # confirm the data is unchanged) and listed in the integrity manifest.
+  # SHA-256 of the source data file — recorded in the settings (so the
+  # reproduction can confirm the data is unchanged) and in the manifest.
   data_sha256 <- sha256_or_na(original_file_path)
+
+  # The data file and the pipeline code travel with the record
+  tryCatch({
+    file.copy(original_file_path, file.path(rec_dir, original_file_name), overwrite = TRUE)
+  }, error = function(e) warning("Could not copy data file: ", e$message))
+  pipeline_sha256 <- .ship_pipeline(rec_dir)
 
   # 1. Results Excel
   tryCatch({
@@ -978,6 +413,9 @@ create_analysis_record <- function(output_path, results, settings, col_map,
       study_name      = study_name,
       analysis_type   = analysis_type,
       input_file      = original_file_name,
+      data_sha256     = data_sha256,
+      pipeline_sha256 = pipeline_sha256,
+      read_args       = if (is.null(read_args)) list() else read_args,
       column_mapping  = col_map,
       nca_profile_key = c("Subject",
                           if (!is.null(col_map$treatment)) "Treatment",
@@ -992,6 +430,7 @@ create_analysis_record <- function(output_path, results, settings, col_map,
       steady_state    = settings$is_steady_state,
       trap_method     = settings$trap_method,
       r2adj_threshold = settings$r2adj_threshold,
+      mw              = if (is.null(settings$mw)) 0 else settings$mw,
       blq_rule        = blq_rule,
       lloq            = lloq,
       packages = list(
@@ -1013,50 +452,41 @@ create_analysis_record <- function(output_path, results, settings, col_map,
     if (!is.null(viz_settings) && length(viz_settings) > 0) {
       settings_export$visualization <- viz_settings
     }
-    writeLines(jsonlite::toJSON(settings_export, pretty = TRUE, auto_unbox = TRUE),
-               file.path(rec_dir, "analysis_settings.json"))
+    .write_json(settings_export, file.path(rec_dir, "analysis_settings.json"))
   }, error = function(e) warning("Could not create settings JSON: ", e$message))
   
-  # 3. Reproducibility R script (with embedded source-data hash for verification)
+  # 3. Reproducibility R script (generic: sources nca_pipeline.R, reads the JSON)
   tryCatch({
-    script <- generate_nca_script(settings, col_map, original_file_name,
-                                   blq_rule, lloq, lz_overrides,
-                                   data_sha256 = data_sha256)
-    writeLines(script, file.path(rec_dir, "reproduce_analysis.R"))
+    writeLines(generate_nca_script(), file.path(rec_dir, "reproduce_analysis.R"))
   }, error = function(e) warning("Could not create R script: ", e$message))
 
-  # 4. Data integrity — three-way SHA-256 manifest (source data, settings, results)
+  # 4. Data integrity manifest (source data, settings, results, pipeline code)
   tryCatch({
     write_integrity_manifest(rec_dir, list(
       "Source data"       = original_file_path,
       "Analysis settings" = file.path(rec_dir, "analysis_settings.json"),
-      "Results (Excel)"   = file.path(rec_dir, "results.xlsx")
+      "Results (Excel)"   = file.path(rec_dir, "results.xlsx"),
+      "Pipeline code"     = file.path(rec_dir, "nca_pipeline.R")
     ))
   }, error = function(e) warning("Could not create integrity file: ", e$message))
-  
-  # 5. Summary HTML
+
+  # 5. Run the reproduction now, so the user knows before download
+  verdict <- run_reproduction_check(rec_dir, "reproduce_analysis.R")
+
+  # 6. Summary HTML
   tryCatch({
-    file_hash <- if (requireNamespace("digest", quietly = TRUE)) {
-      digest::digest(file = original_file_path, algo = "sha256")
-    } else "not computed"
     html <- generate_summary_html(settings, col_map, original_file_name,
-                                   file_hash, blq_rule, lloq, analyst,
+                                   data_sha256, blq_rule, lloq, analyst,
                                    study_name, n_subjects, n_obs, analysis_type,
-                                   lz_overrides)
+                                   lz_overrides, reproduction = verdict)
     writeLines(html, file.path(rec_dir, "analysis_summary.html"))
   }, error = function(e) warning("Could not create summary HTML: ", e$message))
-  
-  # 6. Copy original data file
-  tryCatch({
-    file.copy(original_file_path, file.path(rec_dir, original_file_name),
-              overwrite = TRUE)
-  }, error = function(e) warning("Could not copy data file: ", e$message))
-  
+
   # Create zip — session-safe, no global setwd (see zip_record_dir).
   zip_record_dir(rec_dir, output_path)
-
   unlink(rec_dir, recursive = TRUE)
 
+  attr(output_path, "reproduction") <- verdict
   invisible(output_path)
 }
 
@@ -1090,20 +520,35 @@ create_single_analysis_record <- function(output_path, result, settings,
                                            blq_rule = "none", lloq = 0,
                                            analyst = "Analyst",
                                            study_name = "Untitled Study",
-                                           lz_override = NULL) {
+                                           lz_override = NULL,
+                                           col_map = NULL,
+                                           read_args = NULL) {
 
   tmp <- tempdir()
   rec_dir <- file.path(tmp, "analysis_record")
   if (dir.exists(rec_dir)) unlink(rec_dir, recursive = TRUE)
   dir.create(rec_dir, recursive = TRUE)
 
-  has_file <- !is.null(original_file_path) && file.exists(original_file_path)
+  has_file <- !is.null(original_file_path) && file.exists(original_file_path) && !is.null(col_map)
 
   # Wrap the single override entry into the named-list shape that the shared
   # HTML/JSON helpers expect (keyed by the profile label).
   lz_overrides <- if (!is.null(lz_override)) {
     stats::setNames(list(lz_override), subject_label)
   } else NULL
+
+  # 0. The data travel with the record: the uploaded file, or the typed values
+  if (has_file) {
+    input_file <- original_file_name
+    file.copy(original_file_path, file.path(rec_dir, input_file), overwrite = TRUE)
+  } else {
+    input_file <- "manual_entry.csv"
+    write.csv(data.frame(Time = time_vec, Concentration = conc_vec),
+              file.path(rec_dir, input_file), row.names = FALSE)
+  }
+  source_path <- file.path(rec_dir, input_file)
+  data_sha256 <- sha256_or_na(source_path)
+  pipeline_sha256 <- .ship_pipeline(rec_dir)
 
   # 1. Results Excel (friendly Parameter / Abbreviation / Value layout)
   tryCatch({
@@ -1119,15 +564,14 @@ create_single_analysis_record <- function(output_path, result, settings,
     openxlsx::saveWorkbook(wb, file.path(rec_dir, "results.xlsx"), overwrite = TRUE)
   }, error = function(e) warning("Could not create results.xlsx: ", e$message))
 
-  # 1b. Machine-readable reference results (Parameter abbreviation / Value) so
-  #     the reproduce script can compare against the app automatically.
+  # 1b. Machine-readable reference results for the automatic comparison
   tryCatch({
     write.csv(data.frame(Parameter = names(result), Value = as.character(result),
                          stringsAsFactors = FALSE),
               file.path(rec_dir, "app_results_reference.csv"), row.names = FALSE)
   }, error = function(e) warning("Could not write app_results_reference.csv: ", e$message))
 
-  # 2. Settings JSON — full schema, parity with batch/BE
+  # 2. Settings JSON — the single source of parameters for the reproduction
   tryCatch({
     settings_export <- list(
       schema_version  = RECORD_SCHEMA_VERSION,
@@ -1138,19 +582,24 @@ create_single_analysis_record <- function(output_path, result, settings,
       study_name      = study_name,
       analysis_type   = "Single-Subject NCA",
       subject         = subject_label,
-      input_file      = original_file_name,
+      input_file      = input_file,
       data_source     = if (has_file) "uploaded_file" else "manual_entry",
+      data_sha256     = data_sha256,
+      pipeline_sha256 = pipeline_sha256,
+      read_args       = if (is.null(read_args)) list() else read_args,
+      column_mapping  = if (has_file) col_map else list(),
       admin_route     = settings$admin_route,
       dose            = settings$dose,
       dose_unit       = settings$dose_unit,
       time_unit       = settings$time_unit,
       conc_unit       = settings$conc_unit,
-      infusion_dur    = settings$infusion_duration %||% 0,
-      steady_state    = settings$is_steady_state,
+      infusion_dur    = if (is.null(settings$infusion_duration)) 0 else settings$infusion_duration,
+      steady_state    = isTRUE(settings$is_steady_state),
       trap_method     = settings$trap_method,
-      r2adj_threshold = settings$r2adj_threshold %||% 0.7,
-      blq_rule        = blq_rule,
-      lloq            = lloq,
+      r2adj_threshold = if (is.null(settings$r2adj_threshold)) 0.7 else settings$r2adj_threshold,
+      mw              = if (is.null(settings$mw)) 0 else settings$mw,
+      blq_rule        = if (has_file) blq_rule else "none",
+      lloq            = if (has_file) lloq else 0,
       packages = list(
         NonCompart = tryCatch(as.character(packageVersion("NonCompart")), error = function(e) "?"),
         nlme       = tryCatch(as.character(packageVersion("nlme")), error = function(e) "?"),
@@ -1158,229 +607,44 @@ create_single_analysis_record <- function(output_path, result, settings,
       )
     )
     if (!is.null(lz_overrides)) settings_export$lz_overrides <- lz_overrides
-    writeLines(jsonlite::toJSON(settings_export, pretty = TRUE, auto_unbox = TRUE),
-               file.path(rec_dir, "analysis_settings.json"))
+    .write_json(settings_export, file.path(rec_dir, "analysis_settings.json"))
   }, error = function(e) warning("Could not create settings JSON: ", e$message))
 
-  # 3. Reproducibility R script (threshold + override now reproduced faithfully)
-  data_sha256 <- if (has_file) sha256_or_na(original_file_path) else NULL
+  # 3. Reproducibility R script (generic)
   tryCatch({
-    script <- generate_single_nca_script(
-      time_vec = time_vec, conc_vec = conc_vec, settings = settings,
-      subject_label = subject_label,
-      file_name = if (has_file) original_file_name else NULL,
-      lz_override = lz_override,
-      data_sha256 = data_sha256
-    )
-    writeLines(script, file.path(rec_dir, "reproduce_analysis.R"))
+    writeLines(generate_single_nca_script(), file.path(rec_dir, "reproduce_analysis.R"))
   }, error = function(e) warning("Could not create R script: ", e$message))
 
-  # 4 + 6. Original data copy, then three-way integrity manifest
-  file_hash <- "N/A (manual entry)"
+  # 4. Integrity manifest
   tryCatch({
-    if (has_file) {
-      file_hash <- sha256_or_na(original_file_path)
-      file.copy(original_file_path, file.path(rec_dir, original_file_name),
-                overwrite = TRUE)
-      source_path <- original_file_path
-    } else {
-      # Manual entry: persist the typed data so the record is self-contained
-      write.csv(data.frame(Time = time_vec, Concentration = conc_vec),
-                file.path(rec_dir, "manual_entry.csv"), row.names = FALSE)
-      source_path <- file.path(rec_dir, "manual_entry.csv")
-    }
     write_integrity_manifest(rec_dir, list(
       "Source data"       = source_path,
       "Analysis settings" = file.path(rec_dir, "analysis_settings.json"),
-      "Results (Excel)"   = file.path(rec_dir, "results.xlsx")
+      "Results (Excel)"   = file.path(rec_dir, "results.xlsx"),
+      "Pipeline code"     = file.path(rec_dir, "nca_pipeline.R")
     ))
   }, error = function(e) warning("Could not create integrity file: ", e$message))
 
-  # 5. Summary HTML
+  # 5. Run the reproduction now, so the user knows before download
+  verdict <- run_reproduction_check(rec_dir, "reproduce_analysis.R")
+
+  # 6. Summary HTML
   tryCatch({
-    col_map <- list(subject = "Subject", time = "Time", conc = "Concentration")
-    html <- generate_summary_html(settings, col_map, original_file_name,
-                                   file_hash, blq_rule, lloq, analyst,
+    cm <- list(subject = "Subject", time = "Time", conc = "Concentration")
+    html <- generate_summary_html(settings, cm, input_file,
+                                   data_sha256, blq_rule, lloq, analyst,
                                    study_name, 1, length(time_vec),
-                                   "Single-Subject NCA", lz_overrides)
+                                   "Single-Subject NCA", lz_overrides, reproduction = verdict)
     writeLines(html, file.path(rec_dir, "analysis_summary.html"))
   }, error = function(e) warning("Could not create summary HTML: ", e$message))
 
   zip_record_dir(rec_dir, output_path)
   unlink(rec_dir, recursive = TRUE)
+  attr(output_path, "reproduction") <- verdict
   invisible(output_path)
 }
 
 
-#' Generate a standalone R script that reproduces a Visualize-tab figure
-#'
-#' Rebuilds the concentration-time figure with ggplot2 from the original data
-#' file using the recorded visualization settings, then saves it at the recorded
-#' dimensions/resolution. Faithful to the core plot (geometry, grouping, scale,
-#' dose-normalization, summary statistic); cosmetic theming is approximated.
-#'
-#' @param viz_settings The shared$viz_settings list
-#' @param col_map Column mapping list
-#' @param file_name Original data file name
-#' @return Character string containing the complete R script
-generate_viz_script <- function(viz_settings, col_map, file_name) {
-
-  vs <- viz_settings
-  plot_type  <- vs$plot_type        %||% "spaghetti"
-  y_scale    <- vs$y_scale          %||% "linear"
-  color_by   <- vs$color_by         %||% "subject"
-  summary_st <- vs$summary_statistic %||% "geomean"
-  do_norm    <- isTRUE(vs$dose_normalized)
-  width_in   <- vs$figure_width_in  %||% 7
-  height_in  <- vs$figure_height_in %||% 5
-  dpi        <- vs$dpi              %||% 300
-  fmt        <- vs$export_format    %||% "png"
-
-  has_treat <- !is.null(col_map$treatment)
-  has_dose  <- !is.null(col_map$dose)
-
-  # Map the colour-by choice to its source column
-  color_col <- switch(color_by,
-    "subject"   = col_map$subject,
-    "treatment" = col_map$treatment %||% col_map$subject,
-    "period"    = col_map$period    %||% col_map$subject,
-    "sequence"  = col_map$sequence  %||% col_map$subject,
-    col_map$subject)
-
-  norm_section <- if (do_norm && has_dose) {
-    paste0(
-'# Dose-normalize concentration (C / Dose); non-positive doses become NA
-dose_vals <- suppressWarnings(as.numeric(d[[', deparse(col_map$dose), ']]))
-dose_vals[is.na(dose_vals) | dose_vals <= 0] <- NA
-d$.conc <- d$.conc / dose_vals
-y_label <- "Dose-normalized concentration (C/Dose)"
-')
-  } else {
-    '\ny_label <- "Concentration"\n'
-  }
-
-  plot_section <- if (plot_type == "summary") {
-    grp <- if (has_treat) paste0('c(".time", ', deparse(col_map$treatment), ')') else 'c(".time")'
-    stat_code <- if (summary_st == "geomean") {
-'# Geometric mean and geometric CV% (positive concentrations only)
-summ <- d[!is.na(d$.conc) & d$.conc > 0, ]
-summ <- summ %>%
-  dplyr::group_by(dplyr::across(dplyr::all_of(grp_cols))) %>%
-  dplyr::summarise(
-    .gm  = exp(mean(log(.conc))),
-    .gcv = sqrt(exp(stats::var(log(.conc))) - 1) * 100,
-    .y   = exp(mean(log(.conc))),
-    .lo  = exp(mean(log(.conc)) - stats::sd(log(.conc))),
-    .hi  = exp(mean(log(.conc)) + stats::sd(log(.conc))),
-    .groups = "drop")
-'
-    } else {
-'# Arithmetic mean +/- SD
-summ <- d[!is.na(d$.conc), ] %>%
-  dplyr::group_by(dplyr::across(dplyr::all_of(grp_cols))) %>%
-  dplyr::summarise(
-    .y  = mean(.conc),
-    .lo = mean(.conc) - stats::sd(.conc),
-    .hi = mean(.conc) + stats::sd(.conc),
-    .groups = "drop")
-'
-    }
-    paste0(
-'grp_cols <- ', grp, '
-', stat_code, '
-p <- ggplot2::ggplot(summ, ggplot2::aes(x = .time, y = .y',
-      if (has_treat) paste0(', colour = ', deparse(col_map$treatment),
-                            ', group = ', deparse(col_map$treatment)) else "",
-      ')) +
-  ggplot2::geom_line() +
-  ggplot2::geom_point() +
-  ggplot2::geom_errorbar(ggplot2::aes(ymin = .lo, ymax = .hi), width = 0) +
-  ggplot2::labs(x = "Time", y = y_label)
-')
-  } else {
-    paste0(
-'p <- ggplot2::ggplot(d, ggplot2::aes(x = .time, y = .conc,
-       group = ', deparse(col_map$subject), ', colour = factor(', deparse(color_col), '))) +
-  ggplot2::geom_line(alpha = 0.7) +
-  ggplot2::geom_point(size = 1) +
-  ggplot2::labs(x = "Time", y = y_label, colour = ', deparse(color_by), ')
-')
-  }
-
-  scale_section <- if (y_scale == "log") {
-    '\np <- p + ggplot2::scale_y_log10()  # semi-log; non-positive values dropped\n'
-  } else ""
-
-  paste0(
-'# ============================================================================
-# Figure Reproducibility Script
-# ============================================================================
-# Generated by NCA Assistant
-# Date: ', format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), '
-#
-# This script reproduces the concentration-time figure created in the
-# Visualize Data tab, from the original data file, using the recorded settings.
-#
-# INSTRUCTIONS:
-#   1. Place this script and the data file in the same folder
-#   2. setwd("path/to/your/folder")
-#   3. source("reproduce_figure.R")  -> writes "reproduced_figure.', fmt, '"
-# ============================================================================
-
-
-# --- Step 1: Packages -------------------------------------------------------
-for (pkg in c("ggplot2", "dplyr")) {
-  if (!requireNamespace(pkg, quietly = TRUE))
-    install.packages(pkg, repos = "https://cloud.r-project.org")
-}
-
-
-# --- Step 2: Read the data --------------------------------------------------
-data_file <- "', file_name, '"
-if (!file.exists(data_file)) stop("Data file not found: ", data_file)
-file_ext <- tolower(tools::file_ext(data_file))
-if (file_ext %in% c("csv", "txt")) {
-  raw <- read.csv(data_file, stringsAsFactors = FALSE)
-} else if (file_ext %in% c("xlsx", "xls")) {
-  if (!requireNamespace("readxl", quietly = TRUE))
-    install.packages("readxl", repos = "https://cloud.r-project.org")
-  raw <- as.data.frame(readxl::read_excel(data_file))
-} else if (file_ext == "tsv") {
-  raw <- read.delim(data_file, stringsAsFactors = FALSE)
-}
-
-
-# --- Step 3: Assemble plotting frame ----------------------------------------
-d <- raw
-d$.time <- suppressWarnings(as.numeric(d[[', deparse(col_map$time), ']]))
-d$.conc <- suppressWarnings(as.numeric(d[[', deparse(col_map$conc), ']]))
-', norm_section, '
-d <- d[!is.na(d$.time), ]
-
-
-# --- Step 4: Build the figure -----------------------------------------------
-# Plot type: ', plot_type, ' | Y-axis: ', y_scale, '
-', plot_section, scale_section, '
-p <- p + ggplot2::theme_bw()
-
-
-# --- Step 5: Save -----------------------------------------------------------
-ggplot2::ggsave("reproduced_figure.', fmt, '", plot = p, device = "', fmt, '",
-                width = ', width_in, ', height = ', height_in, ', dpi = ', dpi, ', units = "in")
-cat("Saved reproduced_figure.', fmt, '\\n")
-
-# --- Step 6: Compare with the app figure ------------------------------------
-# A figure is compared visually rather than numerically: open
-# "reproduced_figure.', fmt, '" next to "figure.', fmt, '" (shipped in this record)
-# and confirm they match. The data file SHA-256 in data_integrity.txt confirms
-# the underlying data is identical.
-if (file.exists("figure.', fmt, '")) {
-  cat("Compare reproduced_figure.', fmt, ' with figure.', fmt, ' (bundled) - they should match.\\n")
-} else {
-  cat("Bundled figure.', fmt, ' not found alongside the script; compare against the record copy.\\n")
-}
-')
-}
 
 
 #' Generate the figure-provenance HTML document for a Visualize-tab record
@@ -1484,7 +748,7 @@ create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
                               original_file_path, original_file_name,
                               blq_rule = "none", lloq = 0,
                               analyst = "Analyst", study_name = "Untitled Study",
-                              n_subjects = NA, n_obs = NA) {
+                              n_subjects = NA, n_obs = NA, read_args = NULL) {
 
   tmp <- tempdir()
   rec_dir <- file.path(tmp, "figure_record")
@@ -1503,6 +767,13 @@ create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
                     width = w, height = h, dpi = dpi, units = "in")
   }, error = function(e) warning("Could not save figure: ", e$message))
 
+  # Data file and pipeline code travel with the record
+  file_hash <- sha256_or_na(original_file_path)
+  if (!is.null(original_file_path) && file.exists(original_file_path)) {
+    file.copy(original_file_path, file.path(rec_dir, original_file_name), overwrite = TRUE)
+  }
+  pipeline_sha256 <- .ship_pipeline(rec_dir)
+
   # 2. Figure settings JSON
   tryCatch({
     settings_export <- list(
@@ -1514,6 +785,9 @@ create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
       study_name     = study_name,
       analysis_type  = "Figure / Visualization",
       input_file     = original_file_name,
+      data_sha256    = file_hash,
+      pipeline_sha256 = pipeline_sha256,
+      read_args      = if (is.null(read_args)) list() else read_args,
       column_mapping = col_map,
       blq_rule       = blq_rule,
       lloq           = lloq,
@@ -1523,30 +797,28 @@ create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
         dplyr   = tryCatch(as.character(packageVersion("dplyr")), error = function(e) "?")
       )
     )
-    writeLines(jsonlite::toJSON(settings_export, pretty = TRUE, auto_unbox = TRUE),
-               file.path(rec_dir, "figure_settings.json"))
+    .write_json(settings_export, file.path(rec_dir, "figure_settings.json"))
   }, error = function(e) warning("Could not create figure settings JSON: ", e$message))
 
   # 3. Reproducibility R script
   tryCatch({
-    script <- generate_viz_script(viz_settings, col_map, original_file_name)
+    script <- generate_viz_script(viz_settings, col_map)
     writeLines(script, file.path(rec_dir, "reproduce_figure.R"))
   }, error = function(e) warning("Could not create figure R script: ", e$message))
 
-  # 4 + 6. Original data copy, then three-way integrity manifest
-  #        (source data, figure settings, and the figure itself)
-  file_hash <- sha256_or_na(original_file_path)
+  # 4. Integrity manifest (source data, figure settings, figure, pipeline code)
   tryCatch({
-    if (!is.null(original_file_path) && file.exists(original_file_path)) {
-      file.copy(original_file_path, file.path(rec_dir, original_file_name),
-                overwrite = TRUE)
-    }
     write_integrity_manifest(rec_dir, list(
       "Source data"     = original_file_path,
       "Figure settings" = file.path(rec_dir, "figure_settings.json"),
-      "Figure"          = file.path(rec_dir, paste0("figure.", fmt))
+      "Figure"          = file.path(rec_dir, paste0("figure.", fmt)),
+      "Pipeline code"   = file.path(rec_dir, "nca_pipeline.R")
     ))
   }, error = function(e) warning("Could not create integrity file: ", e$message))
+
+  # 5. Rebuild the figure now, so the user knows before download that it works
+  verdict <- run_reproduction_check(rec_dir, "reproduce_figure.R", outputs = character(0),
+                                    figure = paste0("reproduced_figure.", fmt))
 
   # 5. Provenance HTML
   tryCatch({
@@ -1557,5 +829,332 @@ create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
 
   zip_record_dir(rec_dir, output_path)
   unlink(rec_dir, recursive = TRUE)
+  attr(output_path, "reproduction") <- verdict
   invisible(output_path)
+}
+
+
+# ============================================================================
+# Reproduction scripts
+# ============================================================================
+# Every record ships nca_pipeline.R (an exact copy of R/pipeline.R) and a
+# settings JSON. The scripts below contain no analysis logic of their own:
+# they verify hashes, source the pipeline and call the same functions the
+# app called, with the recorded settings. There is therefore nothing to
+# transcribe and nothing that can drift from the app.
+
+.script_header <- function(title, what, script_name) {
+  paste0(
+'# ============================================================================
+# ', title, '
+# ============================================================================
+# Generated by NCA Assistant ', tryCatch(get("APP_VERSION", envir = globalenv()), error = function(e) ""),
+' on ', format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), '
+#
+# ', what, '
+# All analysis code is in nca_pipeline.R, the app\'s own pipeline, shipped
+# with this record; all settings are read from the JSON file.
+#
+# To run: unzip the record, set the working directory to that folder, then
+#   source("', script_name, '")
+# ============================================================================
+')
+}
+
+#' Reproduction script for batch and bioequivalence NCA records
+generate_nca_script <- function() {
+  paste0(.script_header("NCA Analysis Reproducibility Script",
+                        "Re-runs the NCA and compares every parameter with the app's results.",
+                        "reproduce_analysis.R"), r"---(
+for (pkg in c("NonCompart", "jsonlite", "digest", "readxl")) {
+  if (!requireNamespace(pkg, quietly = TRUE))
+    install.packages(pkg, repos = "https://cloud.r-project.org")
+}
+library(NonCompart)
+
+rec <- jsonlite::fromJSON("analysis_settings.json", simplifyDataFrame = FALSE)
+
+# 1. Integrity: the pipeline code and the data file must be the ones analysed
+cat("Pipeline code:", if (identical(digest::digest(file = "nca_pipeline.R", algo = "sha256"),
+                                    rec$pipeline_sha256)) "MATCH" else "MISMATCH", "\n")
+source("nca_pipeline.R")
+verify_file_hash(rec$input_file, rec$data_sha256, "Data file")
+
+# 2. Read and prepare the data exactly as the app did
+raw <- read_pk_file(rec$input_file, rec$read_args)
+ds  <- prepare_pk_dataset(raw, rec$column_mapping,
+                          list(lloq = rec$lloq, blq_rule = rec$blq_rule))
+
+# 3. NCA with the recorded settings and half-life overrides
+result <- run_nca(ds$data, ds$col_map, record_nca_settings(rec, ds$data, ds$col_map),
+                  lz_overrides = rec$lz_overrides)
+write.csv(result, "reproduced_results.csv", row.names = FALSE)
+cat("Profiles analysed:", nrow(result), "\n")
+
+# 4. Compare with the app's results shipped in this record
+compare_with_reference(result, "app_results_reference.csv")
+if (!is.null(rec$reproduction_scope)) cat("Scope:", rec$reproduction_scope, "\n")
+)---")
+}
+
+#' Reproduction script for single-subject NCA records
+generate_single_nca_script <- function() {
+  paste0(.script_header("Single-Subject NCA Reproducibility Script",
+                        "Re-runs the single-profile NCA and compares it with the app's result.",
+                        "reproduce_analysis.R"), r"---(
+for (pkg in c("NonCompart", "jsonlite", "digest", "readxl")) {
+  if (!requireNamespace(pkg, quietly = TRUE))
+    install.packages(pkg, repos = "https://cloud.r-project.org")
+}
+library(NonCompart)
+
+rec <- jsonlite::fromJSON("analysis_settings.json", simplifyDataFrame = FALSE)
+
+cat("Pipeline code:", if (identical(digest::digest(file = "nca_pipeline.R", algo = "sha256"),
+                                    rec$pipeline_sha256)) "MATCH" else "MISMATCH", "\n")
+source("nca_pipeline.R")
+verify_file_hash(rec$input_file, rec$data_sha256, "Data file")
+
+# The profile: from the uploaded file (prepared as in the app) or manual entry
+if (identical(rec$data_source, "uploaded_file")) {
+  raw  <- read_pk_file(rec$input_file, rec$read_args)
+  ds   <- prepare_pk_dataset(raw, rec$column_mapping, list(lloq = rec$lloq, blq_rule = rec$blq_rule))
+  rows <- profile_data_rows(ds$data, ds$col_map, rec$subject)
+  time <- ds$data[[ds$col_map$time]][rows]
+  conc <- ds$data[[ds$col_map$conc]][rows]
+} else {
+  manual <- read.csv(rec$input_file)
+  time <- manual$Time; conc <- manual$Concentration
+}
+cat("Profile:", rec$subject, "-", length(time), "time points\n")
+
+settings <- list(admin_route = rec$admin_route, dose = rec$dose, infusion_duration = rec$infusion_dur,
+                 is_steady_state = isTRUE(rec$steady_state), dose_unit = rec$dose_unit,
+                 time_unit = rec$time_unit, conc_unit = rec$conc_unit,
+                 trap_method = rec$trap_method, mw = rec$mw)
+time_used <- if (length(rec$lz_overrides) > 0) rec$lz_overrides[[1]]$time_used else NULL
+result <- run_single_nca(time, conc, settings, time_used = time_used)
+if (isTRUE(rec$steady_state)) result <- add_steady_state_parameters(result, time, conc)
+write.csv(data.frame(Parameter = names(result), Value = as.character(result)),
+          "reproduced_results.csv", row.names = FALSE)
+
+compare_with_reference(result, "app_results_reference.csv")
+)---")
+}
+
+#' Run a record's reproduction script and store the outcome in the record
+#'
+#' Executed at export time so the user learns before download whether the
+#' record reproduces. The script runs in a separate R process, in the record
+#' folder, exactly as a recipient would run it; its output is written to
+#' reproduction_check.txt and its own output files are removed again.
+#'
+#' @return verdict: "MATCH", "CLOSE", "DIFFERENT", "NOT COMPARED",
+#'   "FIGURE CREATED" or "FAILED"
+run_reproduction_check <- function(rec_dir, script, outputs = "reproduced_results.csv",
+                                   figure = NULL) {
+  rscript <- file.path(R.home("bin"), "Rscript")
+  out <- tryCatch({
+    owd <- setwd(rec_dir); on.exit(setwd(owd), add = TRUE)
+    suppressWarnings(system2(rscript, script, stdout = TRUE, stderr = TRUE, timeout = 300))
+  }, error = function(e) paste("Could not run the script:", conditionMessage(e)))
+  verdict <- if (!is.null(figure)) {
+    if (file.exists(file.path(rec_dir, figure))) "FIGURE CREATED" else "FAILED"
+  } else {
+    v <- regmatches(out, regexpr("(?<=^Result: )[A-Z ]+", out, perl = TRUE))
+    if (length(v) > 0) trimws(tail(v, 1)) else "FAILED"
+  }
+  lines <- c("Reproduction check", "==================", "",
+             paste0("Performed: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"),
+                    ", by the app at export, running ", script, " in a separate R process."),
+             paste0("Result: ", verdict), "",
+             "This shows that the record reproduces the analysis with the shipped pipeline",
+             "code and the recorded settings. It demonstrates reproducibility, not",
+             "independent verification: the same algorithms and packages are re-executed.", "",
+             "Script output:", "--------------", out)
+  writeLines(lines, file.path(rec_dir, "reproduction_check.txt"))
+  unlink(file.path(rec_dir, c(outputs, figure)))
+  verdict
+}
+
+#' Copy the pipeline code into a record folder as nca_pipeline.R
+#' @return SHA-256 of the copy
+.ship_pipeline <- function(rec_dir) {
+  src <- "R/pipeline.R"
+  if (!file.exists(src)) stop("R/pipeline.R not found; the record cannot be made reproducible.")
+  file.copy(src, file.path(rec_dir, "nca_pipeline.R"), overwrite = TRUE)
+  sha256_or_na(file.path(rec_dir, "nca_pipeline.R"))
+}
+
+#' Write a settings JSON; digits = NA keeps full precision (doses, LLOQ,
+#' half-life override times), which the reproduction needs
+.write_json <- function(x, path) {
+  writeLines(jsonlite::toJSON(x, pretty = TRUE, auto_unbox = TRUE, digits = NA, null = "null"), path)
+}
+
+#' Generate a standalone R script that reproduces a Visualize-tab figure
+#'
+#' Rebuilds the concentration-time figure with ggplot2 from the original data
+#' file, processed by the shipped copy of the app's pipeline (nca_pipeline.R)
+#' with the recorded reading and BLQ settings, then saves it at the recorded
+#' dimensions/resolution. Faithful to the core plot (geometry, grouping, scale,
+#' dose-normalization, summary statistic); cosmetic theming is approximated.
+#'
+#' @param viz_settings The shared$viz_settings list
+#' @param col_map Column mapping list
+#' @return Character string containing the complete R script
+generate_viz_script <- function(viz_settings, col_map) {
+
+  vs <- viz_settings
+  plot_type  <- vs$plot_type        %||% "spaghetti"
+  y_scale    <- vs$y_scale          %||% "linear"
+  color_by   <- vs$color_by         %||% "subject"
+  summary_st <- vs$summary_statistic %||% "geomean"
+  do_norm    <- isTRUE(vs$dose_normalized)
+  width_in   <- vs$figure_width_in  %||% 7
+  height_in  <- vs$figure_height_in %||% 5
+  dpi        <- vs$dpi              %||% 300
+  fmt        <- vs$export_format    %||% "png"
+
+  has_treat <- !is.null(col_map$treatment)
+  has_dose  <- !is.null(col_map$dose)
+
+  # Map the colour-by choice to its source column
+  color_col <- switch(color_by,
+    "subject"   = col_map$subject,
+    "treatment" = col_map$treatment %||% col_map$subject,
+    "period"    = col_map$period    %||% col_map$subject,
+    "sequence"  = col_map$sequence  %||% col_map$subject,
+    col_map$subject)
+
+  norm_section <- if (do_norm && has_dose) {
+    paste0(
+'# Dose-normalize concentration (C / Dose); non-positive doses become NA
+dose_vals <- suppressWarnings(as.numeric(d[[', deparse(col_map$dose), ']]))
+dose_vals[is.na(dose_vals) | dose_vals <= 0] <- NA
+d$.conc <- d$.conc / dose_vals
+y_label <- "Dose-normalized concentration (C/Dose)"
+')
+  } else {
+    '\ny_label <- "Concentration"\n'
+  }
+
+  plot_section <- if (plot_type == "summary") {
+    grp <- if (has_treat) paste0('c(".time", ', deparse(col_map$treatment), ')') else 'c(".time")'
+    stat_code <- if (summary_st == "geomean") {
+'# Geometric mean and geometric CV% (positive concentrations only)
+summ <- d[!is.na(d$.conc) & d$.conc > 0, ]
+summ <- summ %>%
+  dplyr::group_by(dplyr::across(dplyr::all_of(grp_cols))) %>%
+  dplyr::summarise(
+    .gm  = exp(mean(log(.conc))),
+    .gcv = sqrt(exp(stats::var(log(.conc))) - 1) * 100,
+    .y   = exp(mean(log(.conc))),
+    .lo  = exp(mean(log(.conc)) - stats::sd(log(.conc))),
+    .hi  = exp(mean(log(.conc)) + stats::sd(log(.conc))),
+    .groups = "drop")
+'
+    } else {
+'# Arithmetic mean +/- SD
+summ <- d[!is.na(d$.conc), ] %>%
+  dplyr::group_by(dplyr::across(dplyr::all_of(grp_cols))) %>%
+  dplyr::summarise(
+    .y  = mean(.conc),
+    .lo = mean(.conc) - stats::sd(.conc),
+    .hi = mean(.conc) + stats::sd(.conc),
+    .groups = "drop")
+'
+    }
+    paste0(
+'grp_cols <- ', grp, '
+', stat_code, '
+p <- ggplot2::ggplot(summ, ggplot2::aes(x = .time, y = .y',
+      if (has_treat) paste0(', colour = ', deparse(col_map$treatment),
+                            ', group = ', deparse(col_map$treatment)) else "",
+      ')) +
+  ggplot2::geom_line() +
+  ggplot2::geom_point() +
+  ggplot2::geom_errorbar(ggplot2::aes(ymin = .lo, ymax = .hi), width = 0) +
+  ggplot2::labs(x = "Time", y = y_label)
+')
+  } else {
+    paste0(
+'p <- ggplot2::ggplot(d, ggplot2::aes(x = .time, y = .conc,
+       group = ', deparse(col_map$subject), ', colour = factor(', deparse(color_col), '))) +
+  ggplot2::geom_line(alpha = 0.7) +
+  ggplot2::geom_point(size = 1) +
+  ggplot2::labs(x = "Time", y = y_label, colour = ', deparse(color_by), ')
+')
+  }
+
+  scale_section <- if (y_scale == "log") {
+    '\np <- p + ggplot2::scale_y_log10()  # semi-log; non-positive values dropped\n'
+  } else ""
+
+  paste0(
+'# ============================================================================
+# Figure Reproducibility Script
+# ============================================================================
+# Generated by NCA Assistant
+# Date: ', format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), '
+#
+# This script reproduces the concentration-time figure created in the
+# Visualize Data tab, from the original data file, using the recorded settings.
+#
+# INSTRUCTIONS:
+#   1. Keep this script, nca_pipeline.R, figure_settings.json and the data file
+#      together in one folder (as unzipped)
+#   2. setwd("path/to/your/folder")
+#   3. source("reproduce_figure.R")  -> writes "reproduced_figure.', fmt, '"
+# ============================================================================
+
+
+# --- Step 1: Packages -------------------------------------------------------
+for (pkg in c("ggplot2", "dplyr", "jsonlite", "digest")) {
+  if (!requireNamespace(pkg, quietly = TRUE))
+    install.packages(pkg, repos = "https://cloud.r-project.org")
+}
+
+
+# --- Step 2: Read and process the data with the app\'s own pipeline ---------
+rec <- jsonlite::fromJSON("figure_settings.json", simplifyDataFrame = FALSE)
+cat("Pipeline code:", if (identical(digest::digest(file = "nca_pipeline.R", algo = "sha256"),
+                                    rec$pipeline_sha256)) "MATCH" else "MISMATCH", "\\n")
+source("nca_pipeline.R")
+verify_file_hash(rec$input_file, rec$data_sha256, "Data file")
+raw <- read_pk_file(rec$input_file, rec$read_args)
+ds  <- prepare_pk_dataset(raw, rec$column_mapping,
+                          list(lloq = rec$lloq, blq_rule = rec$blq_rule))
+
+
+# --- Step 3: Assemble plotting frame ----------------------------------------
+d <- ds$data
+d$.time <- suppressWarnings(as.numeric(d[[', deparse(col_map$time), ']]))
+d$.conc <- suppressWarnings(as.numeric(d[[', deparse(col_map$conc), ']]))
+', norm_section, '
+d <- d[!is.na(d$.time), ]
+
+
+# --- Step 4: Build the figure -----------------------------------------------
+# Plot type: ', plot_type, ' | Y-axis: ', y_scale, '
+', plot_section, scale_section, '
+p <- p + ggplot2::theme_bw()
+
+
+# --- Step 5: Save -----------------------------------------------------------
+ggplot2::ggsave("reproduced_figure.', fmt, '", plot = p, device = "', fmt, '",
+                width = ', width_in, ', height = ', height_in, ', dpi = ', dpi, ', units = "in")
+cat("Saved reproduced_figure.', fmt, '\\n")
+
+# --- Step 6: Compare with the app figure ------------------------------------
+# A figure is compared visually rather than numerically: open
+# "reproduced_figure.', fmt, '" next to "figure.', fmt, '" (shipped in this record)
+# and confirm they match. The data file SHA-256 in data_integrity.txt confirms
+# the underlying data is identical.
+if (file.exists("figure.', fmt, '")) {
+  cat("Compare reproduced_figure.', fmt, ' with figure.', fmt, ' (bundled) - they should match.\\n")
+} else {
+  cat("Bundled figure.', fmt, ' not found alongside the script; compare against the record copy.\\n")
+}
+')
 }

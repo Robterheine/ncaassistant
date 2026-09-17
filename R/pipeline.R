@@ -207,6 +207,39 @@ profile_key <- function(data, col_map) {
   list(key = key, parts = parts, cols = names(parts))
 }
 
+#' Human-readable label for each profile, e.g. "12 | Test | P3"
+#' @param parts data.frame with Subject and optionally Treatment, Period
+profile_labels <- function(parts) {
+  lab <- as.character(parts$Subject)
+  if ("Treatment" %in% names(parts)) lab <- paste(lab, "|", parts$Treatment)
+  if ("Period" %in% names(parts))    lab <- paste0(lab, " | P", parts$Period)
+  lab
+}
+
+#' Unique profiles in an uploaded data set, ordered subject -> treatment -> period
+#' @return data.frame of parts with a `label` column
+data_profiles <- function(data, col_map) {
+  pk <- profile_key(data, col_map)
+  u <- unique(pk$parts)
+  subj_order <- match(u$Subject, unique(as.character(data[[col_map$subject]])))
+  per_num <- if ("Period" %in% names(u)) suppressWarnings(as.numeric(u$Period)) else NULL
+  ord_args <- list(subj_order)
+  if ("Treatment" %in% names(u)) ord_args <- c(ord_args, list(u$Treatment))
+  if ("Period" %in% names(u))
+    ord_args <- c(ord_args, list(if (anyNA(per_num)) u$Period else per_num))
+  u <- u[do.call(order, ord_args), , drop = FALSE]
+  u$label <- profile_labels(u)
+  rownames(u) <- NULL
+  u
+}
+
+#' Rows of the uploaded data belonging to one profile label, in time order
+profile_data_rows <- function(data, col_map, label) {
+  labs <- profile_labels(profile_key(data, col_map)$parts)
+  idx <- which(labs == label)
+  idx[order(suppressWarnings(as.numeric(as.character(data[[col_map$time]][idx]))))]
+}
+
 #' Apply BLQ (Below Limit of Quantification) handling rules
 #' 
 #' Implements WinNonlin-compatible BLQ rules:
@@ -655,4 +688,100 @@ detect_study_design <- function(data, col_map) {
   }
   
   design
+}
+
+
+# ============================================================================
+# Reproduction from an Analysis Record
+# ============================================================================
+# Used by the reproduce_*.R scripts shipped in every record, and by the app
+# when it runs those scripts at export time.
+
+#' Compare a file's SHA-256 with the value recorded at analysis time
+#' @return "MATCH", "MISMATCH" or "NOT CHECKED"; prints one line
+verify_file_hash <- function(path, recorded, label) {
+  if (is.null(recorded) || !nzchar(recorded) || !file.exists(path) ||
+      !requireNamespace("digest", quietly = TRUE)) {
+    cat(label, ": NOT CHECKED\n", sep = "")
+    return(invisible("NOT CHECKED"))
+  }
+  status <- if (identical(digest::digest(file = path, algo = "sha256"), recorded)) "MATCH" else "MISMATCH"
+  cat(label, ": ", status, if (status == "MISMATCH") " - this file differs from the one analysed!", "\n", sep = "")
+  invisible(status)
+}
+
+#' NCA settings as recorded in analysis_settings.json
+#'
+#' Per-subject doses are recomputed from the Dose column with
+#' dose_by_subject(), exactly as the app computed them.
+record_nca_settings <- function(rec, data, col_map) {
+  dose <- if (identical(rec$dose_source, "per_subject")) dose_by_subject(data, col_map) else rec$dose
+  list(admin_route = rec$admin_route, dose = dose,
+       infusion_duration = if (is.null(rec$infusion_dur)) 0 else rec$infusion_dur,
+       is_steady_state = isTRUE(rec$steady_state),
+       dose_unit = rec$dose_unit, time_unit = rec$time_unit, conc_unit = rec$conc_unit,
+       trap_method = rec$trap_method, r2adj_threshold = rec$r2adj_threshold,
+       mw = if (is.null(rec$mw)) 0 else rec$mw, partial_aucs = NULL)
+}
+
+#' Compare reproduced results with the app's results shipped in the record
+#'
+#' @param result Reproduced NCA table (data frame) or single-profile vector
+#' @param ref_file app_results_reference.csv
+#' @return "MATCH" (max relative difference < 1e-6), "CLOSE" (< 1e-3),
+#'   "DIFFERENT", or "NOT COMPARED"; prints a summary line
+compare_with_reference <- function(result, ref_file = "app_results_reference.csv") {
+  if (is.null(result) || length(result) == 0) {
+    cat("Result: FAILED (the reproduction produced no NCA result)\n")
+    return(invisible("FAILED"))
+  }
+  if (!file.exists(ref_file)) {
+    cat("Result: NOT COMPARED (", ref_file, " not found)\n", sep = "")
+    return(invisible("NOT COMPARED"))
+  }
+  ref <- read.csv(ref_file, stringsAsFactors = FALSE, check.names = FALSE)
+  if (is.data.frame(result)) {
+    shared_cols <- intersect(names(result), names(ref))
+    # Align rows on the profile key rather than trusting row order
+    key_cols <- intersect(c("Subject", "Treatment", "Period"), shared_cols)
+    if (nrow(result) != nrow(ref)) {
+      cat("Result: DIFFERENT (", nrow(result), " reproduced rows vs ", nrow(ref), " in the app)\n", sep = "")
+      return(invisible("DIFFERENT"))
+    }
+    if (length(key_cols) > 0) {
+      k_res <- do.call(paste, c(lapply(result[key_cols], as.character), sep = "||"))
+      k_ref <- do.call(paste, c(lapply(ref[key_cols], as.character), sep = "||"))
+      ord <- match(k_res, k_ref)
+      if (anyNA(ord) || anyDuplicated(ord)) {
+        cat("Result: DIFFERENT (profiles do not match the app's profiles)\n")
+        return(invisible("DIFFERENT"))
+      }
+      ref <- ref[ord, , drop = FALSE]
+      shared_cols <- setdiff(shared_cols, key_cols)
+    }
+    a_list <- lapply(shared_cols, function(cn) suppressWarnings(as.numeric(as.character(result[[cn]]))))
+    b_list <- lapply(shared_cols, function(cn) suppressWarnings(as.numeric(as.character(ref[[cn]]))))
+    n_rows <- nrow(result)
+  } else {
+    shared_cols <- intersect(names(result), ref$Parameter)
+    a_list <- lapply(shared_cols, function(cn) suppressWarnings(as.numeric(result[[cn]])))
+    b_list <- lapply(shared_cols, function(cn) suppressWarnings(as.numeric(ref$Value[match(cn, ref$Parameter)])))
+    n_rows <- 1
+  }
+  max_rel <- 0; n_cmp <- 0; n_par <- 0; na_mismatch <- 0
+  for (i in seq_along(shared_cols)) {
+    a <- a_list[[i]]; b <- b_list[[i]]
+    na_mismatch <- na_mismatch + sum(is.finite(a) != is.finite(b))
+    both <- is.finite(a) & is.finite(b)
+    if (!any(both)) next
+    n_par <- n_par + 1; n_cmp <- n_cmp + sum(both)
+    max_rel <- max(max_rel, max(abs(a[both] - b[both]) / pmax(abs(b[both]), 1e-12)))
+  }
+  verdict <- if (na_mismatch > 0) "DIFFERENT" else if (max_rel < 1e-6) "MATCH" else
+             if (max_rel < 1e-3) "CLOSE" else "DIFFERENT"
+  cat(sprintf("Compared %d numeric values across %d parameters (%d rows). Max relative difference: %.3g -> %s\n",
+              n_cmp, n_par, n_rows, max_rel, verdict))
+  if (na_mismatch > 0) cat(na_mismatch, "value(s) are missing in one table but not the other.\n")
+  cat("Result: ", verdict, "\n", sep = "")
+  invisible(verdict)
 }

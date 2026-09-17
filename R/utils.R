@@ -472,3 +472,20 @@ validate_units <- function(dose_unit, time_unit, conc_unit, mw = 0) {
   }
   list(valid = TRUE, message = "")
 }
+
+
+#' Tell the user how the Analysis Record's reproduction check went
+#' @param rec_out Return value of a create_*_record() function
+notify_reproduction <- function(rec_out) {
+  v <- attr(rec_out, "reproduction")
+  if (is.null(v)) return(invisible(NULL))
+  if (v %in% c("MATCH", "FIGURE CREATED")) {
+    showNotification(paste0("Analysis Record ready. Reproduction check: ", v, "."),
+                     type = "message", duration = 6)
+  } else {
+    showNotification(paste0("Analysis Record created, but the reproduction check says ", v,
+                            ". See reproduction_check.txt in the record before relying on it."),
+                     type = "error", duration = NULL)
+  }
+  invisible(v)
+}

@@ -966,12 +966,14 @@ path_viz_server <- function(id, shared) {
           si <- shared$study_info
           original_name <- si$file_name %||% "data.csv"
           original_path <- si$file_path
+          read_args <- si$read_args
 
           # Fallback: persist raw data to a temp file if the original is gone
           if (is.null(original_path) || !file.exists(original_path)) {
             original_path <- file.path(tempdir(), original_name)
             if (!is.null(shared$raw_data))
               write.csv(shared$raw_data, original_path, row.names = FALSE)
+            read_args <- list()  # the fallback copy is a standard CSV
           }
 
           n_subj <- tryCatch(length(unique(shared$pk_data[[cm$subject]])),
@@ -997,7 +999,7 @@ path_viz_server <- function(id, shared) {
 
           setProgress(0.7, message = "Building record...")
 
-          create_viz_record(
+          rec_out <- create_viz_record(
             output_path        = file,
             plot_obj           = p,
             viz_settings       = vs,
@@ -1009,8 +1011,10 @@ path_viz_server <- function(id, shared) {
             analyst            = if (!is.null(input$record_analyst) && nchar(input$record_analyst) > 0) input$record_analyst else "Analyst",
             study_name         = if (!is.null(input$record_study) && nchar(input$record_study) > 0) input$record_study else "Untitled Study",
             n_subjects         = n_subj,
-            n_obs              = n_obs
+            n_obs              = n_obs,
+            read_args          = read_args
           )
+          notify_reproduction(rec_out)
         })
       }
     )

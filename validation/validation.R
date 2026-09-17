@@ -600,8 +600,8 @@ check("OQ-83", "Override logged in settings JSON",
 
 # OQ-84: Reproducibility script applies overrides
 check("OQ-84", "Repro script contains override section",
-      { ov<-list("S1"=list(profile="S1",original_lambda_z=0.08,adjusted_lambda_z=0.1,original_r2adj=0.95,adjusted_r2adj=0.99,points_used=4)); script<-generate_nca_script(theoph_settings,theoph_cm,"example_theoph.csv","rule1",0,lz_overrides=ov); grepl("override|Override|S1",script,ignore.case=TRUE) },
-      "URS-EXP-07", method="generate_nca_script with lz_overrides -> check script content", expected="Override section in script", critical=FALSE)
+      { script<-generate_nca_script(); grepl("lz_overrides = rec$lz_overrides", script, fixed=TRUE) },
+      "URS-EXP-07", method="reproduction script passes the recorded overrides to run_nca()", expected="Overrides replayed from analysis_settings.json", critical=FALSE)
 
 # --- NCA-OV: half-life overrides are computed by NonCompart (UsePoints) --------
 lz_d  <- read.csv(file.path("validation", "fixtures", "be_2x2x2_crossover.csv"), stringsAsFactors = FALSE)
@@ -742,12 +742,14 @@ check("EXP-VR-03", "Package versions", { v<-sapply(c("NonCompart","PowerTOST","n
 check("EXP-SH-01", "SHA-256 computable", nchar(digest(file="validation/validation.R",algo="sha256"))==64,
       "URS-EXP-04", method="digest SHA-256", expected="64-char hex", critical=TRUE)
 check("EXP-RS-01", "Repro script: valid R",
-      tryCatch({ parse(text=generate_nca_script(theoph_settings,theoph_cm,"example_theoph.csv","rule1",0)); TRUE },error=function(e)FALSE),
+      tryCatch({ parse(text=generate_nca_script()); parse(text=generate_single_nca_script()); TRUE },error=function(e)FALSE),
       "URS-EXP-02", method="generate_nca_script->parse", expected="Valid R", critical=TRUE)
 check("EXP-RS-02", "Repro script: key settings",
-      { s<-generate_nca_script(theoph_settings,theoph_cm,"example_theoph.csv","rule1",0); grepl("NonCompart",s)&&grepl("Extravascular",s)&&grepl("example_theoph",s) },
-      "URS-EXP-02", method="Check contents", expected="Key elements present", critical=TRUE)
-check("EXP-MN-01", "Three-way integrity manifest",
+      { s<-generate_nca_script(); grepl("NonCompart",s) && grepl('source("nca_pipeline.R")', s, fixed=TRUE) &&
+          grepl("analysis_settings.json", s, fixed=TRUE) && grepl("prepare_pk_dataset(", s, fixed=TRUE) &&
+          !grepl("tblNCA(", s, fixed=TRUE) && length(strsplit(s, "\n")[[1]]) <= 90 },
+      "URS-EXP-02", method="Check contents", expected="Sources the shipped pipeline, reads settings from JSON, <= 90 lines", critical=TRUE)
+check("EXP-MN-01", "Integrity manifest covers data, settings, results and pipeline code",
       tryCatch({
         td <- file.path(tempdir(),"exp_mn"); if(dir.exists(td)) unlink(td,recursive=TRUE); dir.create(td)
         zf <- file.path(td,"rec.zip")
@@ -757,10 +759,13 @@ check("EXP-MN-01", "Three-way integrity manifest",
         ex <- file.path(td,"ex"); dir.create(ex); utils::unzip(zf, exdir=ex)
         man <- paste(readLines(file.path(ex,"data_integrity.txt")), collapse="\n")
         n_hash <- length(gregexpr("SHA-256:", man, fixed=TRUE)[[1]])
-        n_hash==3 && grepl("Source data",man) && grepl("Analysis settings",man) && grepl("Results",man)
+        pl_hash <- digest::digest(file = file.path(ex, "nca_pipeline.R"), algo = "sha256")
+        n_hash==4 && grepl("Source data",man) && grepl("Analysis settings",man) && grepl("Results",man) &&
+          grepl("Pipeline code",man) && grepl(pl_hash, man, fixed=TRUE) &&
+          identical(pl_hash, digest::digest(file = "R/pipeline.R", algo = "sha256"))
       }, error=function(e) FALSE),
       "URS-EXP-04", method="create_analysis_record -> count SHA-256 entries in data_integrity.txt",
-      expected="3 hashes: source data, settings, results", critical=TRUE)
+      expected="4 hashes: source data, settings, results, nca_pipeline.R (identical to R/pipeline.R)", critical=TRUE)
 check("EXP-CMP-01", "Reproduction auto-comparison",
       tryCatch({
         td <- file.path(tempdir(),"exp_cmp"); if(dir.exists(td)) unlink(td,recursive=TRUE); dir.create(td)
@@ -771,7 +776,7 @@ check("EXP-CMP-01", "Reproduction auto-comparison",
         ref_file <- file.path(ex,"app_results_reference.csv")
         scr <- paste(readLines(file.path(ex,"reproduce_analysis.R")), collapse="\n")
         has_cmp <- file.exists(ref_file) && grepl("app_results_reference.csv", scr) &&
-                   grepl("Reproduction check", scr)
+                   grepl("compare_with_reference", scr)
         ref <- read.csv(ref_file, stringsAsFactors=FALSE, check.names=FALSE)
         rr  <- run_nca(theoph, theoph_cm, theoph_settings)
         maxrel <- 0
@@ -1654,7 +1659,7 @@ rep_record_run <- function(d, cm, overrides = NULL, apply_to_app = NULL) {
   dd <- dd[order(dd$Subject, dd$Time), ]
   dd <- apply_blq_rules(dd, cm, rule = "rule1", lloq = 0.5)
   st <- rep_settings; st$n_obs <- nrow(dd)
-  app <- suppressWarnings(run_nca(dd, cm, st))
+  app <- suppressWarnings(run_nca(dd, cm, st, lz_overrides = overrides))
   if (!is.null(apply_to_app)) app <- apply_to_app(app)
   zp <- file.path(wd, "rec.zip")
   invisible(suppressWarnings(create_analysis_record(zp, app, st, cm, csv, "rep.csv",
@@ -1682,13 +1687,8 @@ check("REP-REP-02", "Replicate record: a half-life override is replayed on the r
     ov <- list("1 | Test | P3" = list(profile = "1 | Test | P3", subject = "1", treatment = "Test",
                period = "3", original_lambda_z = 0.15, adjusted_lambda_z = 0.2,
                original_r2adj = 0.99, adjusted_r2adj = 0.99, points_used = 3))
-    set_ov <- function(app) {
-      i <- which(app$Subject == "1" & app$Treatment == "Test" & app$Period == "3")
-      app$LAMZ[i] <- 0.2; app$LAMZHL[i] <- log(2) / 0.2
-      app$AUCIFO[i] <- as.numeric(app$AUCLST[i]) + as.numeric(app$CLST[i]) / 0.2
-      app
-    }
-    rr <- rep_record_run(rep_224, rep_cm, overrides = ov, apply_to_app = set_ov)
+    ov[[1]]$time_used <- c(4, 6, 8)
+    rr <- rep_record_run(rep_224, rep_cm, overrides = ov)
     any(grepl("-> MATCH", rr$out)) && !any(grepl("DIFFERENT", rr$out))
   }, error = function(e) FALSE),
   "URS-EXP-07", critical = TRUE,
@@ -1873,6 +1873,140 @@ check("REP-RBE-01", "EMA Method A and CVwR agree with replicateBE on all 30 refe
   expected = "identical DF; all other values within 1e-8")
 
 end_section("REP")
+
+# =============================================================================
+# SECTION REC: Analysis Record reproduces through the shipped pipeline
+# =============================================================================
+start_section("REC")
+
+rec_unzip <- function(zp) {
+  ex <- file.path(tempdir(), paste0("recx", as.integer(runif(1, 1, 1e7))))
+  dir.create(ex); utils::unzip(zp, exdir = ex); ex
+}
+rec_check_text <- function(ex) {
+  f <- file.path(ex, "reproduction_check.txt")
+  if (file.exists(f)) paste(readLines(f, warn = FALSE), collapse = "\n") else ""
+}
+rec_build <- function(raw_csv_lines = NULL, df = NULL, cm, st, lloq = 0, rule = "rule1",
+                      read_args = list(), overrides = NULL, be = FALSE) {
+  wd <- file.path(tempdir(), paste0("recb", as.integer(runif(1, 1, 1e7)))); dir.create(wd)
+  f <- file.path(wd, "input.csv")
+  if (!is.null(raw_csv_lines)) writeLines(raw_csv_lines, f) else write.csv(df, f, row.names = FALSE)
+  ds <- prepare_pk_dataset(read_pk_file(f, read_args), cm, list(lloq = lloq, blq_rule = rule))
+  res <- suppressWarnings(run_nca(ds$data, cm, st, lz_overrides = overrides))
+  zp <- file.path(wd, "rec.zip")
+  out <- suppressWarnings(create_analysis_record(zp, res, st, cm, f, "input.csv", blq_rule = rule,
+    lloq = lloq, analyst = "QA", study_name = "REC", lz_overrides = overrides, read_args = read_args,
+    be_results = if (be) list(ci_table = data.frame(Parameter = "CMAX"), anova = list()) else NULL))
+  list(zip = zp, ex = rec_unzip(zp), result = res, out = out)
+}
+
+check("REC-01", "Record ships the pipeline and a passing reproduction check (theophylline)",
+  tryCatch({
+    zf <- file.path(tempdir(), "rec01.zip")
+    th <- read_pk_file("data/example_theoph.csv"); th_cm <- list(subject = "Subject", time = "Time", conc = "conc")
+    th_res <- run_nca(prepare_pk_dataset(th, th_cm)$data, th_cm, theoph_settings)
+    out <- create_analysis_record(zf, th_res, theoph_settings, th_cm,
+      "data/example_theoph.csv", "example_theoph.csv", blq_rule = "rule1", lloq = 0)
+    ex <- rec_unzip(zf); js <- jsonlite::fromJSON(file.path(ex, "analysis_settings.json"))
+    file.exists(file.path(ex, "nca_pipeline.R")) &&
+      identical(js$pipeline_sha256, digest::digest(file = "R/pipeline.R", algo = "sha256")) &&
+      grepl("Result: MATCH", rec_check_text(ex)) && identical(attr(out, "reproduction"), "MATCH") &&
+      !file.exists(file.path(ex, "reproduced_results.csv"))
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = TRUE,
+  method = "create_analysis_record on theophylline; inspect zip",
+  expected = "nca_pipeline.R with recorded hash; reproduction_check.txt says MATCH")
+check("REC-02", "Molar units: the reproduction uses the recorded molecular weight",
+  tryCatch({
+    st <- theoph_settings; st$conc_unit <- "umol/L"; st$mw <- 180.16
+    r <- rec_build(df = theoph, cm = theoph_cm, st = st)
+    grepl("Result: MATCH", rec_check_text(r$ex))
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = TRUE, method = "theophylline with umol/L and MW 180.16",
+  expected = "MATCH (the previous script omitted MW)")
+check("REC-03", "Semicolon / decimal-comma file with BLQ text reproduces",
+  tryCatch({
+    # Semicolon-separated, decimal comma in Time (fully numeric column), '<0.1' BLQ text
+    lines <- c("Subject;Time;Conc", "1;0;<0.1", "1;0,5;4.2", "1;1;6.1", "1;2;5.0", "1;4;3.1", "1;8;1.2", "1;12;0.5",
+               "2;0;<0.1", "2;0,5;3.9", "2;1;6.6", "2;2;5.4", "2;4;3.0", "2;8;1.4", "2;12;0.6")
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc")
+    r <- rec_build(raw_csv_lines = lines, cm = cm, st = theoph_settings, lloq = 0.1, rule = "rule1",
+                   read_args = list(sep = ";", dec = ","))
+    grepl("Result: MATCH", rec_check_text(r$ex)) && nrow(r$result) == 2
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = TRUE, method = "sep ';', dec ',' (Time 0,5), '<0.1' text, LLOQ 0.1",
+  expected = "MATCH (the previous script read every file as comma-separated)")
+check("REC-04", "Replicate BE record with per-subject doses and an override reproduces",
+  tryCatch({
+    d <- rep_224; d$Dose <- d$Subject * 10
+    cm <- c(rep_cm, list(dose = "Dose")); st <- rep_settings; st$dose <- dose_by_subject(d, cm)
+    ov <- list("1 | Test | P3" = list(profile = "1 | Test | P3", subject = "1", treatment = "Test",
+               period = "3", time_used = c(4, 6, 8)))
+    r <- rec_build(df = d, cm = cm, st = st, lloq = 0.5, overrides = ov, be = TRUE)
+    js <- jsonlite::fromJSON(file.path(r$ex, "analysis_settings.json"), simplifyDataFrame = FALSE)
+    grepl("Result: MATCH", rec_check_text(r$ex)) && identical(js$dose_source, "per_subject") &&
+      identical(as.numeric(js$lz_overrides[[1]]$time_used), c(4, 6, 8))
+  }, error = function(e) FALSE),
+  "URS-EXP-07", critical = TRUE, method = "2x2x4 fixture, dose = subject x 10, override on one administration",
+  expected = "MATCH; per-subject dose and override time points recorded")
+check("REC-05", "The check detects a changed data file",
+  tryCatch({
+    r <- rec_build(df = theoph, cm = theoph_cm, st = theoph_settings)
+    f <- file.path(r$ex, "input.csv"); d <- read.csv(f); d$Conc[5] <- d$Conc[5] * 2; write.csv(d, f, row.names = FALSE)
+    owd <- setwd(r$ex)
+    out <- tryCatch(system2(file.path(R.home("bin"), "Rscript"), "reproduce_analysis.R", stdout = TRUE, stderr = TRUE),
+                    error = function(e) character(0))
+    setwd(owd)
+    any(grepl("Data file: MISMATCH", out)) && any(grepl("DIFFERENT", out))
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = TRUE, method = "double one concentration after export, rerun the script",
+  expected = "data hash MISMATCH and result DIFFERENT")
+check("REC-06", "Single-subject record (uploaded file, override) reproduces",
+  tryCatch({
+    wd <- file.path(tempdir(), "rec06"); dir.create(wd, showWarnings = FALSE)
+    f <- file.path(wd, "rep.csv"); write.csv(rep_224, f, row.names = FALSE)
+    ds <- prepare_pk_dataset(read_pk_file(f), rep_cm, list(lloq = 0.5, blq_rule = "rule1"))
+    lab <- "2 | Reference | P1"; rows <- profile_data_rows(ds$data, rep_cm, lab)
+    st <- rep_settings; tu <- c(6, 8, 12)
+    res <- run_single_nca(ds$data$Time[rows], ds$data$Conc[rows], st, time_used = tu)
+    zp <- file.path(wd, "single.zip")
+    create_single_analysis_record(zp, res, st, ds$data$Time[rows], ds$data$Conc[rows],
+      subject_label = lab, original_file_path = f, original_file_name = "rep.csv",
+      blq_rule = "rule1", lloq = 0.5, col_map = rep_cm,
+      lz_override = list(profile = lab, original_lambda_z = 0.15, adjusted_lambda_z = 0.1,
+                         original_r2adj = 0.99, adjusted_r2adj = 0.98, points_used = 3, time_used = tu))
+    grepl("Result: MATCH", rec_check_text(rec_unzip(zp)))
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = TRUE, method = "profile 2 | Reference | P1 of the 2x2x4 fixture, override on 6/8/12 h",
+  expected = "MATCH")
+check("REC-07", "Single-subject record from manual entry reproduces",
+  tryCatch({
+    st <- theoph_settings; tt <- c(0, 0.5, 1, 2, 4, 8, 12, 24); cc <- c(0, 4.1, 7.9, 8.8, 7.0, 5.1, 3.6, 1.4)
+    res <- run_single_nca(tt, cc, st)
+    zp <- file.path(tempdir(), "rec07.zip")
+    create_single_analysis_record(zp, res, st, tt, cc, subject_label = "Manual Entry")
+    grepl("Result: MATCH", rec_check_text(rec_unzip(zp)))
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = TRUE, method = "manual entry, no file", expected = "MATCH")
+check("REC-08", "Figure record rebuilds the figure from the processed data",
+  tryCatch({
+    wd <- file.path(tempdir(), "rec08"); dir.create(wd, showWarnings = FALSE)
+    f <- file.path(wd, "rep.csv"); write.csv(rep_222, f, row.names = FALSE)
+    ds <- prepare_pk_dataset(read_pk_file(f), rep_cm, list(lloq = 0.5, blq_rule = "rule1"))
+    p <- ggplot2::ggplot(ds$data, ggplot2::aes(Time, Conc, group = Subject)) + ggplot2::geom_line()
+    zp <- file.path(wd, "fig.zip")
+    create_viz_record(zp, p, list(plot_type = "spaghetti", export_format = "png", dpi = 72),
+                      rep_cm, f, "rep.csv", blq_rule = "rule1", lloq = 0.5)
+    ex <- rec_unzip(zp)
+    scr <- paste(readLines(file.path(ex, "reproduce_figure.R"), warn = FALSE), collapse = "\n")
+    file.exists(file.path(ex, "nca_pipeline.R")) && grepl("prepare_pk_dataset(", scr, fixed = TRUE) &&
+      grepl("Result: FIGURE CREATED", rec_check_text(ex))
+  }, error = function(e) FALSE),
+  "URS-VIZ-08", critical = FALSE, method = "spaghetti figure record from the 2x2 fixture with LLOQ 0.5",
+  expected = "script uses the pipeline; check reports the figure was produced")
+
+end_section("REC")
 
 # =============================================================================
 # Post-execution

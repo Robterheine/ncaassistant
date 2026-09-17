@@ -4,14 +4,6 @@
 # BLQ handling, lambda_z management, dose normalization
 
 
-#' Human-readable label for each profile, e.g. "12 | Test | P3"
-#' @param parts data.frame with Subject and optionally Treatment, Period
-profile_labels <- function(parts) {
-  lab <- as.character(parts$Subject)
-  if ("Treatment" %in% names(parts)) lab <- paste(lab, "|", parts$Treatment)
-  if ("Period" %in% names(parts))    lab <- paste0(lab, " | P", parts$Period)
-  lab
-}
 
 #' Profile labels for an NCA result table, in row order
 #' @param result NCA result with Subject and optionally Treatment, Period
@@ -21,29 +13,7 @@ result_profile_labels <- function(result) {
   profile_labels(result[cols])
 }
 
-#' Unique profiles in an uploaded data set, ordered subject -> treatment -> period
-#' @return data.frame of parts with a `label` column
-data_profiles <- function(data, col_map) {
-  pk <- profile_key(data, col_map)
-  u <- unique(pk$parts)
-  subj_order <- match(u$Subject, unique(as.character(data[[col_map$subject]])))
-  per_num <- if ("Period" %in% names(u)) suppressWarnings(as.numeric(u$Period)) else NULL
-  ord_args <- list(subj_order)
-  if ("Treatment" %in% names(u)) ord_args <- c(ord_args, list(u$Treatment))
-  if ("Period" %in% names(u))
-    ord_args <- c(ord_args, list(if (anyNA(per_num)) u$Period else per_num))
-  u <- u[do.call(order, ord_args), , drop = FALSE]
-  u$label <- profile_labels(u)
-  rownames(u) <- NULL
-  u
-}
 
-#' Rows of the uploaded data belonging to one profile label, in time order
-profile_data_rows <- function(data, col_map, label) {
-  labs <- profile_labels(profile_key(data, col_map)$parts)
-  idx <- which(labs == label)
-  idx[order(suppressWarnings(as.numeric(as.character(data[[col_map$time]][idx]))))]
-}
 
 #' Row index in an NCA result for one profile label (integer(0) if absent)
 profile_result_row <- function(result, label) {
