@@ -63,8 +63,8 @@ build_be_data <- function(nca_res, pk_data, col_map) {
 #'
 #' @param be_data   Data frame at NCA-profile grain with the design columns
 #' @param param     PK parameter column, e.g. "CMAX"
-#' @param design    "crossover_2x2", "crossover_fixed_order",
-#'                  "crossover_3period", "parallel" or "replicate_2x2x4"
+#' @param design    design code from BE_DESIGNS (R/designs.R); legacy codes
+#'                  such as "crossover_fixed_order" are also accepted
 #' @param model_type "fixed" or "mixed"
 #' @param trt_col,subj_col Treatment and subject columns. Treatment must be a
 #'                  factor whose first level is the reference.
@@ -98,7 +98,8 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   is_ratio <- log_transform && param != "TMAX"
   # A single-sequence (fixed-order) study confounds period with treatment, so
   # it can report a paired ratio but cannot support a bioequivalence verdict.
-  is_paired <- design == "crossover_fixed_order"
+  model_family <- be_design_model(design)
+  is_paired <- model_family == "paired"
   has_limits <- is_ratio && !is_paired
   scale_label <- if (is_ratio) "Ratio T/R (%)" else
     paste0("Difference T\u2212R", if (!is.null(diff_unit)) paste0(" (", diff_unit, ")") else "")
@@ -141,16 +142,15 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   }
 
   use_mixed <- model_type == "mixed" &&
-               design != "parallel" &&
-               design != "crossover_fixed_order" &&
+               model_family == "crossover" &&
                requireNamespace("nlme", quietly = TRUE)
 
   # Build and fit model
-  if (design == "parallel") {
+  if (model_family == "parallel") {
     fit <- tryCatch(lm(as.formula(paste(".response ~", trt_col)),
                        data = be_data, na.action = na.exclude), error = function(e) NULL)
-  } else if (design == "crossover_fixed_order") {
-    # Fixed-order crossover: all subjects received same sequence.
+  } else if (is_paired) {
+    # Paired comparison (fixed order): all subjects received the same sequence.
     # Period and Treatment are confounded. Model: Subject + Treatment only.
     # Equivalent to a paired t-test on log-transformed parameters.
     fit <- tryCatch(
@@ -246,7 +246,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   if (is.null(coef_result)) {
     # Provide specific guidance based on the likely cause
     reason <- if (!is.null(seq_col) && length(unique(be_data[[seq_col]])) < 2) {
-      "All subjects have the same sequence — try selecting 'Fixed-order crossover' as the study design."
+      "All subjects have the same sequence — try selecting 'Paired comparison' as the study design."
     } else if (!is.null(per_col) && length(unique(be_data[[per_col]])) < 2) {
       "Only one period found — try selecting 'Parallel groups' as the study design."
     } else {
@@ -307,8 +307,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
 #' @return list(design = design to analyse, note = explanation or NULL)
 resolve_be_design <- function(design, be_data, subj_col, trt_col,
                               per_col = NULL, seq_col = NULL) {
-  crossover <- c("crossover_2x2", "crossover_3period", "replicate_2x2x4")
-  if (!design %in% crossover) return(list(design = design, note = NULL))
+  if (be_design_model(design) != "crossover") return(list(design = design, note = NULL))
 
   n_orders <- if (!is.null(seq_col) && seq_col %in% names(be_data)) {
     length(unique(be_data[[seq_col]]))
@@ -324,7 +323,7 @@ resolve_be_design <- function(design, be_data, subj_col, trt_col,
   }
 
   if (!is.na(n_orders) && n_orders == 1) {
-    list(design = "crossover_fixed_order",
+    list(design = "paired",
          note = paste0("All subjects received the treatments in the same order, so period ",
                        "and treatment cannot be separated. The data were analysed as a paired ",
                        "comparison, which reports the ratio and its confidence interval but ",

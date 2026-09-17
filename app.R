@@ -48,6 +48,7 @@ source("R/utils.R")
 source("R/nca_helpers.R")
 source("R/data_quality.R")
 source("R/export_record.R")
+source("R/designs.R")
 source("R/be_analysis.R")
 source("R/help_system.R")
 source("R/mod_data_upload.R")
@@ -653,6 +654,30 @@ server <- function(input, output, session) {
         )
       ),
       
+      # Study designs (rendered from the shared registry in R/designs.R)
+      card(
+        card_header(icon("sitemap"), " Study Designs"),
+        card_body(
+          tags$p(class = "text-muted small",
+                 "Designs offered by Plan a Study and accepted by Bioequivalence Testing. ",
+                 "Scaled methods (ABEL, RSABE, NTID) are available for planning only: the ",
+                 "analysis reports within-subject variability for replicate designs but ",
+                 "never a scaled bioequivalence verdict."),
+          tags$table(
+            class = "table table-sm table-hover small",
+            tags$thead(class = "table-light", tags$tr(
+              tags$th("Design"), tags$th("Plan: ABE"), tags$th("Plan: ABEL/RSABE"),
+              tags$th("Plan: NTID"), tags$th("Analysis"))),
+            tags$tbody(lapply(seq_len(nrow(BE_DESIGNS)), function(i) {
+              d <- BE_DESIGNS[i, ]
+              yn <- function(x) if (isTRUE(x)) "\u2713" else "\u2014"
+              tags$tr(tags$td(d$label), tags$td(yn(d$plan_abe)), tags$td(yn(d$plan_scaled)),
+                      tags$td(yn(d$plan_ntid)), tags$td(d$analysis_note))
+            }))
+          )
+        )
+      ),
+
       # Technical details
       card(
         card_header(icon("microchip"), " Runtime Environment"),

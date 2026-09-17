@@ -213,19 +213,13 @@ path_power_server <- function(id, shared) {
                     else NULL
 
     # ---- Valid designs per analysis type ------------------------------------
+    # Built from the shared design registry (R/designs.R), so the planner and
+    # the BE analysis always offer the same designs under the same names.
     valid_designs <- list(
-      abe    = c("2x2"    = "Standard 2-period crossover",
-                 "2x2x3"  = "3-period crossover",
-                 "2x3x3"  = "3-sequence partial replicate (2x3x3)",
-                 "2x2x4"  = "4-period replicate crossover",
-                 "parallel" = "Parallel groups"),
-      abel   = c("2x2x3"  = "3-period crossover",
-                 "2x3x3"  = "3-sequence partial replicate (2x3x3)",
-                 "2x2x4"  = "4-period replicate crossover"),
-      rsabe  = c("2x2x3"  = "3-period crossover",
-                 "2x3x3"  = "3-sequence partial replicate (2x3x3)",
-                 "2x2x4"  = "4-period replicate crossover"),
-      ntid   = c("2x2x4"  = "4-period replicate crossover")
+      abe   = planner_designs("abe"),
+      abel  = planner_designs("abel"),
+      rsabe = planner_designs("rsabe"),
+      ntid  = planner_designs("ntid")
     )
 
     default_design <- list(

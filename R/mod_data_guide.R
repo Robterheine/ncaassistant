@@ -131,10 +131,10 @@ data_guide_ui <- function() {
             tags$tr(tags$td("2-period crossover (BE)"),
                     tags$td(tags$code("Subject"), ", ", tags$code("Period"), ", ", tags$code("Sequence"), ", ", tags$code("Treatment"), ", ", tags$code("Time"), ", ", tags$code("Concentration")),
                     tags$td("Bioequivalence")),
-            tags$tr(tags$td("Fixed-order crossover (BE)"),
+            tags$tr(tags$td("Paired comparison, single sequence"),
                     tags$td(tags$code("Subject"), ", ", tags$code("Period"), ", ", tags$code("Sequence"), ", ", tags$code("Treatment"), ", ", tags$code("Time"), ", ", tags$code("Concentration")),
-                    tags$td("Bioequivalence (fixed-order)")),
-            tags$tr(tags$td("3-period crossover (BE)"),
+                    tags$td("Bioequivalence (paired comparison, no verdict)")),
+            tags$tr(tags$td("3-period replicate (BE)"),
                     tags$td(tags$code("Subject"), ", ", tags$code("Period"), ", ", tags$code("Sequence"), ", ", tags$code("Treatment"), ", ", tags$code("Time"), ", ", tags$code("Concentration")),
                     tags$td("Bioequivalence")),
             tags$tr(tags$td("Replicate crossover (BE)"),
@@ -460,7 +460,8 @@ data_guide_ui <- function() {
         tags$p(class = "small text-muted",
                "Notice: all subjects have Sequence = 'RT'. Everyone received Reference in ",
                "period 1 and Test in period 2. In the app, select ",
-               "'Fixed-order crossover (all subjects same sequence)' as the study design."),
+               "'Paired comparison (single sequence)' as the study design; the app also detects ",
+               "a single sequence and switches to the paired analysis automatically."),
         
         tags$h6(class = "fw-semibold mt-3", "Do I still need the Sequence column?"),
         tags$p(class = "small",
@@ -473,7 +474,7 @@ data_guide_ui <- function() {
           "Sequence has ONE value for all subjects (e.g., 'RT')",
           "Treatment has exactly two levels (Test and Reference)",
           "Time resets to 0 at the start of each period",
-          "In the app, select 'Fixed-order crossover' as the study design",
+          "In the app, select 'Paired comparison' as the study design (no BE verdict is given)",
           "If doses differ between subjects, add a Dose column"
         ))
       ),
@@ -482,23 +483,22 @@ data_guide_ui <- function() {
       # SCENARIO 3c: 3-period crossover
       # ----------------------------------------------------------------
       nav_panel(
-        "3-Period Crossover",
+        "3-Period Replicate",
         icon = icon("rotate"),
         
-        tags$h5(class = "fw-bold mt-2", "Scenario 3c: 3-Period Crossover"),
+        tags$h5(class = "fw-bold mt-2", "Scenario 3c: 3-Period Replicate Designs"),
         tags$p("Each subject receives treatments across three periods. Two common variants exist:"),
         
         tags$div(
           class = "bg-light rounded p-3 mb-3 small",
           tags$table(
             class = "table table-sm table-borderless mb-0",
-            tags$tr(tags$td(class = "fw-bold", "2-sequence, 3-period"),
+            tags$tr(tags$td(class = "fw-bold", "Full replicate (2\u00D72\u00D73)"),
                     tags$td("Sequences TRT and RTR. One treatment is given twice, ",
                             "the other once. Provides extra within-subject replication.")),
-            tags$tr(tags$td(class = "fw-bold", "Williams design (3\u00D73\u00D73)"),
+            tags$tr(tags$td(class = "fw-bold", "Partial replicate (2\u00D73\u00D73)"),
                     tags$td("Sequences TRR, RTR, RRT (three sequences, three periods). ",
-                            "Both treatments appear at least once per subject. ",
-                            "Used for partial replicate designs."))
+                            "Test is given once and Reference twice to every subject."))
           )
         ),
         
@@ -520,7 +520,7 @@ data_guide_ui <- function() {
                "Subject S01 is in the TRT sequence: Test in period 1, Reference in period 2, ",
                "Test again in period 3. Shown with 2 time points per period for brevity."),
         
-        tags$h6(class = "fw-semibold mt-3", "Example: Williams design (TRR|RTR|RRT)"),
+        tags$h6(class = "fw-semibold mt-3", "Example: partial replicate (TRR|RTR|RRT)"),
         ex_table(data.frame(
           Subject   = c(rep("S01", 6), rep("S04", 6)),
           Treatment = c("Test","Ref","Ref", "Test","Ref","Ref",
@@ -538,7 +538,9 @@ data_guide_ui <- function() {
         tags$div(
           class = "alert alert-info py-2 small",
           tags$strong("In the app: "),
-          "Select '3-period crossover' as the study design in the Bioequivalence settings."
+          "Select '2\u00D72\u00D73 full replicate' or '2\u00D73\u00D73 partial replicate' as the ",
+          "study design in the Bioequivalence settings. Each administration is analysed as its ",
+          "own profile, and the results include the within-subject variability of the Reference."
         ),
         
         checklist(c(
@@ -559,9 +561,8 @@ data_guide_ui <- function() {
         
         tags$h5(class = "fw-bold mt-2", "Scenario 4: Replicate Design (4-Period Crossover)"),
         tags$p("Used for highly variable drugs. Each subject receives each formulation twice, in four periods. ",
-               "Common sequences are TRTR and RTRT (2-sequence), or more complex Williams designs with ",
-               "3 or 4 sequences. This design lets you estimate within-subject variability for the ",
-               "Reference product, which is needed for widened acceptance limits."),
+               "The common sequences are TRTR and RTRT. This design lets you estimate within-subject ",
+               "variability for both products, which is needed for widened acceptance limits."),
         
         tags$h6(class = "fw-semibold", "Same six columns as the 2-period design"),
         tags$p(class = "small",
@@ -570,7 +571,7 @@ data_guide_ui <- function() {
         
         ex_table(data.frame(
           Subject   = rep("S01", 8),
-          Treatment = c("Test","Ref","Test","Ref", "Test","Ref","Test","Ref"),
+          Treatment = c("Test","Test","Ref","Ref", "Test","Test","Ref","Ref"),
           Period    = c(1,1,2,2,3,3,4,4),
           Sequence  = rep("TRTR", 8),
           Time      = rep(c(0, 4), 4),
@@ -584,7 +585,7 @@ data_guide_ui <- function() {
         tags$div(
           class = "alert alert-info py-2 small",
           tags$strong("Note: "),
-          "If your study has 3 periods (e.g., Williams design with sequences TRR, RTR, RRT), ",
+          "If your study has 3 periods (e.g., the partial replicate with sequences TRR, RTR, RRT), ",
           "the same format applies — just adjust the Period values (1, 2, 3) and the Sequence accordingly. ",
           "In these designs, one treatment is given once and the other twice."
         ),

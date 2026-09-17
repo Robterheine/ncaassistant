@@ -33,7 +33,7 @@ if (length(missing) > 0) {
 library(NonCompart); library(PowerTOST); library(nlme); library(digest)
 
 for (f in c("R/utils.R", "R/nca_helpers.R", "R/data_quality.R", "R/export_record.R",
-           "R/be_analysis.R")) {
+           "R/designs.R", "R/be_analysis.R")) {
   tryCatch(source(f, local = TRUE), error = function(e) NULL)
 }
 
@@ -62,7 +62,7 @@ APP_VERSION <- tryCatch({
 }, error = function(e) "unknown")
 
 source_files <- c("R/utils.R", "R/nca_helpers.R", "R/data_quality.R",
-                  "R/export_record.R", "R/mod_data_upload.R", "R/be_analysis.R")
+                  "R/export_record.R", "R/mod_data_upload.R", "R/designs.R", "R/be_analysis.R")
 hash_files <- c("validation/validation.R", source_files)
 file_hashes <- sapply(hash_files, function(f) {
   if (file.exists(f)) digest(file = f, algo = "sha256") else "FILE_NOT_FOUND"
@@ -1234,20 +1234,17 @@ check("REG-BE-AOV-01", "Fixed model: Sequence tested against Subject(Sequence)",
 
 # D5: the "no scaled analysis" warning must show on every design the planner
 # offers scaled methods for (2x2x3 and 2x3x3 map to crossover_3period)
-check("REG-BE-D5-01", "ABEL/RSABE warning shows for 3-period and 4-period designs",
+check("REG-BE-D5-01", "ABEL/RSABE note shows for every design the planner offers scaled methods for",
   tryCatch({
     src <- paste(readLines("R/mod_path_be.R", warn = FALSE), collapse = "\n")
     pos <- regexpr("This app performs standard ABE", src, fixed = TRUE)
-    if (pos < 0) FALSE else {
-      before <- substr(src, max(1, pos - 400), pos)
-      cond <- regmatches(before, gregexpr("condition = sprintf\\([^\n]*", before))[[1]]
-      last <- tail(cond, 1)
-      length(last) == 1 && grepl("crossover_3period", last) && grepl("replicate_2x2x4", last)
-    }
+    before <- substr(src, max(1, pos - 700), pos)
+    pos > 0 && grepl("BE_DESIGNS$code[BE_DESIGNS$plan_scaled]", before, fixed = TRUE) &&
+      setequal(BE_DESIGNS$code[BE_DESIGNS$plan_scaled], c("2x2x3", "2x3x3", "2x2x4"))
   }, error = function(e) FALSE),
   "URS-BE-02", critical = FALSE,
-  method = "source inspection of the conditionalPanel holding the scaled-analysis note",
-  expected = "condition covers crossover_3period and replicate_2x2x4")
+  method = "the note's condition is built from the registry's plan_scaled designs",
+  expected = "condition uses the registry; scaled designs are 2x2x3, 2x3x3, 2x2x4")
 
 # D6: a single-sequence (fixed-order) comparison is not a BE design
 check("REG-BE-FO-03", "Fixed-order: estimate and CI reported, no BE verdict",
@@ -1267,12 +1264,12 @@ check("REG-BE-FO-04", "Single Sequence level is analysed as a paired comparison"
                            per_col = "Period", seq_col = "Sequence")
     b <- resolve_be_design("crossover_2x2", be_input(be_d), subj_col = "Subject", trt_col = "Treatment",
                            per_col = "Period", seq_col = "Sequence")
-    identical(a$design, "crossover_fixed_order") && !is.null(a$note) &&
+    identical(a$design, "paired") && !is.null(a$note) &&
       identical(b$design, "crossover_2x2") && is.null(b$note)
   }, error = function(e) FALSE),
   "URS-BE-02", critical = TRUE,
   method = "resolve_be_design() with one vs two Sequence levels",
-  expected = "one level -> crossover_fixed_order with a note; two -> unchanged")
+  expected = "one level -> paired with a note; two -> unchanged")
 check("REG-BE-FO-05", "Fixed order detected from Period when no Sequence column is mapped",
   tryCatch({
     fo <- be_input(be_d); fo$Period <- ifelse(fo$Treatment == "R", 1, 2)
@@ -1280,7 +1277,7 @@ check("REG-BE-FO-05", "Fixed order detected from Period when no Sequence column 
                            per_col = "Period", seq_col = NULL)
     b <- resolve_be_design("crossover_2x2", be_input(be_d), subj_col = "Subject", trt_col = "Treatment",
                            per_col = "Period", seq_col = NULL)
-    identical(a$design, "crossover_fixed_order") && identical(b$design, "crossover_2x2")
+    identical(a$design, "paired") && identical(b$design, "crossover_2x2")
   }, error = function(e) FALSE),
   "URS-BE-02", critical = TRUE,
   method = "treatment order per subject derived from Period",
@@ -1625,6 +1622,60 @@ check("REP-CV-05", "The CVwR model needs the period term (naive model differs)",
   "URS-BE-09", critical = FALSE,
   method = "compare with lm(log(CMAX) ~ Subject) on reference data",
   expected = "differs: the fixture has period effects the naive model ignores")
+
+# B5: one design registry for planner, analysis and About page
+check("REP-DES-01", "Planner design menus come from the registry",
+  tryCatch({
+    identical(names(planner_designs("abe")), c("2x2", "2x2x3", "2x3x3", "2x2x4", "parallel")) &&
+      identical(names(planner_designs("abel")), c("2x2x3", "2x3x3", "2x2x4")) &&
+      identical(names(planner_designs("rsabe")), c("2x2x3", "2x3x3", "2x2x4")) &&
+      identical(names(planner_designs("ntid")), "2x2x4") &&
+      any(grepl("planner_designs(\"abe\")", readLines("R/mod_path_power.R", warn = FALSE), fixed = TRUE))
+  }, error = function(e) FALSE),
+  "URS-PWR-03", critical = TRUE,
+  method = "planner_designs() per method; mod_path_power.R uses it",
+  expected = "same design sets as before, now from BE_DESIGNS")
+check("REP-DES-02", "Every design the planner offers can be analysed, with the same name",
+  tryCatch({
+    planned <- BE_DESIGNS[BE_DESIGNS$plan_abe | BE_DESIGNS$plan_scaled | BE_DESIGNS$plan_ntid, ]
+    all(planned$code %in% be_analysis_choices()) &&
+      !anyDuplicated(BE_DESIGNS$code) && !anyDuplicated(BE_DESIGNS$label) &&
+      !any(grepl("^3-period crossover$", BE_DESIGNS$label))
+  }, error = function(e) FALSE),
+  "URS-BE-02", critical = TRUE,
+  method = "registry integrity", expected = "planned designs are analysable; labels unique and specific")
+check("REP-DES-03", "Design codes map to the right model, including legacy codes",
+  tryCatch({
+    m <- sapply(c("2x2x2", "2x2x3", "2x3x3", "2x2x4", "parallel", "paired",
+                  "crossover_2x2", "crossover_3period", "replicate_2x2x4",
+                  "crossover_fixed_order"), be_design_model)
+    identical(unname(m), c("crossover", "crossover", "crossover", "crossover", "parallel", "paired",
+                           "crossover", "crossover", "crossover", "paired"))
+  }, error = function(e) FALSE),
+  "URS-BE-02", critical = TRUE,
+  method = "be_design_model() on current and legacy codes", expected = "correct model family")
+check("REP-DES-04", "Selected design is checked against the data",
+  tryCatch({
+    det224 <- detect_study_design(rep_224, rep_cm); det222 <- detect_study_design(rep_222, rep_cm)
+    is.null(check_design_against_data("2x2x4", det224)) &&
+      is.null(check_design_against_data("2x2x2", det222)) &&
+      !is.null(check_design_against_data("2x3x3", det224)) &&
+      !is.null(check_design_against_data("2x2x2", det224)) &&
+      !is.null(check_design_against_data("parallel", det222))
+  }, error = function(e) FALSE),
+  "URS-BE-02", critical = TRUE,
+  method = "check_design_against_data() with 2x2x4 and 2x2 fixtures",
+  expected = "matching selections pass; mismatches return a message")
+check("REP-DES-05", "Partial and full 3-period replicates give identical ABE results",
+  tryCatch({
+    b <- build_be_data(rep_nca(rep_233), rep_233, rep_cm)
+    f <- function(code) fit_be_parameter(b$data, "CMAX", design = code, trt_col = b$trt_col,
+                                         subj_col = b$subj_col, per_col = b$per_col, seq_col = b$seq_col)$estimate
+    identical(f("2x3x3"), f("2x2x3")) && identical(f("2x3x3"), f("crossover_3period"))
+  }, error = function(e) FALSE),
+  "URS-BE-03", critical = FALSE,
+  method = "same data fitted under 2x3x3, 2x2x3 and legacy crossover_3period",
+  expected = "identical estimates (one Method A model)")
 
 end_section("REP")
 

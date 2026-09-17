@@ -278,8 +278,14 @@ help_be_design <- info_btn("help_be_design", "What design is my study?",
   <b>Parallel</b>: One group gets Test, another gets Reference. Subjects 
   only receive one treatment. Requires more subjects.
   <br><br>
-  <b>Replicate Crossover</b> (e.g., 2×2×4): Each subject receives each 
-  treatment twice. Used for highly variable drugs.
+  <b>Replicate designs</b>: a subject receives a treatment more than once. 
+  2×2×4 (TRTR | RTRT) and 2×2×3 (TRT | RTR) are full replicates; 2×3×3 
+  (TRR | RTR | RRT) is a partial replicate, where only the Reference is repeated. 
+  Used for highly variable drugs.
+  <br><br>
+  <b>Paired comparison</b>: all subjects received the treatments in the same 
+  order. Period and treatment cannot be separated, so no bioequivalence 
+  verdict is given.
   <br><br>
   <em>Check your study protocol to confirm the design.</em>")
 

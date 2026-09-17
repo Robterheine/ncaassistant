@@ -85,16 +85,10 @@ path_be_ui <- function(id) {
             card_body(
               selectInput(ns("be_design"),
                           tagList("Study design", help_be_design),
-                          choices = c(
-                            "Standard 2-period crossover" = "crossover_2x2",
-                            "Paired comparison (single sequence — not a bioequivalence design)" = "crossover_fixed_order",
-                            "3-period crossover" = "crossover_3period",
-                            "Parallel groups" = "parallel",
-                            "4-period replicate crossover" = "replicate_2x2x4"
-                          )),
+                          choices = be_analysis_choices(), selected = "2x2x2"),
               
               conditionalPanel(
-                condition = sprintf("input['%s'] == 'crossover_fixed_order'", ns("be_design")),
+                condition = sprintf("input['%s'] == 'paired'", ns("be_design")),
                 tags$div(
                   class = "alert alert-warning py-2 small mb-2",
                   icon("triangle-exclamation", class = "me-1"),
@@ -107,8 +101,11 @@ path_be_ui <- function(id) {
                 )
               ),
               
+              # Shown for every design the planner offers scaled methods for
               conditionalPanel(
-                condition = sprintf("input['%s'] == 'crossover_3period' || input['%s'] == 'replicate_2x2x4'", ns("be_design"), ns("be_design")),
+                condition = sprintf("[%s].indexOf(input['%s']) >= 0",
+                                    paste0("'", BE_DESIGNS$code[BE_DESIGNS$plan_scaled], "'", collapse = ", "),
+                                    ns("be_design")),
                 tags$div(
                   class = "alert alert-info py-2 small mb-2",
                   icon("circle-info", class = "me-1"),
@@ -528,11 +525,14 @@ path_be_server <- function(id, shared) {
                                          per_col = per_col, seq_col = seq_col)
         if (!is.null(design_used$note)) {
           showNotification(design_used$note, type = "warning", duration = 15)
+        } else {
+          mismatch <- check_design_against_data(input$be_design, shared$study_info$design)
+          if (!is.null(mismatch)) showNotification(mismatch, type = "warning", duration = 15)
         }
         
         # Warn when no Sequence column is mapped for crossover designs
         if (is.null(seq_col) &&
-            design_used$design %in% c("crossover_2x2", "crossover_3period", "replicate_2x2x4")) {
+            be_design_model(design_used$design) == "crossover") {
           showNotification(
             paste0("No Sequence column is mapped. For a ", design_used$design,
                    " design the Sequence term is part of the standard ANOVA model ",
