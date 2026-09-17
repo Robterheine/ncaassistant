@@ -167,6 +167,8 @@ path_be_ui <- function(id) {
             )
           ),
           
+          partial_auc_ui(ns("pauc"), show_role = TRUE),
+
           hr(),
           
           actionButton(ns("run_be"), "Run Complete BE Analysis",
@@ -181,6 +183,7 @@ path_be_ui <- function(id) {
         tagList(
           uiOutput(ns("be_status")),
           uiOutput(ns("ss_note")),
+          uiOutput(ns("pauc_note")),
           uiOutput(ns("balance_note")),
           uiOutput(ns("design_summary")),
           
@@ -197,7 +200,7 @@ path_be_ui <- function(id) {
                      "With limits wider than 80–125%, the point estimate must also lie within ",
                      "80–125% unless that constraint is switched off. Half-life is shown as a ratio ",
                      "with its confidence interval but has no verdict, because it is not a ",
-                     "bioequivalence endpoint. Tmax, and any parameter analysed without ",
+                     "bioequivalence endpoint. A partial AUC marked as supportive is shown the same way. Tmax, and any parameter analysed without ",
                      "log-transformation, is shown as a difference in its own units and has no verdict."),
               DTOutput(ns("ci_table")),
               tags$p(class = "text-muted small mt-2",
@@ -352,8 +355,10 @@ path_be_server <- function(id, shared) {
     observe({
       req(be_nca_result())
       r <- be_nca_result()
-      available <- intersect(
-        c("CMAX","AUCTAU","AUCLST","AUCIFO","AUCIFP","TMAX","LAMZHL"), names(r))
+      # Partial AUCs and Cmax in an interval; Tmax in an interval is not compared
+      pauc_params <- grep("^(AUC|CMAX)_", partial_auc_cols(names(r)), value = TRUE)
+      available <- c(intersect(
+        c("CMAX","AUCTAU","AUCLST","AUCIFO","AUCIFP","TMAX","LAMZHL"), names(r)), pauc_params)
       # At steady state AUCTAU (AUC from 0 to tau) is the primary exposure
       # parameter; AUC to infinity has no meaning during repeated dosing.
       default <- if (isTRUE(input$is_ss)) {
@@ -361,6 +366,7 @@ path_be_server <- function(id, shared) {
       } else {
         intersect(c("CMAX","AUCLST","AUCIFO"), available)
       }
+      default <- c(default, pauc_params)
       updateCheckboxGroupInput(session, "be_params",
                                choiceNames = unname(sapply(available, friendly_name)),
                                choiceValues = available,
@@ -376,6 +382,25 @@ path_be_server <- function(id, shared) {
     # have changed since (and which never held the per-subject dose vector).
     be_run_settings <- reactiveVal(NULL)
     be_nca_settings <- reactiveVal(NULL)   # NCA settings of the last run (for recalculation)
+    pauc_spec  <- partial_auc_server("pauc", show_role = TRUE)
+    pauc_notes <- reactiveVal(character(0))
+
+    # Offer (and select) the interval metrics as soon as the intervals are
+    # valid, so the first run already compares them
+    observeEvent(pauc_spec(), {
+      spec <- pauc_spec()
+      new <- if (is.null(spec) || !is.null(validate_partial_aucs(spec))) character(0) else {
+        nm <- partial_auc_names(spec)
+        unlist(lapply(seq_len(nrow(spec)), function(i) c(nm$auc[i], if (spec$cmax[i]) nm$cmax[i])))
+      }
+      r <- isolate(be_nca_result())
+      base <- if (is.null(r)) c("CMAX", "AUCLST", "AUCIFO", "TMAX", "LAMZHL") else
+        intersect(c("CMAX", "AUCTAU", "AUCLST", "AUCIFO", "AUCIFP", "TMAX", "LAMZHL"), names(r))
+      updateCheckboxGroupInput(session, "be_params",
+                               choiceNames = unname(sapply(c(base, new), friendly_name)),
+                               choiceValues = c(base, new),
+                               selected = union(intersect(isolate(input$be_params), base), new))
+    }, ignoreNULL = FALSE, ignoreInit = TRUE)
     
     observeEvent(input$run_be, {
       req(shared$pk_data, shared$col_map, shared$col_map$treatment)
@@ -432,6 +457,11 @@ path_be_server <- function(id, shared) {
                          type = "error", duration = 8)
         return()
       }
+      pauc_err <- validate_partial_aucs(pauc_spec(), isTRUE(input$is_ss), input$tau)
+      if (!is.null(pauc_err)) {
+        showNotification(pauc_err, type = "error", duration = 10)
+        return()
+      }
       withProgress(message = "Step 1: Running NCA...", value = 0.3, {
         
         # Run NCA
@@ -445,7 +475,7 @@ path_be_server <- function(id, shared) {
           conc_unit = input$conc_unit,
           trap_method = input$trap_method,
           r2adj_threshold = input$r2adj_be,
-          mw = input$mw, partial_aucs = NULL
+          mw = input$mw, partial_aucs = pauc_spec()
         )
         
         # Units drive a real conversion factor for CL/F and Vz/F inside NonCompart,
@@ -487,6 +517,11 @@ path_be_server <- function(id, shared) {
           return()
         }
         
+        is_pauc <- startsWith(nca_warnings_be, "Partial AUC")
+        pauc_notes(nca_warnings_be[is_pauc])
+        nca_warnings_be <- nca_warnings_be[!is_pauc]
+        if (any(is_pauc))
+          showNotification("Partial AUCs: see the notes above the results.", type = "warning", duration = 8)
         if (length(nca_warnings_be) > 0) {
           showNotification(
             paste0("Note: ", paste(nca_warnings_be, collapse = "; ")),
@@ -496,6 +531,7 @@ path_be_server <- function(id, shared) {
         be_nca_result(nca_res)
         be_nca_settings(settings)
         shared$nca_results <- nca_res
+        shared$partial_aucs <- settings$partial_aucs
         gc()  # Free NCA intermediates before BE analysis
         
         setProgress(0.5, message = "Step 2: Running BE analysis...")
@@ -618,7 +654,12 @@ path_be_server <- function(id, shared) {
 
         # Unit of an untransformed difference (TMAX, or any parameter when the
         # log-transform is off), so the table never presents it as a ratio.
+        pauc_names <- if (is.null(settings$partial_aucs)) NULL else partial_auc_names(settings$partial_aucs)
+        supportive <- if (is.null(pauc_names)) character(0) else
+          unlist(pauc_names[settings$partial_aucs$role == "supportive", c("auc", "cmax")])
         diff_unit_for <- function(param) {
+          if (startsWith(param, "AUC_")) return(paste0(input$conc_unit, "\u00B7", input$time_unit))
+          if (startsWith(param, "CMAX_")) return(input$conc_unit)
           switch(param,
                  TMAX = , LAMZHL = input$time_unit,
                  CMAX = input$conc_unit,
@@ -640,7 +681,8 @@ path_be_server <- function(id, shared) {
             be_lower      = input$be_lower,
             be_upper      = input$be_upper,
             pe_constraint = !identical(input$pe_constraint, FALSE),
-            diff_unit     = diff_unit_for(param))
+            diff_unit     = diff_unit_for(param),
+            verdict       = !param %in% supportive)
           if (!is.na(fit_out$row$Model) && grepl("mixed model failed", fit_out$row$Model)) {
             showNotification(paste0(friendly_name(param), ": the mixed model could not be fitted; ",
                                     "fixed effects were used instead. See the Model column in the downloads."),
@@ -662,6 +704,8 @@ path_be_server <- function(id, shared) {
         cv_rows <- list()
         if (isTRUE(input$log_transform)) {
           for (param in setdiff(params, c("TMAX", BE_NO_VERDICT_PARAMS))) {
+            # No log-scale variability with zero values (see fit_be_parameter)
+            if (any(as.numeric(be_data[[param]]) == 0, na.rm = TRUE)) next
             cv_rows[[param]] <- tryCatch(
               be_variability_diagnostic(be_data, param, trt_col = trt_col_be,
                                         subj_col = subj_col_be, per_col = per_col,
@@ -816,6 +860,11 @@ path_be_server <- function(id, shared) {
       )
     })
 
+    output$pauc_note <- renderUI({
+      req(be_result())
+      partial_auc_notes_ui(pauc_notes())
+    })
+
     # Steady-state note — shown in results area when SS is active
     output$ss_note <- renderUI({
       if (!isTRUE(input$is_ss) || is.null(be_result())) return(NULL)
@@ -962,6 +1011,7 @@ path_be_server <- function(id, shared) {
             "Half-Life (h)", "Apparent Clearance (CL/F)",
             "Apparent Volume (Vz/F)", "Adjusted R-squared"),
           names(display_nca))
+        key_cols <- c(key_cols, unname(friendly_name(partial_auc_cols(names(be_nca_result())))))
         display_nca <- display_nca[, key_cols, drop = FALSE]
       }
       

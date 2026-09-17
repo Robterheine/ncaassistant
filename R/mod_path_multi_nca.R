@@ -96,6 +96,8 @@ path_multi_nca_ui <- function(id) {
                             FALSE)
             )
           ),
+
+          partial_auc_ui(ns("pauc")),
           
           hr(),
           actionButton(ns("run_nca"), "Run Analysis on All Subjects",
@@ -107,6 +109,7 @@ path_multi_nca_ui <- function(id) {
         tagList(
           uiOutput(ns("result_status")),
           uiOutput(ns("excl_note")),
+          uiOutput(ns("pauc_note")),
           
           navset_card_tab(
             title = "Results",
@@ -296,6 +299,8 @@ path_multi_nca_server <- function(id, shared) {
     
     nca_result    <- reactiveVal(NULL)
     nca_excl_note <- reactiveVal(NULL)  # persists degenerate-profile exclusion warnings
+    pauc_spec     <- partial_auc_server("pauc")
+    pauc_notes    <- reactiveVal(character(0))
     
     # Run NCA
     observeEvent(input$run_nca, {
@@ -325,6 +330,11 @@ path_multi_nca_server <- function(id, shared) {
                          type = "error", duration = 8)
         return()
       }
+      pauc_err <- validate_partial_aucs(pauc_spec(), isTRUE(input$is_ss), input$tau)
+      if (!is.null(pauc_err)) {
+        showNotification(pauc_err, type = "error", duration = 10)
+        return()
+      }
       settings <- list(
         admin_route       = input$admin_route,
         dose              = if (use_data_dose) NA else input$dose,
@@ -338,7 +348,7 @@ path_multi_nca_server <- function(id, shared) {
         trap_method       = input$trap_method,
         r2adj_threshold   = input$r2adj,
         mw = input$mw,
-        partial_aucs = NULL
+        partial_aucs = pauc_spec()
       )
       
       # Units drive a real conversion factor for CL/F and Vz/F inside NonCompart,
@@ -383,6 +393,13 @@ path_multi_nca_server <- function(id, shared) {
           return()
         }
         
+        # Partial AUC notes have their own alert
+        is_pauc <- startsWith(nca_warnings, "Partial AUC")
+        pauc_notes(nca_warnings[is_pauc])
+        nca_warnings <- nca_warnings[!is_pauc]
+        if (any(is_pauc))
+          showNotification("Partial AUCs: see the notes above the results.", type = "warning", duration = 8)
+
         # Store and surface any degenerate-profile exclusions
         if (length(nca_warnings) > 0) {
           nca_excl_note(nca_warnings)  # persists as alert in results panel
@@ -401,6 +418,7 @@ path_multi_nca_server <- function(id, shared) {
         nca_result(result)
         shared$nca_results  <- result
         shared$nca_settings <- settings
+        shared$partial_aucs <- settings$partial_aucs
         gc()  # Free NCA intermediates
       })
       
@@ -442,6 +460,11 @@ path_multi_nca_server <- function(id, shared) {
                   "These profiles had fewer than 2 positive concentration values (no meaningful NCA output possible). ",
                   "Check the raw data for these subjects/treatments.")
       )
+    })
+
+    output$pauc_note <- renderUI({
+      req(nca_result())
+      partial_auc_notes_ui(pauc_notes())
     })
 
     output$result_status <- renderUI({
@@ -515,6 +538,7 @@ path_multi_nca_server <- function(id, shared) {
               "Apparent Volume (Vz/F)", "Adjusted R-squared"),
             names(display_df))
         }
+        key_cols <- c(key_cols, unname(friendly_name(partial_auc_cols(names(nca_result())))))
         display_df <- display_df[, key_cols, drop = FALSE]
       }
       # Append units to parameter column headers. This must follow the column
@@ -582,6 +606,7 @@ path_multi_nca_server <- function(id, shared) {
       } else {
         key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","LAMZ","CLFO","VZFO"), names(r))
       }
+      key <- c(key, partial_auc_cols(names(r)))
       if (length(key) == 0) return(NULL)
       group <- if ("Treatment" %in% names(r)) "Treatment" else NULL
       summ <- summarize_pk_params(r, key, group_col = group)
@@ -843,7 +868,8 @@ path_multi_nca_server <- function(id, shared) {
         r <- nca_result()
         add_cdisc_code_sheet(wb, names(r)[vapply(r, is.numeric, logical(1))],
                              input$admin_route, isTRUE(input$is_ss))
-        key <- intersect(if (isTRUE(input$is_ss)) c("CMAX","TMAX","AUCTAU","CAVG","CMIN_SS","FLUCTP","LAMZHL","CLFO") else c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r))
+        key <- c(intersect(if (isTRUE(input$is_ss)) c("CMAX","TMAX","AUCTAU","CAVG","CMIN_SS","FLUCTP","LAMZHL","CLFO") else c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r)),
+                 partial_auc_cols(names(r)))
         if (length(key)>0) {
           addWorksheet(wb, "Summary_Statistics")
           writeData(wb, "Summary_Statistics", rename_summary_columns(summarize_pk_params(r, key, group_col = if ("Treatment" %in% names(r)) "Treatment" else NULL)))
@@ -875,7 +901,8 @@ path_multi_nca_server <- function(id, shared) {
         
         withProgress(message = "Generating analysis record...", value = 0.3, {
           r <- nca_result()
-          key <- intersect(if (isTRUE(input$is_ss)) c("CMAX","TMAX","AUCTAU","CAVG","CMIN_SS","FLUCTP","LAMZHL","CLFO") else c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r))
+          key <- c(intersect(if (isTRUE(input$is_ss)) c("CMAX","TMAX","AUCTAU","CAVG","CMIN_SS","FLUCTP","LAMZHL","CLFO") else c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r)),
+                   partial_auc_cols(names(r)))
           summ <- if (length(key) > 0) summarize_pk_params(r, key, group_col = if ("Treatment" %in% names(r)) "Treatment" else NULL) else NULL
           
           settings <- shared$nca_settings

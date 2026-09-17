@@ -242,6 +242,31 @@ help_steady_state <- info_btn("help_steady_state", "When is data 'steady-state'?
   for example 12 h for twice-daily dosing. The app then calculates AUCτ (AUC from 0 to τ), 
   average concentration, fluctuation and swing, and clearance from AUCτ.")
 
+help_partial_auc <- info_btn("help_partial_auc", "What is a partial AUC?",
+  "A <b>partial AUC</b> is the area under the curve over part of the profile, for
+  example the first 30 minutes (AUC 0&ndash;0.5 h), or from 4 h to the last measurable
+  concentration (AUC 4 h&ndash;t). It shows whether two products give the same exposure
+  early or late, even when Cmax and total AUC agree.
+  <br><br>
+  <b>Where the times come from:</b> the protocol, or the product-specific guidance for
+  the drug. Do not pick them after looking at the data.
+  <br><br>
+  <b>End at t:</b> the interval runs to each profile's last measurable concentration.
+  <br><br>
+  <b>Cutoff between samples:</b> the concentration at that time is interpolated with
+  the trapezoidal method you chose, so the result depends on that choice. Sample at
+  the cutoff times when you can.
+  <br><br>
+  <b>After the last measurable concentration:</b> the app does not extrapolate. A
+  partial AUC that would need data after that point is left empty.
+  <br><br>
+  <b>Zero:</b> an early interval with only BLQ samples can be 0. A zero cannot be
+  log-transformed, so bioequivalence gives no result for that interval.
+  <br><br>
+  <b>Pivotal or supportive:</b> in bioequivalence, a pivotal partial AUC gets a
+  verdict against the acceptance limits; a supportive one is shown with its ratio and
+  confidence interval only.")
+
 help_dose_norm <- info_btn("help_dose_norm", "What is dose normalization?",
   "Dose normalization divides PK parameters (like Cmax and AUC) by the dose.
   <br><br>

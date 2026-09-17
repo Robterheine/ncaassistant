@@ -127,6 +127,8 @@ path_single_nca_ui <- function(id) {
         )
       ),
       
+      partial_auc_ui(ns("pauc")),
+
       # Profile navigator (uploaded mode, multiple profiles only)
       uiOutput(ns("navigator")),
       
@@ -379,7 +381,7 @@ path_single_nca_server <- function(id, shared) {
         sub_t <- suppressWarnings(as.numeric(as.character(sub_d[[cm$time]])))
         sub_c <- suppressWarnings(as.numeric(as.character(sub_d[[cm$conc]])))
         ord <- order(sub_t)
-        list(time = sub_t[ord], conc = sub_c[ord], label = sel)
+        list(time = sub_t[ord], conc = sub_c[ord], label = sel, is_blq = sub_d$.is_blq[ord])
       }
     })
     
@@ -405,6 +407,8 @@ path_single_nca_server <- function(id, shared) {
     
     # NCA
     nca_res <- reactiveVal(NULL)
+    pauc_spec <- partial_auc_server("pauc")
+    pauc_notes <- reactiveVal(character(0))
     # NCA settings from the inputs, in the shape run_single_nca() expects
     single_settings <- function() {
       list(admin_route = input$admin_route,
@@ -413,7 +417,8 @@ path_single_nca_server <- function(id, shared) {
            is_steady_state = isTRUE(input$is_ss), tau = input$tau,
            dose_unit = input$dose_unit, time_unit = input$time_unit, conc_unit = input$conc_unit,
            trap_method = input$trap_method, r2adj_threshold = input$r2adj,
-           mw = if (is.null(input$mw) || is.na(input$mw)) 0 else input$mw)
+           mw = if (is.null(input$mw) || is.na(input$mw)) 0 else input$mw,
+           partial_aucs = pauc_spec())
     }
     observeEvent(input$run_nca, {
       local$lz_override <- NULL  # reset manual override on fresh NCA
@@ -443,9 +448,25 @@ path_single_nca_server <- function(id, shared) {
                          type = "error", duration = 8)
         return()
       }
+      pauc_err <- validate_partial_aucs(pauc_spec(), isTRUE(input$is_ss), input$tau)
+      if (!is.null(pauc_err)) {
+        showNotification(pauc_err, type = "error", duration = 10)
+        return()
+      }
       settings <- single_settings()
-      r <- tryCatch(run_single_nca(t_num, c_num, settings),
+      notes <- character(0)
+      r <- tryCatch(withCallingHandlers(run_single_nca(t_num, c_num, settings, is_blq = d$is_blq),
+                                        warning = function(w) {
+                                          if (startsWith(conditionMessage(w), "Partial AUC")) {
+                                            notes <<- c(notes, conditionMessage(w))
+                                            invokeRestart("muffleWarning")
+                                          }
+                                        }),
                      error = function(e) { showNotification(paste("Error:", e$message), type="error"); NULL })
+      pauc_notes(notes)
+      if (length(notes) > 0)
+        showNotification("Partial AUCs: see the notes under the PK parameters.", type = "warning", duration = 8)
+      shared$partial_aucs <- settings$partial_aucs
       
       if (!is.null(r) && below_r2_threshold(r["R2ADJ"], input$r2adj)) {
         showNotification(paste0("Adjusted R\u00b2 of the terminal fit (", signif(as.numeric(r["R2ADJ"]), 3),
@@ -526,8 +547,12 @@ path_single_nca_server <- function(id, shared) {
         )
       }
       
-      tags$table(class = "table table-sm table-borderless",
-                 style = "font-size: 0.85rem;", rows)
+      for (p in partial_auc_cols(names(r)))
+        rows <- tagList(rows, tags$tr(tags$td(paste0(friendly_name(p), ":")), tags$td(tags$strong(sg(p)))))
+
+      tagList(tags$table(class = "table table-sm table-borderless",
+                         style = "font-size: 0.85rem;", rows),
+              partial_auc_notes_ui(pauc_notes()))
     })
     
     # Lambda Z
@@ -651,7 +676,8 @@ path_single_nca_server <- function(id, shared) {
       if (!is.null(nca_res())) {
         t_num <- suppressWarnings(as.numeric(as.character(d$time)))
         c_num <- suppressWarnings(as.numeric(as.character(d$conc)))
-        r <- tryCatch(run_single_nca(t_num, c_num, single_settings(), time_used = t_sel),
+        r <- tryCatch(suppressWarnings(run_single_nca(t_num, c_num, single_settings(), time_used = t_sel,
+                                                      is_blq = d$is_blq)),
                       error = function(e) NULL)
         if (!is.null(r)) {
           nca_res(r)

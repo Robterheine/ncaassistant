@@ -3219,6 +3219,26 @@ check("PAUC-16", "Plain-language labels, units and the CDISC code AUCINT with th
   "URS-UI-01, URS-GEN-06", critical = FALSE, method = "friendly_name, add_units_to_labels, cdisc_pk_codes",
   expected = "labels with en dash and units; AUCINT with PPSTINT/PPENINT; no code for Cmax in an interval")
 
+check("PAUC-17", "Figures shade the partial AUC intervals, also in the Figure Record",
+  tryCatch({
+    iv <- pa_iv(c(0, 4), c("1.5", "t"))
+    sh <- partial_auc_shading(iv, 36, c(2, NA, 8, 0.5))
+    f <- file.path(tempdir(), "pauc_fig.csv"); write.csv(pa_be, f, row.names = FALSE)
+    p <- ggplot2::ggplot(pa_be, ggplot2::aes(Time, Conc)) + ggplot2::geom_point()
+    zp <- file.path(tempdir(), "pauc_fig.zip")
+    create_viz_record(zp, p, list(plot_type = "summary", summary_statistic = "geomean", export_format = "png",
+                                  dpi = 72, shade_partial_aucs = iv),
+                      pa_be_cm, f, "pauc_fig.csv", blq_rule = "rule1", lloq = 0.5)
+    ex <- rec_unzip(zp)
+    scr <- paste(readLines(file.path(ex, "reproduce_figure.R"), warn = FALSE), collapse = "\n")
+    identical(sh$xmin, c(0, 4)) && identical(sh$xmax, c(1.5, 36)) && all(sh$ymin == 0) && all(sh$ymax == 8) &&
+      all(partial_auc_shading(iv, 36, c(0, 2, 8), log = TRUE)$ymin == 2) && is.null(partial_auc_shading(NULL, 36, 1)) &&
+      grepl("partial_auc_shading(rec$visualization$shade_partial_aucs", scr, fixed = TRUE) &&
+      grepl("Result: FIGURE CREATED", rec_check_text(ex))
+  }, error = function(e) FALSE),
+  "URS-VIZ-08", critical = FALSE, method = "partial_auc_shading(); summary figure record with two shaded intervals",
+  expected = "0-1.5 and 4-36 (t drawn to the last time); script shades them; figure produced")
+
 end_section("PAUC")
 
 # =============================================================================

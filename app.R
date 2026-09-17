@@ -59,6 +59,7 @@ source("R/export_record.R")
 source("R/designs.R")
 source("R/be_analysis.R")
 source("R/help_system.R")
+source("R/mod_partial_auc.R")
 source("R/mod_data_upload.R")
 source("R/mod_path_power.R")
 source("R/mod_path_data.R")
@@ -179,7 +180,9 @@ server <- function(input, output, session) {
     # NCA results (from batch or single-subject)
     nca_results  = NULL,
     nca_settings = NULL,
-    
+    # Partial AUC intervals of the last analysis (shaded in Visualize Data)
+    partial_aucs = NULL,
+
     # BE results
     be_results   = NULL,
     

@@ -730,6 +730,20 @@ partial_auc_profile <- function(r, spec, time, conc, is_blq = NULL) {
   c(list(values = values), flags)
 }
 
+#' Time ranges of partial AUC intervals, for shading a mean profile figure
+#'
+#' An end at the last measurable concentration differs per profile; on a mean
+#' figure it is drawn to the last time shown. The height covers the plotted
+#' values y (interactive plots cannot draw infinite rectangles).
+partial_auc_shading <- function(spec, t_max, y, log = FALSE) {
+  spec <- partial_auc_spec(spec)
+  if (is.null(spec)) return(NULL)
+  y <- y[is.finite(y) & (!log | y > 0)]
+  data.frame(xmin = spec$start,
+             xmax = ifelse(spec$end == "t", t_max, suppressWarnings(as.numeric(spec$end))),
+             ymin = if (log) min(y) else min(0, y), ymax = max(y))
+}
+
 #' User-facing notes about partial AUCs across profiles
 #' @param flags list per profile of partial_auc_profile() results
 #' @param labels Profile label per element of flags
@@ -739,7 +753,9 @@ partial_auc_notes <- function(spec, flags, labels, trap_method = "linear") {
   who <- function(f, i) {
     hit <- labels[vapply(flags, function(p) isTRUE(p[[f]][i]), logical(1))]
     if (length(hit) == 0) return(NULL)
-    paste0(length(hit), " profile(s): ", paste(head(hit, 5), collapse = ", "), if (length(hit) > 5) " ..." else "")
+    if (length(flags) == 1) return("this profile")
+    paste0(length(hit), " profile(s): ", paste(head(hit, 5), collapse = ", "),
+           if (length(hit) > 5) paste0(" and ", length(hit) - 5, " more") else "")
   }
   lab <- paste0("Partial AUC ", .pauc_num(spec$start), "–", spec$end)
   interp <- if (identical(trap_method, "log")) "linearly while concentrations rise and log-linearly while they fall" else "linearly"

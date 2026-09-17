@@ -139,6 +139,7 @@ generate_summary_html <- function(settings, col_map, file_name, file_hash,
   )
   
   trap_desc <- if (settings$trap_method == "log") "Linear-up / Log-down" else "Linear"
+  pauc <- partial_auc_spec(settings$partial_aucs)
   
   paste0('<!DOCTYPE html>
 <html lang="en">
@@ -217,7 +218,12 @@ if (settings$admin_route == "iv_infusion")
   paste0('<tr><th>Infusion duration</th><td>', settings$infusion_duration, ' ', settings$time_unit, '</td></tr>') else "",
 '<tr><th>Dose</th><td>', if (length(settings$dose) > 1) paste(unique(settings$dose), collapse=", ") else settings$dose,
   ' ', settings$dose_unit, if (length(settings$dose) > 1) " (per profile, from the Dose column)" else "", '</td></tr>
-<tr><th>Steady state</th><td>', if (settings$is_steady_state) "Yes" else "No", '</td></tr>
+<tr><th>Steady state</th><td>', if (settings$is_steady_state) "Yes" else "No", '</td></tr>',
+if (!is.null(pauc)) paste0('<tr><th>Partial AUC intervals</th><td>',
+  paste(htmltools::htmlEscape(paste0(.pauc_num(pauc$start), "\u2013", pauc$end, " ", settings$time_unit,
+    ifelse(pauc$cmax, " (with Cmax and Tmax)", ""),
+    if (identical(analysis_type, "Bioequivalence")) paste0(", ", pauc$role) else "")), collapse = "<br>"),
+  '</td></tr>') else "", ' 
 <tr><th>Trapezoidal method</th><td>', trap_desc, '</td></tr>
 <tr><th>Min R&sup2; for half-life</th><td>', settings$r2adj_threshold, '</td></tr>
 <tr><th>BLQ handling</th><td>', blq_desc, '</td></tr>
@@ -254,6 +260,17 @@ paste0('<p>Steady-state analysis with a dosing interval &tau; = ', settings$tau,
 '. AUC<sub>&tau;</sub> is the AUC from 0 to &tau; (interpolated between samples, extrapolated with
 &lambda;<sub>z</sub> beyond the last sample). Clearance and volume were calculated from AUC<sub>&tau;</sub>;
 C<sub>avg</sub> = AUC<sub>&tau;</sub>/&tau;.</p>') else "",
+if (!is.null(pauc)) paste0('<p>Partial AUCs were calculated over the intervals in section 3, with the
+same trapezoidal method as AUC<sub>0&ndash;t</sub>. An interval ending at t ends at the last measurable
+concentration of each profile, and its partial AUC is AUC<sub>0&ndash;t</sub> minus the AUC from 0 to the
+start. At a cutoff between two samples the concentration was interpolated. Partial AUCs were not
+extrapolated: when an interval reaches beyond the last measurable concentration, no value is reported.',
+if (identical(analysis_type, "Bioequivalence")) ' In the bioequivalence analysis partial AUCs were
+analysed with the same model as the other metrics. Pivotal intervals received a verdict; supportive
+intervals a ratio and confidence interval only. A metric with a value of zero in any profile received no
+estimate and no verdict, because zero cannot be log-transformed.' else "",
+' The intervals are recorded as entered. The app cannot check that they were pre-specified in the
+protocol.</p>') else "",
 if (lloq > 0) paste0('<p>Concentrations below the LLOQ (', lloq, ' ', settings$conc_unit,
   ') were handled using ', blq_desc, '.</p>') else "",
 '
@@ -1141,8 +1158,8 @@ y_label <- "Dose-normalized concentration (C/Dose)"
     stat_code <- if (summary_st == "geomean") {
 '# Geometric mean multiplied/divided by the geometric SD (positive concentrations only)
 summ <- d[!is.na(d$.conc) & d$.conc > 0, ]
-summ <- summ %>%
-  dplyr::group_by(dplyr::across(dplyr::all_of(grp_cols))) %>%
+summ <- summ |>
+  dplyr::group_by(dplyr::across(dplyr::all_of(grp_cols))) |>
   dplyr::summarise(
     .gm  = exp(mean(log(.conc))),
     .gcv = sqrt(exp(stats::var(log(.conc))) - 1) * 100,
@@ -1153,8 +1170,8 @@ summ <- summ %>%
 '
     } else {
 '# Arithmetic mean +/- SD
-summ <- d[!is.na(d$.conc), ] %>%
-  dplyr::group_by(dplyr::across(dplyr::all_of(grp_cols))) %>%
+summ <- d[!is.na(d$.conc), ] |>
+  dplyr::group_by(dplyr::across(dplyr::all_of(grp_cols))) |>
   dplyr::summarise(
     .y  = mean(.conc),
     .lo = mean(.conc) - stats::sd(.conc),
@@ -1173,7 +1190,13 @@ p <- ggplot2::ggplot(summ, ggplot2::aes(x = .time, y = .y',
   ggplot2::geom_point() +
   ggplot2::geom_errorbar(ggplot2::aes(ymin = .lo, ymax = .hi), width = 0) +
   ggplot2::labs(x = "Time", y = y_label)
-')
+', if (!is.null(partial_auc_spec(vs$shade_partial_aucs))) paste0('
+# Shaded partial AUC intervals (an end at t is drawn to the last time shown)
+iv <- partial_auc_shading(rec$visualization$shade_partial_aucs, max(summ$.time, na.rm = TRUE),
+                          c(summ$.lo, summ$.hi, summ$.y), log = ', identical(y_scale, "log"), ')
+p$layers <- c(ggplot2::annotate("rect", xmin = iv$xmin, xmax = iv$xmax, ymin = iv$ymin, ymax = iv$ymax,
+                                fill = "grey50", alpha = 0.15), p$layers)
+') else "")
   } else {
     paste0(
 'p <- ggplot2::ggplot(d, ggplot2::aes(x = .time, y = .conc,

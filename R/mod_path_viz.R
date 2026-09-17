@@ -120,7 +120,8 @@ path_viz_ui <- function(id) {
                   options = list(dropdownParent = "body")
                 ),
                 checkboxInput(ns("show_points_summary"),
-                              "Overlay individual observations", value = FALSE)
+                              "Overlay individual observations", value = FALSE),
+                uiOutput(ns("shade_pauc_ui"))
               ),
 
               # Dose normalisation (only when Dose column is mapped)
@@ -543,7 +544,12 @@ path_viz_server <- function(id, shared) {
         stat_desc, ". Error bars represent the geometric standard deviation ",
         "(geometric mean \u00d7\u00f7 geometric SD on the log scale).",
         trt_sent, replicate_sent, blq_sent,
-        " The Y-axis uses a ", scale_desc, " scale."
+        " The Y-axis uses a ", scale_desc, " scale.",
+        if (!is.null(shade_spec())) {
+          sh <- partial_auc_spec(shade_spec())
+          paste0(" Shaded areas: partial AUC intervals (",
+                 paste0(.pauc_num(sh$start), "–", sh$end, collapse = ", "), ").")
+        }
       )
 
       legend_txt <- switch(pt,
@@ -790,6 +796,12 @@ path_viz_server <- function(id, shared) {
                      colour = col1, fill = "white")
       }
 
+      iv <- partial_auc_shading(shade_spec(), max(summ$.time, na.rm = TRUE),
+                                c(summ$.lo, summ$.hi, summ$.center), log = isTRUE(input$y_scale == "log"))
+      if (!is.null(iv))
+        p$layers <- c(annotate("rect", xmin = iv$xmin, xmax = iv$xmax, ymin = iv$ymin, ymax = iv$ymax,
+                               fill = "grey50", alpha = 0.15), p$layers)
+
       p <- p + labs(x = x_lab, y = y_lab,
                     title   = if (nzchar(title_txt)) title_txt else NULL,
                     caption = caption_txt)
@@ -802,6 +814,13 @@ path_viz_server <- function(id, shared) {
       }
       apply_theme(p, theme_name, base_sz)
     })
+
+    # Partial AUC intervals of the last NCA or bioequivalence analysis
+    output$shade_pauc_ui <- renderUI({
+      req(shared$partial_aucs)
+      checkboxInput(ns("shade_pauc"), "Shade the partial AUC intervals of the last analysis", FALSE)
+    })
+    shade_spec <- function() if (isTRUE(input$shade_pauc)) shared$partial_aucs else NULL
 
     # ---- Track first successful render ------------------------------------
     plot_rendered <- reactiveVal(FALSE)
@@ -996,7 +1015,8 @@ path_viz_server <- function(id, shared) {
             figure_height_in  = as.numeric(input$export_height %||% 5),
             dpi               = as.integer(input$export_dpi    %||% 300),
             export_format     = input$export_format  %||% "png",
-            blq_excluded_n    = blq_n_summary()
+            blq_excluded_n    = blq_n_summary(),
+            shade_partial_aucs = shade_spec()
           )
 
           setProgress(0.7, message = "Building record...")
@@ -1037,7 +1057,8 @@ path_viz_server <- function(id, shared) {
         figure_height_in  = as.numeric(input$export_height %||% 5),
         dpi               = as.integer(input$export_dpi    %||% 300),
         export_format     = input$export_format  %||% "png",
-        blq_excluded_n    = blq_n_summary()
+        blq_excluded_n    = blq_n_summary(),
+        shade_partial_aucs = shade_spec()
       )
     })
 
