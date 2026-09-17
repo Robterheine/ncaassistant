@@ -11,7 +11,7 @@ refusals that look like omissions.
 
 | Part | Workstream | Status |
 |---|---|---|
-| **A** (§1–9) | CDISC / SDTM interoperability | Phase 0 shipped in v1.3.0 (`58d6f5b`). Phases 1–5 pending. |
+| **A** (§1–9) | CDISC / SDTM interoperability | Phase 0 shipped in v1.3.0 (`58d6f5b`). **Phase 1 shipped** (`a840a59`, `e043870`, `e5d05a5`; see §4.1). Phases 2–5 pending. |
 | **B** (§10–15) | Bioequivalence design coverage — replicate designs | Reviewed and decided. **This is the next version.** Verified against the code on 2026-09-17 (§10.5). **Tier 0 and B1–B6 shipped** (Tier 0: `a85936b`, `7faf9bf`, `5a73794`; Part B: `0ad844b`, `138ea3d`, `e277f37`, `37a2a12`, `c47dbfc`, `193da3d`). README and user manual update pending. |
 
 The two interact: Part B's implementation is cheaper and cleaner if Part A's
@@ -226,6 +226,39 @@ callable from `validation.R` without brace-counting; the record zip contains a
 hashed `nca_pipeline.R`; `reproduction_check.txt` is present and says MATCH.
 
 ---
+
+### 4.1 Phase 1 implementation record (2026-09-17)
+
+| Step | Commit | Delivered |
+|---|---|---|
+| 1 | `a840a59` | `R/pipeline.R` (Shiny-free): `read_pk_file()`, `auto_detect_columns()`, `blq_text_summary()`, `prepare_pk_dataset()` returning the canonical `pk_dataset`, `dose_by_subject()`, profile key and lookups, `apply_blq_rules()`, `run_nca()`, `detect_study_design()`. Moved code is verbatim; `prepare_pk_dataset()` output is `identical()` to the old observer on 10 golden cases. Upload module is a thin caller and records read arguments. `validation.R` sources the pipeline; brace counting removed. |
+| 2 | `e043870` | Half-life overrides go through NonCompart (`UsePoints`) in all three paths via `run_nca(..., lz_overrides)` / `run_single_nca(..., time_used)`. |
+| 3 | `e5d05a5` | Records ship `nca_pipeline.R` (hashed; fourth manifest entry), a generic reproduction script (41 lines) driven by the settings JSON, and `reproduction_check.txt` produced by running that script at export. Same for single-subject and figure records. |
+
+Validation: 246 → 261 automated checks (DAT-PREP-01..09, NCA-OV-01..06,
+REG-DOSE-04, REC-01..08). All acceptance criteria above are met.
+
+**Defects found and fixed during Phase 1** (all silent unless noted):
+
+| Defect | Effect |
+|---|---|
+| Override set CL/F and Vz/F to dose/AUCinf without NonCompart's unit factor | Off by 1000 for mg with ng/mL after any half-life adjustment |
+| Override did not update IV CL/V (`CLO`, `VZO`), predicted-Clast parameters, or AUCPEO/AUMC/MRT (batch, BE) | Stale values inconsistent with the displayed half-life |
+| Re-running an analysis dropped overrides while the record still listed them | Record claimed adjustments absent from its results |
+| Dose normalisation divided by the per-subject dose vector by position | 22 of 24 `*_DN` values wrong in a 12-subject crossover |
+| Reproduction script omitted MW; comparison skipped values missing on one side | Molar-unit records reported MATCH although CL/F and Vz/F were not reproduced |
+| Reproduction script ignored the upload's separator/decimal mark | Script failed for such files |
+| Figure script plotted raw data | BLQ handling used by the app not reproduced |
+| Batch parameter table selected default columns after appending units (loud: visible) | Cmax, AUC, half-life, CL/F, Vz/F missing from the default view; "Half-Life (h) (h)" |
+| Single-subject record in manual-entry mode labelled as uploaded file | Reproduction would read the wrong data |
+| `PIPELINE_SHA256` defined in `app.R`'s environment (caught in the app, loud) | Upload failed with "object not found" |
+
+**Carried to Phase 2 (not fixed):** a concentration column that uses a decimal
+comma *and* contains BLQ text is read as text, so values such as `"3,5"`
+become missing. The quality check reports it as unrecognised text (loud), but
+the recommended fix — converting decimal commas in character concentration
+columns inside `prepare_pk_dataset()` — changes results for existing files and
+belongs with the interlocks.
 
 ### Phase 2 — Interlocks as a library (3–4 days)
 
