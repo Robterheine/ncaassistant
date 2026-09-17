@@ -1535,6 +1535,36 @@ check("REP-REP-02", "Replicate record: a half-life override is replayed on the r
   method = "override on subject 1, Test, period 3 only; run reproduce_analysis.R",
   expected = "MATCH (override applied to exactly that profile)")
 
+check("REP-HL-01", "Profile labels identify exactly one NCA row per administration",
+  tryCatch({
+    r <- rep_nca(rep_224); labs <- result_profile_labels(r)
+    !anyDuplicated(labs) && all(sapply(labs, function(l) length(profile_result_row(r, l)) == 1)) &&
+      identical(profile_parts(r, "1 | Test | P3"), list(subject = "1", treatment = "Test", period = "3"))
+  }, error = function(e) FALSE),
+  "URS-NCA-12", critical = TRUE,
+  method = "labels on 2x2x4 NCA result", expected = "48 unique labels, each matching one row")
+check("REP-HL-02", "Profile data rows are that administration only, in time order",
+  tryCatch({
+    rows <- profile_data_rows(rep_224, rep_cm, "1 | Test | P3")
+    d <- rep_224[rows, ]
+    nrow(d) == 13 && all(d$Subject == 1 & d$Period == 3 & d$Treatment == "Test") && !is.unsorted(d$Time) &&
+      nrow(data_profiles(rep_224, rep_cm)) == 48 &&
+      identical(data_profiles(rep_224, rep_cm)$label[1:4],
+                c("1 | Reference | P2", "1 | Reference | P4", "1 | Test | P1", "1 | Test | P3"))
+  }, error = function(e) FALSE),
+  "URS-NCA-12", critical = TRUE,
+  method = "profile_data_rows and data_profiles on the 2x2x4 fixture",
+  expected = "13 rows of subject 1, Test, period 3; 48 ordered profiles")
+check("REP-HL-03", "Half-life review code no longer parses profile labels",
+  tryCatch({
+    files <- c("R/mod_path_be.R", "R/mod_path_multi_nca.R", "R/mod_path_single_nca.R")
+    src <- unlist(lapply(files, readLines, warn = FALSE))
+    !any(grepl('strsplit\\((sel|profile)', src))
+  }, error = function(e) FALSE),
+  "URS-NCA-12", critical = FALSE,
+  method = "source inspection of the three analysis modules",
+  expected = "no strsplit() on profile labels (lookups go through profile helpers)")
+
 end_section("REP")
 
 # =============================================================================

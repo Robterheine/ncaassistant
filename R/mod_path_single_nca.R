@@ -197,12 +197,7 @@ path_single_nca_server <- function(id, shared) {
     observeEvent(input$sel_profile, {
       if (!shared$data_ready || is.null(shared$col_map$dose)) return()
       d <- shared$pk_data; cm <- shared$col_map; sel <- input$sel_profile
-      if (grepl(" \\| ", sel)) {
-        parts <- strsplit(sel, " \\| ")[[1]]
-        sub_d <- d[d[[cm$subject]] == trimws(parts[1]), ]
-      } else {
-        sub_d <- d[d[[cm$subject]] == sel, ]
-      }
+      sub_d <- d[profile_data_rows(d, cm, sel), ]
       dose_val <- max(sub_d[[cm$dose]], na.rm = TRUE)
       if (is.finite(dose_val)) {
         updateNumericInput(session, "dose", value = dose_val)
@@ -323,10 +318,8 @@ path_single_nca_server <- function(id, shared) {
       dm <- input$data_mode
       if (is.null(dm) || dm != "uploaded" || !shared$data_ready) return(NULL)
       d <- shared$pk_data; cm <- shared$col_map
-      if (!is.null(cm$treatment))
-        paste(unique(d[, c(cm$subject, cm$treatment)])[[1]], "|",
-              unique(d[, c(cm$subject, cm$treatment)])[[2]])
-      else sort(unique(d[[cm$subject]]))
+      # One entry per profile: subject | treatment | period (as mapped)
+      data_profiles(d, cm)$label
     })
     
     output$navigator <- renderUI({
@@ -370,11 +363,7 @@ path_single_nca_server <- function(id, shared) {
       } else {
         req(shared$pk_data, shared$col_map, input$sel_profile)
         d <- shared$pk_data; cm <- shared$col_map; sel <- input$sel_profile
-        if (grepl(" \\| ", sel)) {
-          parts <- strsplit(sel, " \\| ")[[1]]
-          sub_d <- d[d[[cm$subject]] == trimws(parts[1]) &
-                       d[[cm$treatment]] == trimws(parts[2]), ]
-        } else sub_d <- d[d[[cm$subject]] == sel, ]
+        sub_d <- d[profile_data_rows(d, cm, sel), ]
         # Coerce to numeric BEFORE ordering: a character time column would sort
         # lexicographically ("10" before "2"), producing a non-monotonic profile
         # that NonCompart rejects. Numeric input is unaffected.

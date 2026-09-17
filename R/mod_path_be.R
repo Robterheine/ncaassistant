@@ -940,12 +940,8 @@ path_be_server <- function(id, shared) {
     observe({
       req(be_nca_result())
       r <- be_nca_result()
-      if ("Subject" %in% names(r) && "Treatment" %in% names(r)) {
-        choices <- paste(r$Subject, "|", r$Treatment)
-      } else {
-        choices <- r[[1]]
-      }
-      updateSelectInput(session, "lz_profile", choices = choices)
+      # One entry per profile: subject | treatment | period (as mapped)
+      updateSelectInput(session, "lz_profile", choices = result_profile_labels(r))
     })
     
     # Reset override when profile changes
@@ -955,12 +951,7 @@ path_be_server <- function(id, shared) {
     lz_sub_data <- reactive({
       req(input$lz_profile, shared$pk_data, shared$col_map)
       d <- shared$pk_data; cm <- shared$col_map; sel <- input$lz_profile
-      if (grepl(" \\| ", sel)) {
-        parts <- strsplit(sel, " \\| ")[[1]]
-        sub_d <- d[d[[cm$subject]] == trimws(parts[1]) &
-                     d[[cm$treatment]] == trimws(parts[2]), ]
-      } else { sub_d <- d[d[[cm$subject]] == sel, ] }
-      sub_d <- sub_d[order(sub_d[[cm$time]]), ]
+      sub_d <- d[profile_data_rows(d, cm, sel), ]
       list(time = sub_d[[cm$time]], conc = sub_d[[cm$conc]])
     })
     
@@ -1073,24 +1064,22 @@ path_be_server <- function(id, shared) {
       
       # Log the override for audit trail
       sel <- input$lz_profile
-      lz_state$overrides_log[[sel]] <- list(
-        profile = sel,
+      lz_state$overrides_log[[sel]] <- c(list(
+        profile = sel),
+        # Subject / treatment / period, so the reproduction script can replay
+        # the override on exactly this administration
+        profile_parts(be_nca_result(), sel), list(
         original_lambda_z = if (!is.na(orig_lz$lambda_z)) as.numeric(orig_lz$lambda_z) else NA,
         adjusted_lambda_z = as.numeric(lz_new),
         original_r2adj = if (!is.na(orig_lz$r2adj)) as.numeric(orig_lz$r2adj) else NA,
         adjusted_r2adj = if (!is.na(r2adj)) as.numeric(r2adj) else NA,
         points_used = length(t_sel)
-      )
+      ))
       
       # Update NCA results
       r <- be_nca_result()
       if (!is.null(r)) {
-        if (grepl(" \\| ", sel)) {
-          parts <- strsplit(sel, " \\| ")[[1]]
-          row_idx <- which(r$Subject == trimws(parts[1]) & r$Treatment == trimws(parts[2]))
-        } else {
-          row_idx <- which(r[[1]] == sel)
-        }
+        row_idx <- profile_result_row(r, sel)
         if (length(row_idx) == 1) {
           r$LAMZ[row_idx]    <- lz_new
           r$LAMZHL[row_idx]  <- hl_new

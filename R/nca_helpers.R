@@ -39,6 +39,51 @@ profile_labels <- function(parts) {
   lab
 }
 
+#' Profile labels for an NCA result table, in row order
+#' @param result NCA result with Subject and optionally Treatment, Period
+result_profile_labels <- function(result) {
+  cols <- intersect(c("Subject", "Treatment", "Period"), names(result))
+  if (length(cols) == 0) return(as.character(result[[1]]))
+  profile_labels(result[cols])
+}
+
+#' Unique profiles in an uploaded data set, ordered subject -> treatment -> period
+#' @return data.frame of parts with a `label` column
+data_profiles <- function(data, col_map) {
+  pk <- profile_key(data, col_map)
+  u <- unique(pk$parts)
+  subj_order <- match(u$Subject, unique(as.character(data[[col_map$subject]])))
+  per_num <- if ("Period" %in% names(u)) suppressWarnings(as.numeric(u$Period)) else NULL
+  ord_args <- list(subj_order)
+  if ("Treatment" %in% names(u)) ord_args <- c(ord_args, list(u$Treatment))
+  if ("Period" %in% names(u))
+    ord_args <- c(ord_args, list(if (anyNA(per_num)) u$Period else per_num))
+  u <- u[do.call(order, ord_args), , drop = FALSE]
+  u$label <- profile_labels(u)
+  rownames(u) <- NULL
+  u
+}
+
+#' Rows of the uploaded data belonging to one profile label, in time order
+profile_data_rows <- function(data, col_map, label) {
+  labs <- profile_labels(profile_key(data, col_map)$parts)
+  idx <- which(labs == label)
+  idx[order(suppressWarnings(as.numeric(as.character(data[[col_map$time]][idx]))))]
+}
+
+#' Row index in an NCA result for one profile label (integer(0) if absent)
+profile_result_row <- function(result, label) {
+  which(result_profile_labels(result) == label)
+}
+
+#' Subject / Treatment / Period of a profile label, for audit logs
+profile_parts <- function(result, label) {
+  i <- profile_result_row(result, label)
+  if (length(i) != 1) return(list())
+  cols <- intersect(c("Subject", "Treatment", "Period"), names(result))
+  stats::setNames(lapply(cols, function(cc) as.character(result[[cc]][i])), tolower(cols))
+}
+
 #' Apply BLQ (Below Limit of Quantification) handling rules
 #' 
 #' Implements WinNonlin-compatible BLQ rules:

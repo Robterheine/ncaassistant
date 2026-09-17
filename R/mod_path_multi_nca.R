@@ -150,6 +150,7 @@ path_multi_nca_ui <- function(id) {
                      "Mean, SD, CV%, median, range, geometric mean, and geometric CV% ",
                      "for key PK parameters across all subjects."),
               uiOutput(ns("ss_note")),
+              uiOutput(ns("replicate_note")),
               DTOutput(ns("summary_table")),
               hr(),
               plotlyOutput(ns("boxplot"), height = "350px")
@@ -391,12 +392,8 @@ path_multi_nca_server <- function(id, shared) {
       })
       
       # Update half-life profile selector
-      if ("Subject" %in% names(result) && "Treatment" %in% names(result)) {
-        choices <- paste(result$Subject, "|", result$Treatment)
-      } else {
-        choices <- result[[1]]
-      }
-      updateSelectInput(session, "lz_profile", choices = choices)
+      # One entry per profile: subject | treatment | period (as mapped)
+      updateSelectInput(session, "lz_profile", choices = result_profile_labels(result))
       
       showNotification(paste("NCA complete:", nrow(result), "profiles analyzed."),
                        type = "message")
@@ -534,6 +531,24 @@ path_multi_nca_server <- function(id, shared) {
       dt
     })
     
+    # Replicate designs: a subject contributes more than one profile per
+    # treatment, so the summary pools administrations. Say so, because readers
+    # take N as subjects and geometric CV as between-subject variability.
+    output$replicate_note <- renderUI({
+      req(nca_result())
+      r <- nca_result()
+      if (!all(c("Subject", "Treatment", "Period") %in% names(r))) return(NULL)
+      if (!anyDuplicated(paste(r$Subject, r$Treatment, sep = "||"))) return(NULL)
+      tags$div(
+        class = "alert alert-info py-2 small mb-2",
+        icon("circle-info", class = "me-1"),
+        tags$strong("Replicate design: "),
+        "subjects received a treatment more than once. These statistics pool all ",
+        "administrations: N counts profiles, not subjects, and the geometric CV combines ",
+        "within- and between-subject variability. For within-subject variability of the ",
+        "reference (CV", tags$sub("wR"), "), use the Bioequivalence path.")
+    })
+
     # Summary stats
     output$summary_table <- renderDT({
       req(nca_result())
@@ -644,12 +659,7 @@ path_multi_nca_server <- function(id, shared) {
     lz_sub_data <- reactive({
       req(input$lz_profile, shared$pk_data, shared$col_map)
       d <- shared$pk_data; cm <- shared$col_map; sel <- input$lz_profile
-      if (grepl(" \\| ", sel)) {
-        parts <- strsplit(sel, " \\| ")[[1]]
-        sub_d <- d[d[[cm$subject]] == trimws(parts[1]) &
-                     d[[cm$treatment]] == trimws(parts[2]), ]
-      } else { sub_d <- d[d[[cm$subject]] == sel, ] }
-      sub_d <- sub_d[order(sub_d[[cm$time]]), ]
+      sub_d <- d[profile_data_rows(d, cm, sel), ]
       list(time = sub_d[[cm$time]], conc = sub_d[[cm$conc]])
     })
     
@@ -763,25 +773,23 @@ path_multi_nca_server <- function(id, shared) {
       # Log the override for audit trail
       sel <- input$lz_profile
       orig_lz <- estimate_lambda_z(sd$time, sd$conc, input$r2adj)
-      lz_state$overrides_log[[sel]] <- list(
-        profile = sel,
+      lz_state$overrides_log[[sel]] <- c(list(
+        profile = sel),
+        # Subject / treatment / period, so the reproduction script can replay
+        # the override on exactly this administration
+        profile_parts(nca_result(), sel), list(
         original_lambda_z = if (!is.na(orig_lz$lambda_z)) as.numeric(orig_lz$lambda_z) else NA,
         adjusted_lambda_z = as.numeric(lz_new),
         original_r2adj = if (!is.na(orig_lz$r2adj)) as.numeric(orig_lz$r2adj) else NA,
         adjusted_r2adj = if (!is.na(r2adj)) as.numeric(r2adj) else NA,
         points_used = n_pts
-      )
+      ))
       
       # Update this profile's row in the NCA results table
       r <- nca_result()
       if (!is.null(r)) {
         sel <- input$lz_profile
-        if (grepl(" \\| ", sel)) {
-          parts <- strsplit(sel, " \\| ")[[1]]
-          row_idx <- which(r$Subject == trimws(parts[1]) & r$Treatment == trimws(parts[2]))
-        } else {
-          row_idx <- which(r[[1]] == sel)
-        }
+        row_idx <- profile_result_row(r, sel)
         if (length(row_idx) == 1) {
           r$LAMZ[row_idx]    <- lz_new
           r$LAMZHL[row_idx]  <- hl_new
