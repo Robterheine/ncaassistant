@@ -576,7 +576,6 @@ path_be_server <- function(id, shared) {
         }
         # -------------------------------------------------------------------
 
-        alpha <- 1 - input$ci_level / 100
         ci_results <- list()
         anova_results <- list()
         
@@ -595,135 +594,25 @@ path_be_server <- function(id, shared) {
         }
 
         for (param in params) {
-          vals <- as.numeric(be_data[[param]])
-          if (input$log_transform && param != "TMAX") {
-            vals <- log(vals); vals[!is.finite(vals)] <- NA
-          }
-          be_data$.response <- vals
-          
-          # Guard: if Sequence has only 1 level, drop it (prevents lm() crash)
-          if (!is.null(seq_col) && length(unique(be_data[[seq_col]])) < 2) {
-            seq_col <- NULL
-          }
-          
-          use_mixed <- input$model_type == "mixed" &&
-                       input$be_design != "parallel" &&
-                       input$be_design != "crossover_fixed_order" &&
-                       requireNamespace("nlme", quietly = TRUE)
-          
-          # Build and fit model
-          if (input$be_design == "parallel") {
-            fit <- tryCatch(lm(as.formula(paste(".response ~", trt_col_be)),
-                               data = be_data, na.action = na.exclude), error = function(e) NULL)
-          } else if (input$be_design == "crossover_fixed_order") {
-            # Fixed-order crossover: all subjects received same sequence.
-            # Period and Treatment are confounded. Model: Subject + Treatment only.
-            # Equivalent to a paired t-test on log-transformed parameters.
-            fit <- tryCatch(
-              lm(as.formula(paste(".response ~", subj_col_be, "+", trt_col_be)),
-                 data = be_data, na.action = na.exclude),
-              error = function(e) NULL)
-          } else if (use_mixed) {
-            fixed_terms <- c()
-            if (!is.null(seq_col)) fixed_terms <- c(fixed_terms, seq_col)
-            if (!is.null(per_col)) fixed_terms <- c(fixed_terms, per_col)
-            fixed_terms <- c(fixed_terms, trt_col_be)
-            random_f <- if (!is.null(seq_col)) paste0("~1|",seq_col,"/",subj_col_be) else paste0("~1|",subj_col_be)
-            fit <- tryCatch(
-              nlme::lme(fixed = as.formula(paste(".response~", paste(fixed_terms, collapse="+"))),
-                        random = as.formula(random_f), data = be_data, na.action = na.exclude),
-              error = function(e) {
-                tryCatch(lm(as.formula(paste(".response~", paste(c(fixed_terms, subj_col_be), collapse="+"))),
-                            data = be_data, na.action = na.exclude), error = function(e2) NULL)
-              })
-          } else {
-            terms <- c()
-            if (!is.null(seq_col)) terms <- c(terms, seq_col)
-            terms <- c(terms, subj_col_be)
-            if (!is.null(per_col)) terms <- c(terms, per_col)
-            terms <- c(terms, trt_col_be)
-            fit <- tryCatch(lm(as.formula(paste(".response~", paste(terms, collapse="+"))),
-                               data = be_data, na.action = na.exclude), error = function(e) NULL)
-          }
-          
-          if (is.null(fit)) { ci_results[[param]] <- data.frame(Parameter=param, Point_Est=NA, CI_Lower=NA, CI_Upper=NA, Bioequivalent=NA, stringsAsFactors=FALSE); next }
-          
-          anova_results[[param]] <- tryCatch({
-            if (inherits(fit, "lme")) {
-              # Type III (marginal) SS for lme — order-independent, correct for
-              # unbalanced data. anova.lme with type="marginal" uses Wald F-tests.
-              anova(fit, type = "marginal")
-            } else {
-              # drop1 with F-test gives Type III SS for lm objects.
-              drop1(fit, test = "F")
-            }
-          }, error = function(e) NULL)
-          
-          is_lme <- inherits(fit, "lme")
-          trt_coef_name <- paste0(trt_col_be, trt_levels[2])
-          
-          n1 <- sum(be_data[[trt_col_be]] == trt_levels[1] & !is.na(be_data$.response))
-          n2 <- sum(be_data[[trt_col_be]] == trt_levels[2] & !is.na(be_data$.response))
-          
-          coef_result <- tryCatch({
-            if (is_lme) {
-              coefs <- nlme::fixef(fit); se_tbl <- summary(fit)$tTable; mse <- summary(fit)$sigma^2
-              if (trt_coef_name %in% names(coefs) && !is.na(coefs[trt_coef_name])) {
-                list(diff = coefs[trt_coef_name], se = se_tbl[trt_coef_name,"Std.Error"],
-                     dfe = se_tbl[trt_coef_name,"DF"], mse = mse)
-              } else { NULL }
-            } else {
-              coefs <- coef(fit); mse <- summary(fit)$sigma^2; dfe <- fit$df.residual
-              se_tbl <- summary(fit)$coefficients
-              if (trt_coef_name %in% names(coefs) && !is.na(coefs[trt_coef_name])) {
-                list(diff = coefs[trt_coef_name], se = se_tbl[trt_coef_name,"Std. Error"],
-                     dfe = dfe, mse = mse)
-              } else { NULL }
-            }
-          }, error = function(e) NULL)
-          
-          if (is.null(coef_result)) {
-            # Provide specific guidance based on the likely cause
-            reason <- if (!is.null(seq_col) && length(unique(be_data[[seq_col]])) < 2) {
-              "All subjects have the same sequence \u2014 try selecting 'Fixed-order crossover' as the study design."
-            } else if (!is.null(per_col) && length(unique(be_data[[per_col]])) < 2) {
-              "Only one period found \u2014 try selecting 'Parallel groups' as the study design."
-            } else {
-              "The statistical model could not estimate the treatment effect. Check that the study design selection matches your data."
-            }
+          fit_out <- fit_be_parameter(
+            be_data, param,
+            design        = input$be_design,
+            model_type    = input$model_type,
+            trt_col       = trt_col_be,
+            subj_col      = subj_col_be,
+            per_col       = per_col,
+            seq_col       = seq_col,
+            log_transform = input$log_transform,
+            ci_level      = input$ci_level,
+            be_lower      = input$be_lower,
+            be_upper      = input$be_upper)
+          if (!is.null(fit_out$reason)) {
             showNotification(
-              paste0("Could not compute BE results for ", friendly_name(param), ": ", reason),
+              paste0("Could not compute BE results for ", friendly_name(param), ": ", fit_out$reason),
               type = "error", duration = 12)
-            ci_results[[param]] <- data.frame(
-              Parameter=param, Point_Est=NA, CI_Lower=NA, CI_Upper=NA,
-              Bioequivalent=reason,
-              stringsAsFactors=FALSE)
-            next
           }
-          
-          diff <- coef_result$diff; se_diff <- coef_result$se
-          dfe <- coef_result$dfe; mse <- coef_result$mse
-          
-          t_crit <- qt(1 - alpha/2, dfe)
-          ci_lo <- diff - t_crit * se_diff
-          ci_hi <- diff + t_crit * se_diff
-          
-          if (input$log_transform && param != "TMAX") {
-            pe <- exp(diff)*100; ci_lo_p <- exp(ci_lo)*100; ci_hi_p <- exp(ci_hi)*100
-          } else { pe <- diff; ci_lo_p <- ci_lo; ci_hi_p <- ci_hi }
-          
-          be_pass <- ci_lo_p >= input$be_lower & ci_hi_p <= input$be_upper
-          
-          ci_results[[param]] <- data.frame(
-            Parameter = param, Test = as.character(trt_levels[2]),
-            Reference = as.character(trt_levels[1]),
-            N_Test = n2, N_Ref = n1,
-            Point_Est = round(pe, 2),
-            CI_Lower = round(ci_lo_p, 2), CI_Upper = round(ci_hi_p, 2),
-            BE_Lower = input$be_lower, BE_Upper = input$be_upper,
-            Bioequivalent = ifelse(be_pass, "YES", "NO"),
-            MSE = round(mse, 6), DF = dfe, stringsAsFactors = FALSE
-          )
+          if (!is.null(fit_out$anova)) anova_results[[param]] <- fit_out$anova
+          ci_results[[param]] <- fit_out$row
         }
         
         ci_df <- do.call(rbind, ci_results)

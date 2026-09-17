@@ -32,7 +32,8 @@ if (length(missing) > 0) {
 }
 library(NonCompart); library(PowerTOST); library(nlme); library(digest)
 
-for (f in c("R/utils.R", "R/nca_helpers.R", "R/data_quality.R", "R/export_record.R")) {
+for (f in c("R/utils.R", "R/nca_helpers.R", "R/data_quality.R", "R/export_record.R",
+           "R/be_analysis.R")) {
   tryCatch(source(f, local = TRUE), error = function(e) NULL)
 }
 
@@ -61,7 +62,7 @@ APP_VERSION <- tryCatch({
 }, error = function(e) "unknown")
 
 source_files <- c("R/utils.R", "R/nca_helpers.R", "R/data_quality.R",
-                  "R/export_record.R", "R/mod_data_upload.R")
+                  "R/export_record.R", "R/mod_data_upload.R", "R/be_analysis.R")
 hash_files <- c("validation/validation.R", source_files)
 file_hashes <- sapply(hash_files, function(f) {
   if (file.exists(f)) digest(file = f, algo = "sha256") else "FILE_NOT_FOUND"
@@ -446,20 +447,26 @@ for (i in 1:n_be) {
   be_d$AUCLST[it] <- exp(log(500)+se+rnorm(1,0,0.20))
 }
 
+# BE tests call the app's own model code (R/be_analysis.R). The data are shaped
+# the way mod_path_be.R hands them over: Subject as character (it comes from
+# splitting the NCA key), Treatment as a factor with the reference first, and
+# Period/Sequence exactly as uploaded.
+be_input <- function(bd) {
+  bd$Subject <- as.character(bd$Subject)
+  bd$Treatment <- factor(bd$Treatment)
+  bd
+}
+run_be_fit <- function(bd, param, design="crossover_2x2", mt="fixed", ci=90,
+                       log_transform=TRUE, be_lower=80, be_upper=125) {
+  fit_be_parameter(be_input(bd), param, design = design, model_type = mt,
+                   trt_col = "Treatment", subj_col = "Subject",
+                   per_col = if ("Period" %in% names(bd)) "Period" else NULL,
+                   seq_col = if ("Sequence" %in% names(bd)) "Sequence" else NULL,
+                   log_transform = log_transform, ci_level = ci,
+                   be_lower = be_lower, be_upper = be_upper)
+}
 run_be <- function(bd, param, design="crossover_2x2", mt="fixed", ci=90) {
-  a <- 1-ci/100; bd$.r <- log(as.numeric(bd[[param]]))
-  bd$Subject <- factor(bd$Subject); bd$Treatment <- factor(bd$Treatment)
-  if (!is.null(bd$Sequence)) bd$Sequence <- factor(bd$Sequence)
-  if (!is.null(bd$Period)) bd$Period <- factor(bd$Period)
-  if (design=="crossover_fixed_order") fit <- lm(.r~Subject+Treatment,data=bd,na.action=na.exclude)
-  else if (mt=="mixed") fit <- tryCatch(nlme::lme(.r~Sequence+Period+Treatment,random=~1|Sequence/Subject,data=bd,na.action=na.exclude),error=function(e) NULL)
-  else fit <- lm(.r~Sequence+Subject+Period+Treatment,data=bd,na.action=na.exclude)
-  if (is.null(fit)) return(NULL)
-  tl <- sort(unique(bd$Treatment)); tcn <- paste0("Treatment",tl[2])
-  if (inherits(fit,"lme")) { co<-nlme::fixef(fit); st<-summary(fit)$tTable; d<-co[tcn]; s<-st[tcn,"Std.Error"]; df<-st[tcn,"DF"]; mse<-summary(fit)$sigma^2 }
-  else { co<-coef(fit); st<-summary(fit)$coefficients; d<-co[tcn]; s<-st[tcn,"Std. Error"]; df<-fit$df.residual; mse<-summary(fit)$sigma^2 }
-  tc <- qt(1-a/2,df)
-  list(pe=exp(d)*100, ci_lo=exp(d-tc*s)*100, ci_hi=exp(d+tc*s)*100, dfe=df, mse=mse)
+  run_be_fit(bd, param, design, mt, ci)$estimate
 }
 
 bf <- run_be(be_d, "CMAX")
