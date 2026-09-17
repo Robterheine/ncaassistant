@@ -126,7 +126,7 @@ ui <- page_fluid(
           icon("circle-info", class = "me-1"), "About"
         ),
         tags$a(
-          href = "NCA_Assistant_User_Manual_v1.4.pdf",
+          href = "NCA_Assistant_User_Manual_v1.5.pdf",
           target = "_blank",
           class = "btn btn-outline-success btn-sm ms-2",
           style = "font-size: 0.7rem; padding: 2px 8px;",
