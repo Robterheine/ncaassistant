@@ -192,9 +192,10 @@ path_be_ui <- function(id) {
                      "and its confidence interval (90% by default). If the CI falls entirely within ",
                      "the acceptance limits (usually 80–125%), the formulations are bioequivalent. ",
                      "With limits wider than 80–125%, the point estimate must also lie within ",
-                     "80–125% unless that constraint is switched off. Tmax, and any parameter ",
-                     "analysed without log-transformation, is shown as a difference in its own ",
-                     "units and has no verdict."),
+                     "80–125% unless that constraint is switched off. Half-life is shown as a ratio ",
+                     "with its confidence interval but has no verdict, because it is not a ",
+                     "bioequivalence endpoint. Tmax, and any parameter analysed without ",
+                     "log-transformation, is shown as a difference in its own units and has no verdict."),
               DTOutput(ns("ci_table")),
               tags$p(class = "text-muted small mt-2",
                      icon("circle-info", class = "me-1"),
@@ -643,7 +644,7 @@ path_be_server <- function(id, shared) {
         # Only for log-transformed ratio parameters, never TMAX.
         cv_rows <- list()
         if (isTRUE(input$log_transform)) {
-          for (param in setdiff(params, "TMAX")) {
+          for (param in setdiff(params, c("TMAX", BE_NO_VERDICT_PARAMS))) {
             cv_rows[[param]] <- tryCatch(
               be_variability_diagnostic(be_data, param, trt_col = trt_col_be,
                                         subj_col = subj_col_be, per_col = per_col,
@@ -896,29 +897,32 @@ path_be_server <- function(id, shared) {
       req(be_result())
       ci <- be_result()$ci_table
       # Only ratios belong on this axis; differences (TMAX, untransformed
-      # parameters) are in their own units and carry no verdict.
-      ci <- ci[!is.na(ci$Point_Est) & ci$Bioequivalent %in% c("YES", "NO"), ]
+      # parameters) are in their own units. Ratios without a verdict
+      # (half-life, paired comparisons) are drawn in grey.
+      ci <- ci[!is.na(ci$Point_Est) & grepl("^Ratio", ci$Scale), ]
       if (nrow(ci) == 0) return(plotly_empty())
       ci$Label <- sapply(ci$Parameter, friendly_name)
       ci$Label <- factor(ci$Label, levels = rev(ci$Label))
-      
+      ci$Bioequivalent[!ci$Bioequivalent %in% c("YES", "NO")] <- "no verdict"
+      lims <- ci[!is.na(ci$BE_Lower), c("BE_Lower", "BE_Upper")]
+
       p <- ggplot(ci, aes(x = Point_Est, y = Label)) +
         geom_vline(xintercept = 100, color = "grey50") +
-        geom_vline(xintercept = c(ci$BE_Lower[1], ci$BE_Upper[1]),
-                   color = "#E74C3C", linetype = "dashed") +
+        { if (nrow(lims) > 0) geom_vline(xintercept = c(lims$BE_Lower[1], lims$BE_Upper[1]),
+                                         color = "#E74C3C", linetype = "dashed") } +
         geom_errorbar(aes(xmin = CI_Lower, xmax = CI_Upper),
                       width = 0.25, linewidth = 0.8,
                       orientation = "y") +
         geom_point(aes(color = Bioequivalent), size = 4) +
-        scale_color_manual(values = c("YES" = "#18BC9C", "NO" = "#E74C3C")) +
-        labs(x = paste0("Geometric Mean Ratio (%) with ", input$ci_level, "% CI"),
+        scale_color_manual(values = c("YES" = "#18BC9C", "NO" = "#E74C3C", "no verdict" = "#95A5A6")) +
+        labs(x = paste0("Geometric Mean Ratio (%) with ", run_ci_level(), "% CI"),
              y = NULL, color = NULL) +
         theme_minimal(base_size = 12) +
         theme(legend.position = "none", panel.grid.major.y = element_blank())
       ggplotly(p, tooltip = c("x", "y")) %>%
         layout(margin = list(b = 60),
                xaxis = list(title = paste0("Geometric Mean Ratio (%) with ",
-                                           input$ci_level, "% CI")))
+                                           run_ci_level(), "% CI")))
     })
     
     # Official CDISC codes for the parameters in the table, with the release used

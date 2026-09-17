@@ -2794,6 +2794,23 @@ check("REV3-13", "The app names no commercial NCA software package",
                       ignore.case = TRUE)), error = function(e) FALSE),
   "URS-GEN-03", critical = FALSE, method = "search app.R and R/*.R", expected = "no occurrence")
 
+check("REV3-14", "Half-life gets a ratio and 90% CI but no bioequivalence verdict",
+  tryCatch({
+    d <- read.csv("validation/fixtures/be_2x2x2_crossover.csv", stringsAsFactors = FALSE)
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc", treatment = "Treatment", period = "Period", sequence = "Sequence")
+    r <- run_nca(d, cm, rev3_st(0.7))
+    b <- build_be_data(r, d, cm, reference = "Reference")
+    hl <- fit_be_parameter(b$data, "LAMZHL", "2x2x2", trt_col = "Treatment", subj_col = "Subject",
+                           per_col = "Period", seq_col = b$seq_col)$row
+    cm_ <- fit_be_parameter(b$data, "CMAX", "2x2x2", trt_col = "Treatment", subj_col = "Subject",
+                            per_col = "Period", seq_col = b$seq_col)$row
+    grepl("^Ratio", hl$Scale) && is.finite(hl$Point_Est) && is.finite(hl$CI_Lower) &&
+      identical(hl$Bioequivalent, "no verdict") && is.na(hl$BE_Lower) &&
+      cm_$Bioequivalent %in% c("YES", "NO")
+  }, error = function(e) FALSE),
+  "URS-BE-04", critical = TRUE, method = "fit_be_parameter for LAMZHL and CMAX on the 2x2 fixture",
+  expected = "half-life: ratio and CI, 'no verdict', no limits; Cmax keeps its verdict")
+
 end_section("REV3")
 
 # =============================================================================

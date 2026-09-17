@@ -102,6 +102,9 @@ be_limits_pass <- function(ci_lo, ci_hi, lower, upper) {
   round(ci_lo, 2) >= lower && round(ci_hi, 2) <= upper
 }
 
+#' Parameters compared as a ratio without a bioequivalence verdict
+BE_NO_VERDICT_PARAMS <- c("LAMZHL")
+
 #' Fit the BE model for one PK parameter and derive the CI and verdict
 #'
 #' @param be_data   Data frame at NCA-profile grain with the design columns
@@ -143,7 +146,10 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   # it can report a paired ratio but cannot support a bioequivalence verdict.
   model_family <- be_design_model(design)
   is_paired <- model_family == "paired"
-  has_limits <- is_ratio && !is_paired
+  # Only exposure parameters are bioequivalence endpoints. Half-life is
+  # reported as a ratio with its confidence interval (useful in drug
+  # interaction studies) but is not judged against acceptance limits.
+  has_limits <- is_ratio && !is_paired && !param %in% BE_NO_VERDICT_PARAMS
   scale_label <- if (is_ratio) "Ratio T/R (%)" else
     paste0("Difference T\u2212R", if (!is.null(diff_unit)) paste0(" (", diff_unit, ")") else "")
   widened <- be_lower < 80 || be_upper > 125
