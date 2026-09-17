@@ -839,7 +839,7 @@ path_multi_nca_server <- function(id, shared) {
         key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r))
         if (length(key)>0) {
           addWorksheet(wb, "Summary_Statistics")
-          writeData(wb, "Summary_Statistics", rename_summary_columns(summarize_pk_params(r, key)))
+          writeData(wb, "Summary_Statistics", rename_summary_columns(summarize_pk_params(r, key, group_col = if ("Treatment" %in% names(r)) "Treatment" else NULL)))
         }
         saveWorkbook(wb, file, overwrite=TRUE)
       }
@@ -869,7 +869,7 @@ path_multi_nca_server <- function(id, shared) {
         withProgress(message = "Generating analysis record...", value = 0.3, {
           r <- nca_result()
           key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r))
-          summ <- if (length(key) > 0) summarize_pk_params(r, key) else NULL
+          summ <- if (length(key) > 0) summarize_pk_params(r, key, group_col = if ("Treatment" %in% names(r)) "Treatment" else NULL) else NULL
           
           settings <- shared$nca_settings
           if (is.null(settings)) {

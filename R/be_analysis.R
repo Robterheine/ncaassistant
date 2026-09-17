@@ -18,9 +18,12 @@
 #' @param nca_res NCA result from run_nca() (Subject, Treatment[, Period])
 #' @param pk_data The uploaded data used for the NCA
 #' @param col_map Column mapping
+#' @param reference The Reference treatment, as written in the data. When
+#'   NULL, a level named "Reference" is used if present, otherwise the first
+#'   level alphabetically (which may be the Test: callers should pass it).
 #' @return list(data, trt_col, subj_col, per_col, seq_col); Treatment is a
-#'   factor with "Reference" first when that level exists.
-build_be_data <- function(nca_res, pk_data, col_map) {
+#'   factor with the reference as its first level.
+build_be_data <- function(nca_res, pk_data, col_map, reference = NULL) {
   keys <- intersect(c("Subject", "Treatment", "Period"), names(nca_res))
   if (!all(c("Subject", "Treatment") %in% keys))
     stop("The NCA result has no Subject/Treatment columns; map the Treatment column.")
@@ -52,11 +55,41 @@ build_be_data <- function(nca_res, pk_data, col_map) {
          nrow(be), "). Check the Treatment, Period and Sequence columns.")
 
   be$Treatment <- factor(be$Treatment)
-  if ("Reference" %in% levels(be$Treatment))
+  if (!is.null(reference) && nzchar(reference)) {
+    if (!reference %in% levels(be$Treatment))
+      stop("The Reference treatment '", reference, "' is not in the Treatment column (found: ",
+           paste(levels(be$Treatment), collapse = ", "), ").")
+    be$Treatment <- relevel(be$Treatment, ref = reference)
+  } else if ("Reference" %in% levels(be$Treatment)) {
     be$Treatment <- relevel(be$Treatment, ref = "Reference")
+  }
 
   list(data = be, trt_col = "Treatment", subj_col = "Subject",
        per_col = if ("Period" %in% keys) "Period" else NULL, seq_col = seq_col)
+}
+
+#' Suggest which treatment is the Reference from its name
+#'
+#' Only names that unambiguously mean "reference" are recognised (R, Ref,
+#' Reference, Comparator, Innovator, Originator, RLD, in any capitals).
+#' Anything else (A/B, New/Old) returns NULL: the user must choose.
+suggest_reference_treatment <- function(levels) {
+  hit <- levels[grepl("^(r|ref|reference|comparator|innovator|originator|rld)$",
+                      trimws(levels), ignore.case = TRUE)]
+  if (length(hit) == 1) hit else NULL
+}
+
+#' Within-subject CV (%) of a parameter from the BE confidence-interval table
+#'
+#' 100 * sqrt(exp(MSE) - 1), from the residual variance of the log-scale
+#' model. NA when the parameter was not analysed on the log scale. For a
+#' parallel design this is the total (between + within) CV, which is what a
+#' parallel-design sample size needs.
+within_cv_from_be <- function(ci_table, param = "CMAX") {
+  if (is.null(ci_table) || !all(c("Parameter", "Scale", "MSE") %in% names(ci_table))) return(NA_real_)
+  i <- match(param, ci_table$Parameter)
+  if (is.na(i) || !grepl("^Ratio", ci_table$Scale[i]) || !is.finite(ci_table$MSE[i])) return(NA_real_)
+  100 * sqrt(exp(ci_table$MSE[i]) - 1)
 }
 
 #' Is a confidence interval within the acceptance limits?

@@ -95,3 +95,20 @@ check_design_against_data <- function(code, detected) {
          paste(issues, collapse = " and "), ". Check the design selection and the ",
          "Period and Sequence columns.")
 }
+
+#' The CV argument for PowerTOST, as a fraction
+#'
+#' Average bioequivalence uses one within-subject CV. The scaled methods
+#' (ABEL, RSABE, NTID) take c(CVwT, CVwR): the Test CV changes the sample
+#' size, sometimes several-fold, so it must not be replaced by the Reference CV.
+#' @param analysis_type "abe", "abel", "rsabe" or "ntid"
+#' @param cv_pct Within-subject CV (Test CV for scaled methods), percent
+#' @param cv_wr_pct Within-subject CV of the Reference, percent
+planner_cv <- function(analysis_type, cv_pct, cv_wr_pct = NULL) {
+  if (analysis_type %in% c("abel", "rsabe", "ntid")) {
+    wr <- if (is.null(cv_wr_pct) || is.na(cv_wr_pct)) cv_pct else cv_wr_pct
+    c(cv_pct, wr) / 100
+  } else {
+    cv_pct / 100
+  }
+}

@@ -396,27 +396,39 @@ path_power_server <- function(id, shared) {
     })
 
     # ---- CV bridge from NCA results -----------------------------------------
+    # The within-subject CV comes from the residual variance of the
+    # bioequivalence model. The spread of Cmax across subjects (batch results)
+    # also contains the differences between subjects and would inflate the
+    # sample size, so it is not offered.
     output$cv_from_nca <- renderUI({
-      if (is.null(shared$nca_results)) return(NULL)
-      cmax_vals <- suppressWarnings(as.numeric(shared$nca_results$CMAX))
-      cmax_vals <- cmax_vals[!is.na(cmax_vals) & cmax_vals > 0]
-      if (length(cmax_vals) < 3) return(NULL)
-      # Geometric CV as percentage
-      cv_est_pct <- round(sqrt(exp(sd(log(cmax_vals))^2) - 1) * 100, 1)
+      ci <- if (!is.null(shared$be_results)) shared$be_results$ci_table else NULL
+      cv_est <- within_cv_from_be(ci, "CMAX")
+      if (is.na(cv_est)) {
+        if (is.null(shared$nca_results)) return(NULL)
+        return(tags$p(class = "text-muted small mb-2",
+          "To use the within-subject CV from your own data, run the Bioequivalence analysis ",
+          "(log-transformed). The spread of Cmax across subjects in batch results is not a ",
+          "within-subject CV."))
+      }
       actionButton(
         ns("use_nca_cv"),
-        paste0("Use CV from my PK analysis (\u2248 ", cv_est_pct, "%)"),
+        paste0("Use Cmax within-subject CV from my BE analysis (\u2248 ", round(cv_est, 1), "%)"),
         class = "btn-outline-info btn-sm w-100 mt-1",
         icon  = icon("arrow-right")
       )
     })
 
     observeEvent(input$use_nca_cv, {
-      cmax_vals <- suppressWarnings(as.numeric(shared$nca_results$CMAX))
-      cmax_vals <- cmax_vals[!is.na(cmax_vals) & cmax_vals > 0]
-      cv_est_pct <- round(sqrt(exp(sd(log(cmax_vals))^2) - 1) * 100, 1)
-      updateNumericInput(session, "cv", value = cv_est_pct)
+      cv_est <- within_cv_from_be(shared$be_results$ci_table, "CMAX")
+      if (!is.na(cv_est)) updateNumericInput(session, "cv", value = round(cv_est, 1))
     })
+
+    # For scaled methods the first CV is the Test product's within-subject CV
+    observeEvent(input$analysis_type, {
+      scaled <- (input$analysis_type %||% "abe") %in% c("abel", "rsabe", "ntid")
+      updateNumericInput(session, "cv", label = if (scaled)
+        "Within-subject CV of the Test product (CV %)" else "Within-subject variability (CV %)")
+    }, ignoreInit = TRUE)
 
     # ---- Input validation helper --------------------------------------------
     validate_inputs <- function() {
@@ -504,6 +516,8 @@ path_power_server <- function(id, shared) {
     compute_power <- function(n, atype, alpha, theta0_dec, theta1, theta2,
                               cv_dec, cv_wr_dec, design) {
       if (is.null(cv_wr_dec) || is.na(cv_wr_dec)) cv_wr_dec <- cv_dec
+      # Scaled methods need c(CVwT, CVwR); see planner_cv() in R/designs.R
+      cv_arg <- planner_cv(atype, cv_dec * 100, cv_wr_dec * 100)
       tryCatch(
         switch(atype,
           "abe"   = power.TOST(alpha = alpha, theta0 = theta0_dec,
@@ -511,15 +525,15 @@ path_power_server <- function(id, shared) {
                                CV = cv_dec, n = n, design = design,
                                method = "exact"),
           "abel"  = power.scABEL(alpha = alpha, theta0 = theta0_dec,
-                                 CV = cv_wr_dec, n = n, design = design,
+                                 CV = cv_arg, n = n, design = design,
                                  nsims = 1e4),
           "rsabe" = power.RSABE(alpha = alpha, theta0 = theta0_dec,
-                                CV = cv_wr_dec, n = n, design = design,
+                                CV = cv_arg, n = n, design = design,
                                 nsims = 1e4),
           "ntid"  = {
             if (is.null(ntid_power)) stop("NTID power function not found in PowerTOST")
             ntid_power(alpha = alpha, theta0 = theta0_dec,
-                       CV = cv_wr_dec, n = n, design = design,
+                       CV = cv_arg, n = n, design = design,
                        nsims = 1e4)
           },
           NA_real_
@@ -567,6 +581,8 @@ path_power_server <- function(id, shared) {
         return()
       }
 
+      cv_arg <- planner_cv(atype, input$cv, input$cv_wr)
+
       withProgress(message = "Calculating\u2026", value = 0.5, {
         result <- tryCatch({
           if (input$calc_mode == "sample_size") {
@@ -578,17 +594,17 @@ path_power_server <- function(id, shared) {
                                      CV = cv_dec, design = design,
                                      method = "exact", print = FALSE),
               "abel"  = sampleN.scABEL(alpha = alpha, targetpower = tp,
-                                       theta0 = theta0_dec, CV = cv_wr_dec,
+                                       theta0 = theta0_dec, CV = cv_arg,
                                        design = design, print = FALSE,
                                        nsims = 1e5),
               "rsabe" = sampleN.RSABE(alpha = alpha, targetpower = tp,
-                                      theta0 = theta0_dec, CV = cv_wr_dec,
+                                      theta0 = theta0_dec, CV = cv_arg,
                                       design = design, print = FALSE,
                                       nsims = 1e5),
               "ntid"  = {
                 if (is.null(ntid_sampleN)) stop("NTID sample size function not found in PowerTOST")
                 ntid_sampleN(alpha = alpha, targetpower = tp,
-                             theta0 = theta0_dec, CV = cv_wr_dec,
+                             theta0 = theta0_dec, CV = cv_arg,
                              design = design, print = FALSE,
                              nsims = 1e5)
               }
@@ -768,7 +784,8 @@ path_power_server <- function(id, shared) {
       p <- ggplot(df, aes(x = CV, y = N)) +
         geom_line(color = "#2C3E50", linewidth = 1) +
         geom_point(color = "#E74C3C", size = 3) +
-        labs(x = "Within-Subject Variability (CV %)",
+        labs(x = if (atype %in% c("abel", "rsabe", "ntid"))
+                   "Within-Subject CV, Test = Reference (%)" else "Within-Subject Variability (CV %)",
              y = "Required Number of Subjects") +
         theme_minimal(base_size = 13)
 
@@ -784,7 +801,12 @@ path_power_server <- function(id, shared) {
       cat("\nSettings used:\n")
       cat("  Study type:  ", input$analysis_type, "\n")
       cat("  Design:      ", input$design, "\n")
-      cat("  CV:          ", input$cv, "%\n")
+      if ((input$analysis_type %||% "abe") %in% c("abel", "rsabe", "ntid")) {
+        cat("  CV (Test):   ", input$cv, "%\n")
+        cat("  CV (Ref):    ", input$cv_wr, "%\n")
+      } else {
+        cat("  CV:          ", input$cv, "%\n")
+      }
       cat("  T/R ratio:   ", input$theta0, "%\n")
       cat("  Limits:      [", input$theta1, ",", input$theta2, "]\n")
       cat("  Alpha:       ", input$alpha, "\n")

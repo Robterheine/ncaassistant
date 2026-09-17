@@ -217,7 +217,7 @@ rename_summary_columns <- function(df) {
 #' Rename BE CI table columns to friendly names
 #' @param df CI result data frame
 #' @return Data frame with renamed columns
-rename_be_columns <- function(df) {
+rename_be_columns <- function(df, ci_level = 90) {
   renames <- c(
     "Parameter"     = "PK Parameter",
     "Test"          = "Test Formulation",
@@ -228,8 +228,8 @@ rename_be_columns <- function(df) {
     "Obs_Ref"       = "Profiles (Reference)",
     "Scale"         = "Scale",
     "Point_Est"     = "Estimate",
-    "CI_Lower"      = "90% CI Lower",
-    "CI_Upper"      = "90% CI Upper",
+    "CI_Lower"      = paste0(ci_level, "% CI Lower"),
+    "CI_Upper"      = paste0(ci_level, "% CI Upper"),
     "BE_Lower"      = "Accept. Lower",
     "BE_Upper"      = "Accept. Upper",
     "PE_Constraint" = "PE within 80\u2013125%",

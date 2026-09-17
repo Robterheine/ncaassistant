@@ -86,6 +86,7 @@ path_be_ui <- function(id) {
               selectInput(ns("be_design"),
                           tagList("Study design", help_be_design),
                           choices = be_analysis_choices(), selected = "2x2x2"),
+              uiOutput(ns("reference_ui")),
               
               conditionalPanel(
                 condition = sprintf("input['%s'] == 'paired'", ns("be_design")),
@@ -417,6 +418,12 @@ path_be_server <- function(id, shared) {
         return()
       }
       
+      if (is.null(input$be_reference) || !nzchar(input$be_reference)) {
+        showNotification("Choose the Reference treatment in Step 2 (the ratio is Test / Reference).",
+                         type = "error", duration = 8)
+        return()
+      }
+
       withProgress(message = "Step 1: Running NCA...", value = 0.3, {
         
         # Run NCA
@@ -487,7 +494,7 @@ path_be_server <- function(id, shared) {
         
         # Merge with design info: one row per NCA profile (subject x treatment
         # x period), with the Sequence column attached. See build_be_data().
-        bd <- tryCatch(build_be_data(nca_res, shared$pk_data, cm),
+        bd <- tryCatch(build_be_data(nca_res, shared$pk_data, cm, reference = input$be_reference),
                        error = function(e) {
                          showNotification(conditionMessage(e), type = "error", duration = NULL)
                          NULL
@@ -657,6 +664,7 @@ path_be_server <- function(id, shared) {
           be  = list(
             design_selected   = input$be_design,
             design_analysed   = design_used$design,
+            reference         = input$be_reference,
             model_type        = input$model_type,
             log_transform     = isTRUE(input$log_transform),
             ci_level          = input$ci_level,
@@ -671,6 +679,35 @@ path_be_server <- function(id, shared) {
       })
     })
     
+    # Confidence level of the analysis that was run (the slider may have moved since)
+    run_ci_level <- function() {
+      lv <- be_run_settings()$be$ci_level
+      if (is.null(lv)) 90 else lv
+    }
+
+    # Reference treatment: suggested only from an unambiguous name (R, Ref,
+    # Reference, ...); otherwise the user must choose, because the ratio is
+    # Test/Reference and alphabetical order says nothing about which is which.
+    output$reference_ui <- renderUI({
+      cm <- shared$col_map; dat <- shared$pk_data
+      if (is.null(cm) || is.null(dat) || is.null(cm$treatment) || !cm$treatment %in% names(dat))
+        return(NULL)
+      lv <- sort(unique(trimws(as.character(dat[[cm$treatment]]))))
+      lv <- lv[!is.na(lv) & nzchar(lv)]
+      sug <- suggest_reference_treatment(lv)
+      tagList(
+        selectInput(ns("be_reference"),
+                    tagList("Reference treatment",
+                            tags$span(class = "text-muted small",
+                                      " (the ratio is Test / Reference)")),
+                    choices = c("Choose\u2026" = "", lv),
+                    selected = if (is.null(sug)) "" else sug),
+        if (is.null(sug))
+          tags$p(class = "text-muted small mt-n2",
+                 "The app cannot tell from the names which treatment is the Reference. Choose it.")
+      )
+    })
+
     # Status
     output$be_status <- renderUI({
       if (is.null(be_result())) {
@@ -779,17 +816,21 @@ path_be_server <- function(id, shared) {
     # CI table
     output$ci_table <- renderDT({
       req(be_result())
-      display_ci <- rename_be_columns(be_result()$ci_table)
+      ci_lab <- paste0(run_ci_level(), "% CI ")
+      display_ci <- rename_be_columns(be_result()$ci_table, ci_level = run_ci_level())
+      # Show which treatments were compared, so a wrong Reference is visible
+      display_ci$Comparison <- paste(display_ci[["Test Formulation"]], "/",
+                                     display_ci[["Reference Formulation"]])
       be_col <- if ("Bioequivalent?" %in% names(display_ci)) "Bioequivalent?" else "Bioequivalent"
       
       # Show only key columns — the rest are in the Excel export
-      key_cols <- intersect(c("PK Parameter", "Scale", "Estimate", "90% CI Lower",
-                              "90% CI Upper", "PE within 80\u2013125%", "Bioequivalent?"),
+      key_cols <- intersect(c("PK Parameter", "Comparison", "Scale", "Estimate", paste0(ci_lab, "Lower"),
+                              paste0(ci_lab, "Upper"), "PE within 80\u2013125%", "Bioequivalent?"),
                             names(display_ci))
       display_ci <- display_ci[, key_cols, drop = FALSE]
       
       # Fixed 2 decimal places for ratio and CI columns (regulatory standard)
-      num_cols <- intersect(c("Estimate", "90% CI Lower", "90% CI Upper"),
+      num_cols <- intersect(c("Estimate", paste0(ci_lab, "Lower"), paste0(ci_lab, "Upper")),
                             names(display_ci))
       dt <- datatable(display_ci,
                 options = list(scrollX = TRUE, dom = "t", ordering = FALSE),
@@ -1191,7 +1232,7 @@ path_be_server <- function(id, shared) {
         req(be_result())
         wb <- createWorkbook()
         addWorksheet(wb, "Confidence_Intervals")
-        writeData(wb, 1, rename_be_columns(be_result()$ci_table))
+        writeData(wb, 1, rename_be_columns(be_result()$ci_table, ci_level = run_ci_level()))
         if (!is.null(be_nca_result())) {
           addWorksheet(wb, "NCA_Parameters")
           writeData(wb, 2, rename_nca_columns(be_nca_result()))
@@ -1219,7 +1260,7 @@ path_be_server <- function(id, shared) {
       filename = function() paste0("BE_CI_table_", Sys.Date(), ".csv"),
       content = function(file) {
         req(be_result())
-        write.csv(rename_be_columns(be_result()$ci_table), file, row.names=FALSE)
+        write.csv(rename_be_columns(be_result()$ci_table, ci_level = run_ci_level()), file, row.names=FALSE)
       }
     )
     

@@ -2554,6 +2554,96 @@ check("REV-10", "Uploaded file names cannot place files outside the record",
 end_section("REV")
 
 # =============================================================================
+# SECTION REV2: Second adversarial review (whole app)
+# =============================================================================
+start_section("REV2")
+
+# Two-treatment 2x2 data with a known T/R ratio of about 0.89, relabelled
+rev2_be <- function(test_label, ref_label, reference = NULL) {
+  set.seed(3); n <- 24; s <- rep(1:n, each = 2)
+  sq <- rep(rep(c("TR", "RT"), each = 2), n / 2); per <- rep(1:2, n)
+  is_t <- (sq == "TR") == (per == 1)
+  cm <- exp(log(100) + rep(rnorm(n, 0, .3), each = 2) + ifelse(is_t, log(0.85), 0) + rnorm(2 * n, 0, .15))
+  trt <- ifelse(is_t, test_label, ref_label)
+  nca <- data.frame(Subject = as.character(s), Treatment = trt, Period = as.character(per), CMAX = cm,
+                    stringsAsFactors = FALSE)
+  pk <- data.frame(ID = s, TRT = trt, PER = per, SEQ = sq, stringsAsFactors = FALSE)
+  bd <- build_be_data(nca, pk, list(subject = "ID", treatment = "TRT", period = "PER", sequence = "SEQ"),
+                      reference = reference)
+  fit_be_parameter(bd$data, "CMAX", "2x2x2", trt_col = "Treatment", subj_col = "Subject",
+                   per_col = "Period", seq_col = bd$seq_col)$row
+}
+
+check("REV2-01", "The chosen Reference treatment is used, whatever its name",
+  tryCatch({
+    std <- rev2_be("Test", "Reference")
+    a <- rev2_be("New", "Old", reference = "Old")
+    b <- rev2_be("A", "B", reference = "B")
+    identical(a$Reference, "Old") && identical(b$Reference, "B") &&
+      a$Point_Est == std$Point_Est && b$CI_Lower == std$CI_Lower
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = TRUE,
+  method = "same data labelled Test/Reference, New/Old (reference Old), A/B (reference B)",
+  expected = "identical ratio and CI; Reference column shows the chosen treatment")
+
+check("REV2-02", "A Reference treatment that is not in the data is refused",
+  tryCatch({ rev2_be("New", "Old", reference = "Placebo"); FALSE }, error = function(e) TRUE),
+  "URS-BE-01", critical = TRUE, method = "reference = 'Placebo'", expected = "error")
+
+check("REV2-03", "Reference suggestion only for unambiguous names",
+  tryCatch(identical(suggest_reference_treatment(c("T", "R")), "R") &&
+             identical(suggest_reference_treatment(c("Test", "Ref")), "Ref") &&
+             identical(suggest_reference_treatment(c("reference", "test")), "reference") &&
+             is.null(suggest_reference_treatment(c("New", "Old"))) &&
+             is.null(suggest_reference_treatment(c("A", "B"))),
+           error = function(e) FALSE),
+  "URS-BE-01", critical = FALSE, method = "T/R, Test/Ref, reference/test, New/Old, A/B",
+  expected = "R, Ref, reference, none, none")
+
+check("REV2-04", "Scaled planning methods use both the Test and the Reference CV",
+  tryCatch({
+    abe <- planner_cv("abe", 20, 40); abel <- planner_cv("abel", 25, 40)
+    n <- PowerTOST::sampleN.scABEL(CV = abel, theta0 = 0.95, design = "2x2x4",
+                                   print = FALSE, details = FALSE)[["Sample size"]]
+    isTRUE(all.equal(abe, 0.20)) && isTRUE(all.equal(abel, c(0.25, 0.40))) &&
+      isTRUE(all.equal(planner_cv("ntid", 20, 10), c(0.20, 0.10))) && n == 14
+  }, error = function(e) FALSE),
+  "URS-PWR-01", critical = TRUE,
+  method = "planner_cv(); sampleN.scABEL CVwT 25%, CVwR 40%, theta0 0.95, 2x2x4",
+  expected = "c(CVwT, CVwR) for scaled methods; N = 14 (CVwR only gives 20)")
+
+check("REV2-05", "CV offered to the planner is the within-subject CV from the BE model",
+  tryCatch({
+    ci <- data.frame(Parameter = c("CMAX", "TMAX"), Scale = c("Ratio T/R (%)", "Difference T−R (h)"),
+                     MSE = c(0.0425, 0.3), stringsAsFactors = FALSE)
+    isTRUE(all.equal(within_cv_from_be(ci, "CMAX"), 100 * sqrt(exp(0.0425) - 1))) &&
+      is.na(within_cv_from_be(ci, "TMAX")) && is.na(within_cv_from_be(NULL, "CMAX")) &&
+      !any(grepl("sd(log(cmax_vals))", readLines("R/mod_path_power.R"), fixed = TRUE))
+  }, error = function(e) FALSE),
+  "URS-PWR-01", critical = TRUE,
+  method = "within_cv_from_be() on a CI table; planner no longer uses the spread of Cmax across subjects",
+  expected = "100*sqrt(exp(MSE)-1) for ratio rows, NA otherwise")
+
+check("REV2-06", "Exported batch summaries are grouped by treatment, as on screen",
+  tryCatch({
+    src <- readLines("R/mod_path_multi_nca.R")
+    calls <- grep("summarize_pk_params(", src, fixed = TRUE, value = TRUE)
+    length(calls) >= 3 && all(grepl("group_col", calls))
+  }, error = function(e) FALSE),
+  "URS-NCA-05", critical = FALSE, method = "every summarize_pk_params() call in the batch module",
+  expected = "all pass group_col")
+
+check("REV2-07", "Confidence interval column names follow the chosen level",
+  tryCatch({
+    df <- data.frame(Parameter = "CMAX", CI_Lower = 1, CI_Upper = 2)
+    all(c("95% CI Lower", "95% CI Upper") %in% names(rename_be_columns(df, ci_level = 95))) &&
+      all(c("90% CI Lower", "90% CI Upper") %in% names(rename_be_columns(df)))
+  }, error = function(e) FALSE),
+  "URS-BE-02", critical = FALSE, method = "rename_be_columns(ci_level = 95)", expected = "95% CI Lower/Upper")
+
+end_section("REV2")
+
+# =============================================================================
 # Post-execution
 # =============================================================================
 cat("\n", paste(rep("=",72),collapse=""), "\n")
