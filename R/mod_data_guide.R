@@ -153,7 +153,7 @@ data_guide_ui <- function() {
                "If all subjects received the same dose, you don't need a Dose column — ",
                "just enter the dose in the app settings. If subjects received different doses ",
                "(dose escalation, weight-based dosing), include a Dose column in your data and ",
-               "select 'Each subject has a different dose' in the analysis settings.")
+               "select 'Doses differ by subject or period' in the analysis settings.")
       )
     ),
     
@@ -257,15 +257,16 @@ data_guide_ui <- function() {
           class = "alert alert-info py-2 small",
           tags$strong("How it works in the app: "),
           "During data upload, map the Dose column. In the analysis settings, select ",
-          "'Each subject has a different dose (from Dose column in data)'. ",
+          "'Doses differ by subject or period (from Dose column in data)'. ",
           "The app reads each subject's dose from the data and uses it to calculate ",
           "dose-dependent parameters like clearance (CL = Dose / AUC) and volume of distribution."
         ),
         
         tags$p(class = "small text-muted",
-               "The Dose column should contain a single value per subject (the same value ",
-               "on every row for that subject). If doses vary within a subject's rows, ",
-               "the app uses the maximum value."),
+               "The Dose column should contain a single value per profile (the same value ",
+               "on every row of that subject's treatment and period). A subject may receive ",
+               "different doses in different periods; each period then uses its own dose. ",
+               "If doses vary within one profile's rows, the app uses the maximum value."),
         
         tags$div(
           class = "alert alert-info py-2 small",
@@ -702,8 +703,10 @@ data_guide_ui <- function() {
         tags$p(class = "small",
                "Every analytical method has a lower limit of quantification (LLOQ): the lowest ",
                "concentration it can reliably measure. Samples below this limit are reported as ",
-               "'BLQ', '<0.5', 'ND' (not detected), or similar text. The app recognizes these ",
-               "automatically — you don't need to change them before uploading."),
+               "'<0.5', 'BLQ', 'BQL', 'BLOQ', 'ND' (not detected) or 'NQ' (not quantifiable). The app ",
+               "recognizes these (in any capitals) once you set the LLOQ, and applies the BLQ rule ",
+               "you choose; you don't need to change them before uploading. Other text, such as ",
+               "'NS' (no sample), 'N/A' or 'missing', is treated as a missing value, not as BLQ."),
         
         tags$p(class = "small",
                "In the upload step, you set the LLOQ value and choose a BLQ handling rule. ",

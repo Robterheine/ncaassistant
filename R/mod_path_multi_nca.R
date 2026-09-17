@@ -41,7 +41,7 @@ path_multi_nca_ui <- function(id) {
               radioButtons(ns("dose_source"), "Dose information",
                            choices = c(
                              "Same dose for all subjects" = "single",
-                             "Each subject has a different dose (from Dose column in data)" = "from_data"
+                             "Doses differ by subject or period (from Dose column in data)" = "from_data"
                            ), selected = "single"),
               
               conditionalPanel(

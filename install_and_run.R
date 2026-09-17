@@ -29,7 +29,7 @@ required_packages <- c(
   # Plotting
   "ggplot2", "scales",
   # PK analysis engines
-  "NonCompart", "ncar", "PowerTOST",
+  "NonCompart", "PowerTOST",
   # Mixed effects for BE
   "nlme",
   # Export / reproducibility
@@ -78,7 +78,6 @@ cat("NonCompart: ", as.character(nc_v),
     } else {
       paste0("  [compatible; validated against ", NONCOMPART_TESTED_VERSION, "]")
     }, "\n")
-cat("ncar:       ", as.character(packageVersion("ncar")), "\n")
 cat("PowerTOST:  ", as.character(packageVersion("PowerTOST")), "\n")
 cat("Shiny:      ", as.character(packageVersion("shiny")), "\n")
 cat("bslib:      ", as.character(packageVersion("bslib")), "\n")

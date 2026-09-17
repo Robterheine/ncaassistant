@@ -13,7 +13,7 @@ The app offers six self-contained workflow paths accessible from a central hub:
 
 **1. Plan a Study** — Calculate sample size or power for bioequivalence studies. Supports standard ABE, highly variable drug designs (ABEL/EMA, RSABE/FDA), narrow therapeutic index (NTID/FDA), dose-proportionality, and non-inferiority. Interactive power curves and sensitivity analyses for all design types.
 
-**2. Upload & Check Data** — Import CSV or Excel files, auto-detect column names (including CDISC, WinNonlin export, and European naming conventions), set BLQ handling rules (6 rules including LLOQ/2 for drugs with absorption lag), and run 20+ automated data quality checks.
+**2. Upload & Check Data** — Import CSV or Excel files, auto-detect common column names (including WinNonlin export and European naming conventions); CDISC ADNCA datasets are read through the separate *CDISC ADNCA dataset* upload option, set BLQ handling rules (6 rules including LLOQ/2 for drugs with absorption lag), and run 20+ automated data quality checks.
 
 **3. Visualize Data** *(new in v1.2)* — Create publication-ready concentration-time plots directly from uploaded data. Individual profiles (spaghetti plot) with flexible colour grouping, and geometric mean ± geometric CV% summary curves with treatment overlays for crossover data. Export to PNG, PDF, or SVG at journal-submission resolution (up to 600 DPI). Includes an auto-generated figure legend ready to paste into a manuscript.
 
@@ -21,7 +21,7 @@ The app offers six self-contained workflow paths accessible from a central hub:
 
 **5. Analyze All Subjects (Batch)** — Run NCA on all subjects at once. Population summary statistics, individual profile grid, spaghetti and mean±SD plots, half-life review with recalculate, and steady-state display with AUCτ as the primary parameter.
 
-**6. Bioequivalence Testing** — Complete BE workflow: NCA → ANOVA → 90% confidence intervals → forest plot → regulatory conclusion. Supports 2-period crossover, fixed-order crossover, 3-period crossover, replicate crossover, and parallel designs.
+**6. Bioequivalence Testing** — Complete BE workflow: NCA → ANOVA → 90% confidence intervals → forest plot → regulatory conclusion. Supports 2×2 crossover, paired comparison (all subjects in the same order; no verdict), 3-period crossover, replicate designs (2×2×3, 2×3×3, 2×2×4; average bioequivalence with a within-subject variability diagnostic, no scaled verdict), and parallel designs.
 
 Plus: **Statistical Methods** page (publication-ready, expert-reviewed), **Data Preparation Guide** (10 scenario tabs), and **About & Packages** with version history.
 
@@ -29,7 +29,7 @@ Plus: **Statistical Methods** page (publication-ready, expert-reviewed), **Data 
 
 ## Complete Analysis Record
 
-All four analysis paths — **Visualize Data**, **One Subject at a Time**, **All Subjects (Batch)**, and **Bioequivalence** — can generate a **Complete Analysis Record**: a self-contained zip file for regulatory submissions, publication supplements, or audit trails. A consistently placed *Generate Analysis Record* panel (with an explanatory tooltip) appears on each tab once results exist.
+All four analysis paths — **Visualize Data**, **One Subject at a Time**, **All Subjects (Batch)**, and **Bioequivalence** — can generate a **Complete Analysis Record**: a self-contained zip file for archiving, audit trails, publication supplements, and inclusion in a sponsor's study documentation. A consistently placed *Generate Analysis Record* panel (with an explanatory tooltip) appears on each tab once results exist.
 
 For the NCA and bioequivalence paths the record contains:
 
@@ -88,7 +88,7 @@ This executes automated tests and generates a results CSV with environment detai
 
 **Validation deliverables:**
 
-- **User Requirement Specification** ([`validation/NCA_Assistant_URS.docx`](validation/NCA_Assistant_URS.docx)) — requirements across 8 categories (GEN, DAT, NCA, BE, PWR, EXP, UI, VIZ), with FMEA risk assessment, supplier assessment, ALCOA+ data integrity framework, and change control procedures
+- **User Requirement Specification** ([`validation/NCA_Assistant_URS.docx`](validation/NCA_Assistant_URS.docx)) — requirements across 8 categories (GEN, DAT, NCA, BE, PWR, EXP, UI, VIZ), with FMEA risk assessment, supplier assessment, and change control procedures
 - **IQ/OQ/PQ Protocol** ([`validation/NCA_Assistant_IQOQPQ.docx`](validation/NCA_Assistant_IQOQPQ.docx)) — every automated and manual test listed individually with method, expected result, URS cross-reference, and criticality classification
 - **Consolidated test script** ([`validation/validation.R`](validation/validation.R)) — automated tests + manual test definitions, covering IQ, data handling, NCA accuracy, bioequivalence, power/sample size, export/reproducibility, usability, and visualization (URS-VIZ)
 

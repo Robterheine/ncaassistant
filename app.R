@@ -30,7 +30,6 @@ options(shiny.maxRequestSize = 50 * 1024^2)
 library(shiny)
 library(bslib)
 library(NonCompart)
-library(ncar)
 library(PowerTOST)
 library(plotly)
 library(DT)
@@ -504,13 +503,6 @@ server <- function(input, output, session) {
         version = as.character(packageVersion("NonCompart")),
         role    = "Non-compartmental analysis engine. Calculates Cmax, AUC, half-life, clearance, and all standard NCA parameters. Validated against WinNonlin\u00AE.",
         url     = "https://cran.r-project.org/package=NonCompart",
-        ref     = "Kim H et al. Transl Clin Pharmacol. 2018;26(1):10-15"
-      ),
-      list(
-        name    = "ncar",
-        version = as.character(packageVersion("ncar")),
-        role    = "NCA report generation. Produces formatted PDF and RTF reports from NonCompart output. CDISC SDTM compatible.",
-        url     = "https://cran.r-project.org/package=ncar",
         ref     = "Kim H et al. Transl Clin Pharmacol. 2018;26(1):10-15"
       ),
       list(
