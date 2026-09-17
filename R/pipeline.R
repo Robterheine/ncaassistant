@@ -429,7 +429,8 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
     }
   }
   
-  data$.is_blq <- NULL
+  # The flag stays: partial AUCs report when an interval rests mainly on
+  # values set by this rule
   data
 }
 
@@ -496,13 +497,14 @@ below_r2_threshold <- function(r2adj, threshold) {
 #' Same NonCompart call and options as run_nca(), so a profile analysed on
 #' its own gives the same result as in the batch table.
 #' @param time_used Optional sampling times for a manual half-life override
-run_single_nca <- function(time, conc, settings, time_used = NULL) {
+run_single_nca <- function(time, conc, settings, time_used = NULL, is_blq = NULL) {
   adm <- switch(settings$admin_route, "extravascular" = "Extravascular",
                 "iv_bolus" = "Bolus", "iv_infusion" = "Infusion", "Extravascular")
   down <- switch(settings$trap_method, "linear" = "Linear", "log" = "Log", "Linear")
   t_num <- suppressWarnings(as.numeric(as.character(time)))
   c_num <- suppressWarnings(as.numeric(as.character(conc)))
   ord <- order(t_num); t_num <- t_num[ord]; c_num <- c_num[ord]
+  if (!is.null(is_blq)) is_blq <- is_blq[ord]
   use <- NULL
   if (length(time_used) >= 2) {
     keep <- !(is.na(t_num) | is.na(c_num))
@@ -518,18 +520,32 @@ run_single_nca <- function(time, conc, settings, time_used = NULL) {
     warning("Steady state: enter the dosing interval (tau) in the analysis settings.")
     return(NULL)
   }
+  pauc <- partial_auc_spec(settings$partial_aucs)
+  pauc_err <- validate_partial_aucs(pauc, ss, tau)
+  if (!is.null(pauc_err)) {
+    warning(pauc_err)
+    return(NULL)
+  }
+  iauc <- rbind(partial_auc_iauc(pauc),
+                if (ss) data.frame(Name = "AUCTAU", Start = 0, End = tau, stringsAsFactors = FALSE))
   r <- NonCompart::sNCA(t_num, c_num, dose = num0(settings$dose), adm = adm, down = down,
                    dur = if (adm == "Infusion") num0(settings$infusion_duration) else 0,
                    doseUnit = settings$dose_unit, timeUnit = settings$time_unit,
                    concUnit = settings$conc_unit, SS = isTRUE(settings$is_steady_state),
                    # R2ADJ = 0 avoids NonCompart's interactive slope picker (see run_nca)
                    R2ADJ = 0, MW = num0(settings$mw), UsePoints = use,
-                   iAUC = if (ss) data.frame(Name = "AUCTAU", Start = 0, End = tau) else "")
+                   iAUC = if (is.null(iauc)) "" else iauc)
   # The analyst's R2 threshold applies to the automatic fit, not to points
   # chosen by hand
   low <- is.null(use) && below_r2_threshold(r["R2ADJ"], settings$r2adj_threshold)
   if (low) r[lamz_dependent_cols(names(r), settings$is_steady_state)] <- NA
   if (ss) r <- steady_state_parameters(r, t_num, c_num, tau, lamz_rejected = low)
+  if (!is.null(pauc)) {
+    p <- partial_auc_profile(r, pauc, t_num, c_num, is_blq)
+    r <- r[!grepl("^\\.PAUC", names(r))]
+    r[names(p$values)] <- p$values
+    for (msg in partial_auc_notes(pauc, list(p), "this profile", settings$trap_method)) warning(msg)
+  }
   r
 }
 
@@ -569,6 +585,183 @@ steady_state_parameters <- function(r, time, conc, tau, lamz_rejected = FALSE) {
   r
 }
 
+# ----------------------------------------------------------------------------
+# Partial AUCs
+# ----------------------------------------------------------------------------
+# An interval has a start, an end (a time, or "t" = the last measurable
+# concentration of each profile), whether to also report the observed Cmax and
+# Tmax within it, and a role in bioequivalence (pivotal or supportive).
+# Intervals come from the protocol; the app never chooses them.
+
+#' Partial AUC intervals in one shape
+#'
+#' @param x NULL, a data.frame, or a list of records as read back from
+#'   analysis_settings.json, with start, end and optionally cmax and role
+#' @return NULL when there are no intervals, else data.frame(start numeric,
+#'   end character: a number or "t", cmax logical, role character)
+partial_auc_spec <- function(x) {
+  if (is.null(x) || length(x) == 0) return(NULL)
+  if (!is.data.frame(x)) {
+    field <- function(rec, f, default) if (is.null(rec[[f]]) || length(rec[[f]]) == 0) default else rec[[f]]
+    x <- data.frame(start = vapply(x, function(r) as.character(field(r, "start", NA)), character(1)),
+                    end   = vapply(x, function(r) as.character(field(r, "end", NA)), character(1)),
+                    cmax  = vapply(x, function(r) isTRUE(as.logical(field(r, "cmax", FALSE))), logical(1)),
+                    role  = vapply(x, function(r) as.character(field(r, "role", "pivotal")), character(1)),
+                    stringsAsFactors = FALSE)
+  }
+  if (nrow(x) == 0) return(NULL)
+  end_chr <- trimws(as.character(x$end))
+  to_t <- !is.na(end_chr) & tolower(end_chr) == "t"
+  end_num <- suppressWarnings(as.numeric(end_chr))
+  data.frame(start = suppressWarnings(as.numeric(as.character(x$start))),
+             end   = ifelse(to_t, "t", ifelse(is.na(end_num), NA_character_, .pauc_num(end_num))),
+             cmax  = if (is.null(x$cmax)) FALSE else as.logical(x$cmax) %in% TRUE,
+             role  = if (is.null(x$role)) "pivotal" else ifelse(is.na(x$role), "pivotal", as.character(x$role)),
+             stringsAsFactors = FALSE)
+}
+
+#' A number as it appears in a partial AUC column name
+.pauc_num <- function(v) vapply(v, function(z) format(z, scientific = FALSE, trim = TRUE, digits = 15), character(1),
+                                USE.NAMES = FALSE)
+
+#' Check partial AUC intervals before the analysis
+#' @return NULL when valid, otherwise a message for the user
+validate_partial_aucs <- function(spec, is_steady_state = FALSE, tau = NA) {
+  if (is.null(spec)) return(NULL)
+  for (i in seq_len(nrow(spec))) {
+    lab <- paste0("Partial AUC interval ", i, ": ")
+    s <- spec$start[i]; e <- spec$end[i]
+    if (is.na(s) || !is.finite(s) || s < 0) return(paste0(lab, "the start must be a time of 0 or later."))
+    if (is.na(e)) return(paste0(lab, "the end must be a time, or 't' for the last measurable concentration."))
+    if (e != "t" && as.numeric(e) <= s) return(paste0(lab, "the end must be later than the start."))
+    if (!spec$role[i] %in% c("pivotal", "supportive"))
+      return(paste0(lab, "the role must be pivotal or supportive."))
+    if (isTRUE(is_steady_state)) {
+      if (e == "t")
+        return(paste0(lab, "at steady state the interval must lie within 0 to τ; enter an end time ",
+                      "instead of the last measurable concentration."))
+      if (!is.na(tau) && as.numeric(e) > tau + 1e-9 * max(1, tau))
+        return(paste0(lab, "at steady state the interval must lie within 0 to τ (", tau, ")."))
+    }
+  }
+  if (anyDuplicated(paste(spec$start, spec$end)))
+    return("The same partial AUC interval is entered twice.")
+  NULL
+}
+
+#' Result column names for each interval, e.g. AUC_0_0.5, CMAX_168_t, TMAX_168_t
+partial_auc_names <- function(spec) {
+  iv <- paste0(.pauc_num(spec$start), "_", spec$end)
+  data.frame(auc = paste0("AUC_", iv), cmax = paste0("CMAX_", iv), tmax = paste0("TMAX_", iv),
+             stringsAsFactors = FALSE)
+}
+
+#' Pattern of partial AUC, Cmax-in-interval and Tmax-in-interval column names
+PARTIAL_AUC_PATTERN <- "^(AUC|CMAX|TMAX)_([0-9.]+)_([0-9.]+|t)$"
+
+#' NonCompart iAUC rows for the intervals
+#'
+#' A fixed end is NonCompart's partial AUC from start to end. For an end at the
+#' last measurable concentration, NonCompart gives AUC from 0 to start, and the
+#' interval is AUClast minus that.
+partial_auc_iauc <- function(spec) {
+  if (is.null(spec)) return(NULL)
+  need <- spec$end != "t" | spec$start > 0
+  i <- which(need)
+  if (length(i) == 0) return(NULL)
+  data.frame(Name = paste0(".PAUC", i),
+             Start = ifelse(spec$end[i] == "t", 0, spec$start[i]),
+             End = ifelse(spec$end[i] == "t", spec$start[i], suppressWarnings(as.numeric(spec$end[i]))),
+             stringsAsFactors = FALSE)
+}
+
+#' Partial AUCs of one profile
+#'
+#' A partial AUC is reported only when the whole interval lies within the
+#' observed profile, from 0 to the last measurable concentration (Tlast). It is
+#' never extrapolated with lambda-z. A cutoff between samples is interpolated
+#' by NonCompart with the analysis's trapezoidal method. Cmax and Tmax in an
+#' interval are the highest observed concentration from start to end and its
+#' first time, without interpolation.
+#'
+#' @param r Named NCA result of the profile (sNCA output, or one row of tblNCA
+#'   as a list) including the .PAUC columns from partial_auc_iauc()
+#' @param time,conc The profile's samples
+#' @param is_blq Optional flag per sample: value set by the BLQ rule
+#' @return list(values = named numeric, and one logical per interval for:
+#'   beyond (not reported: past Tlast), zero, offgrid (a cutoff is not a
+#'   sampling time), blq (more than half of the samples used are BLQ-derived))
+partial_auc_profile <- function(r, spec, time, conc, is_blq = NULL) {
+  get <- function(n) if (n %in% names(r)) suppressWarnings(as.numeric(r[[n]])) else NA_real_
+  tl <- get("TLST"); auclst <- get("AUCLST")
+  ok <- !is.na(time) & !is.na(conc)
+  x <- time[ok]; y <- conc[ok]
+  blq <- if (is.null(is_blq)) NULL else (is_blq[ok] %in% TRUE)
+  tol <- function(v) 1e-9 * max(1, abs(v))
+  nm <- partial_auc_names(spec)
+  n <- nrow(spec)
+  values <- c(); flags <- list(beyond = logical(n), zero = logical(n), offgrid = logical(n), blq = logical(n))
+  for (i in seq_len(n)) {
+    s <- spec$start[i]
+    e <- if (spec$end[i] == "t") tl else as.numeric(spec$end[i])
+    covered <- !is.na(tl) && !is.na(e) && s <= tl + tol(tl) && e <= tl + tol(tl)
+    auc <- NA_real_
+    if (covered) {
+      auc <- if (spec$end[i] != "t") get(paste0(".PAUC", i)) else
+             if (s == 0) auclst else if (abs(s - tl) <= tol(tl)) 0 else auclst - get(paste0(".PAUC", i))
+      if (!is.na(auc) && abs(auc) <= 1e-12 * max(1, abs(auclst))) auc <- 0
+    }
+    values[nm$auc[i]] <- auc
+    in_win <- covered & x >= s - tol(s) & x <= e + tol(e)
+    if (isTRUE(spec$cmax[i])) {
+      if (any(in_win)) {
+        j <- which(in_win)[which.max(y[in_win])]
+        values[nm$cmax[i]] <- y[j]; values[nm$tmax[i]] <- x[j]
+      } else {
+        values[nm$cmax[i]] <- NA_real_; values[nm$tmax[i]] <- NA_real_
+      }
+    }
+    flags$beyond[i] <- !covered
+    flags$zero[i] <- isTRUE(auc == 0)
+    on_grid <- function(v) any(abs(x - v) <= tol(v))
+    flags$offgrid[i] <- covered && ((s > 0 && !on_grid(s)) || (spec$end[i] != "t" && !on_grid(e)))
+    flags$blq[i] <- covered && !is.null(blq) && any(in_win) && sum(blq[in_win]) > sum(in_win) / 2
+  }
+  c(list(values = values), flags)
+}
+
+#' User-facing notes about partial AUCs across profiles
+#' @param flags list per profile of partial_auc_profile() results
+#' @param labels Profile label per element of flags
+#' @return character vector of messages (empty when nothing to report)
+partial_auc_notes <- function(spec, flags, labels, trap_method = "linear") {
+  if (is.null(spec) || length(flags) == 0) return(character(0))
+  who <- function(f, i) {
+    hit <- labels[vapply(flags, function(p) isTRUE(p[[f]][i]), logical(1))]
+    if (length(hit) == 0) return(NULL)
+    paste0(length(hit), " profile(s): ", paste(head(hit, 5), collapse = ", "), if (length(hit) > 5) " ..." else "")
+  }
+  lab <- paste0("Partial AUC ", .pauc_num(spec$start), "–", spec$end)
+  interp <- if (identical(trap_method, "log")) "linearly while concentrations rise and log-linearly while they fall" else "linearly"
+  out <- character(0)
+  for (i in seq_len(nrow(spec))) {
+    w <- who("beyond", i)
+    if (!is.null(w)) out <- c(out, paste0(lab[i], " is not reported for ", w,
+      ". The interval does not lie within the observed profile (it ends, or starts, after the last ",
+      "measurable concentration); partial AUCs are not extrapolated."))
+    w <- who("offgrid", i)
+    if (!is.null(w)) out <- c(out, paste0(lab[i], ": a cutoff is not a sampling time in ", w,
+      ". The concentration at the cutoff was interpolated ", interp, "."))
+    w <- who("zero", i)
+    if (!is.null(w)) out <- c(out, paste0(lab[i], " is zero in ", w,
+      ". A zero cannot be log-transformed. Check the BLQ rule and the interval."))
+    w <- who("blq", i)
+    if (!is.null(w)) out <- c(out, paste0(lab[i], " rests mainly on concentrations set by the BLQ rule ",
+      "(more than half of the samples in the interval) in ", w, "."))
+  }
+  out
+}
+
 #' Run NCA for all subjects using NonCompart::tblNCA
 #'
 #' Wrapper that handles column mapping, options, and returns clean output.
@@ -579,16 +772,6 @@ steady_state_parameters <- function(r, time, conc, tau, lamz_rejected = FALSE) {
 #' @return Data frame of NCA results
 run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
   
-  # Build iAUC if specified
-  iAUC_df <- ""
-  if (!is.null(settings$partial_aucs) && nrow(settings$partial_aucs) > 0) {
-    iAUC_df <- data.frame(
-      Name  = settings$partial_aucs$name,
-      Start = settings$partial_aucs$start,
-      End   = settings$partial_aucs$end,
-      stringsAsFactors = FALSE
-    )
-  }
   # Steady state: AUC over the entered dosing interval
   ss <- isTRUE(settings$is_steady_state)
   tau <- steady_state_tau(settings)
@@ -596,10 +779,15 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
     warning("Steady state: enter the dosing interval (tau) in the analysis settings.")
     return(NULL)
   }
-  if (ss) {
-    tau_row <- data.frame(Name = "AUCTAU", Start = 0, End = tau, stringsAsFactors = FALSE)
-    iAUC_df <- if (is.data.frame(iAUC_df)) rbind(iAUC_df, tau_row) else tau_row
+  pauc <- partial_auc_spec(settings$partial_aucs)
+  pauc_err <- validate_partial_aucs(pauc, ss, tau)
+  if (!is.null(pauc_err)) {
+    warning(pauc_err)
+    return(NULL)
   }
+  iAUC_df <- rbind(partial_auc_iauc(pauc),
+                   if (ss) data.frame(Name = "AUCTAU", Start = 0, End = tau, stringsAsFactors = FALSE))
+  if (is.null(iAUC_df)) iAUC_df <- ""
   
   # Determine administration mode
   adm <- switch(settings$admin_route,
@@ -796,6 +984,24 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
     }
   }
 
+  if (!is.null(result) && !is.null(pauc)) {
+    flags <- vector("list", nrow(result))
+    vals <- NULL
+    for (i in seq_len(nrow(result))) {
+      rows <- data[[nca_key]] == result[[1]][i]
+      flags[[i]] <- partial_auc_profile(as.list(result[i, , drop = FALSE]), pauc,
+                                        data[[col_map$time]][rows], data[[col_map$conc]][rows],
+                                        data$.is_blq[rows])
+      vals <- rbind(vals, flags[[i]]$values)
+    }
+    result <- result[, !grepl("^\\.PAUC", names(result)), drop = FALSE]
+    for (n in colnames(vals)) result[[n]] <- unname(vals[, n])
+    keys <- as.character(result[[1]])
+    labels <- if (use_composite_key)
+      profile_labels(key_parts[match(keys, key_parts$.nca_key), pk$cols, drop = FALSE]) else keys
+    for (msg in partial_auc_notes(pauc, flags, labels, settings$trap_method)) warning(msg)
+  }
+
   # If a composite key was used, restore its parts (Subject, Treatment,
   # Period) by matching the key, never by splitting the string: a separator
   # inside a treatment name can then not corrupt the columns.
@@ -900,7 +1106,7 @@ record_nca_settings <- function(rec, data, col_map) {
        is_steady_state = isTRUE(rec$steady_state), tau = rec$tau,
        dose_unit = rec$dose_unit, time_unit = rec$time_unit, conc_unit = rec$conc_unit,
        trap_method = rec$trap_method, r2adj_threshold = rec$r2adj_threshold,
-       mw = if (is.null(rec$mw)) 0 else rec$mw, partial_aucs = NULL)
+       mw = if (is.null(rec$mw)) 0 else rec$mw, partial_aucs = partial_auc_spec(rec$partial_aucs))
 }
 
 #' Compare reproduced results with the app's results shipped in the record
@@ -919,6 +1125,15 @@ compare_with_reference <- function(result, ref_file = "app_results_reference.csv
     return(invisible("NOT COMPARED"))
   }
   ref <- read.csv(ref_file, stringsAsFactors = FALSE, check.names = FALSE)
+  # A partial AUC column is named after its interval: one that is missing from
+  # the reproduction means the recorded intervals differ from the app's
+  ref_pauc <- grep(PARTIAL_AUC_PATTERN, if (is.data.frame(result)) names(ref) else ref$Parameter, value = TRUE)
+  res_pauc <- grep(PARTIAL_AUC_PATTERN, names(result), value = TRUE)
+  missing_pauc <- union(setdiff(ref_pauc, res_pauc), setdiff(res_pauc, ref_pauc))
+  if (length(missing_pauc) > 0) {
+    cat("Result: DIFFERENT (partial AUC columns differ: ", paste(missing_pauc, collapse = ", "), ")\n", sep = "")
+    return(invisible("DIFFERENT"))
+  }
   if (is.data.frame(result)) {
     shared_cols <- intersect(names(result), names(ref))
     # Align rows on the profile key rather than trusting row order

@@ -165,7 +165,19 @@ pk_param_labels <- c(
 #' @return Character: the friendly name, or the original if unknown
 friendly_name <- function(name) {
   label <- pk_param_labels[name]
+  label <- ifelse(is.na(label), partial_auc_label(name), label)
   ifelse(is.na(label), name, label)
+}
+
+#' Label of a partial AUC, Cmax-in-interval or Tmax-in-interval column
+#'
+#' "AUC_0_0.5" -> "Partial AUC 0\u20130.5"; "CMAX_168_t" -> "Cmax 168\u2013t";
+#' NA for any other name. Times are in the time unit of the data.
+partial_auc_label <- function(name) {
+  m <- regmatches(name, regexec(PARTIAL_AUC_PATTERN, name))
+  vapply(m, function(x) if (length(x) == 0) NA_character_ else
+    paste0(switch(x[2], AUC = "Partial AUC ", CMAX = "Cmax ", TMAX = "Tmax "), x[3], "\u2013", x[4]),
+    character(1))
 }
 
 #' Rename columns of an NCA result data frame to friendly names
@@ -176,6 +188,7 @@ rename_nca_columns <- function(df) {
   nm <- names(df)
   for (i in seq_along(nm)) {
     label <- pk_param_labels[nm[i]]
+    if (is.na(label)) label <- partial_auc_label(nm[i])
     if (!is.na(label)) nm[i] <- label
   }
   names(df) <- nm
@@ -350,6 +363,9 @@ add_units_to_labels <- function(labels, dose_unit = "mg", time_unit = "h", conc_
   )
   for (i in seq_along(labels)) {
     u <- unit_map[labels[i]]
+    if (is.na(u)) u <- if (startsWith(labels[i], "Partial AUC ")) auc_unit else
+                       if (grepl("^Cmax [0-9.]+\u2013", labels[i])) conc_unit else
+                       if (grepl("^Tmax [0-9.]+\u2013", labels[i])) time_unit else NA
     if (is.na(u)) next
     # "Half-Life (h)" already carries a unit: replace it rather than append
     # a second one ("Half-Life (h) (h)"), and use the actual time unit.

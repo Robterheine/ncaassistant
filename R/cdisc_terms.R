@@ -43,7 +43,10 @@ cdisc_pk_codes <- function(params, admin_route = "extravascular", is_ss = FALSE)
   terms <- utils::read.csv(file.path(.cdisc_dir, "pk_parameter_terms.csv"), stringsAsFactors = FALSE)
   ss <- if (isTRUE(is_ss)) "yes" else "no"
   rows <- lapply(params, function(p) {
-    cand <- map[map$app_parameter == p &
+    # Partial AUC columns share one map row per kind (AUC_T1_T2, CMAX_T1_T2, TMAX_T1_T2)
+    iv <- regmatches(p, regexec(PARTIAL_AUC_PATTERN, p))[[1]]
+    key <- if (length(iv) > 0) paste0(iv[2], "_T1_T2") else p
+    cand <- map[map$app_parameter == key &
                 map$route %in% c(admin_route, "any") &
                 map$steady_state %in% c(ss, "any"), , drop = FALSE]
     if (nrow(cand) > 1) {   # prefer the most specific rule
@@ -52,14 +55,18 @@ cdisc_pk_codes <- function(params, admin_route = "extravascular", is_ss = FALSE)
     }
     if (nrow(cand) == 0) {
       return(data.frame(Parameter = p, PPTESTCD = "", PPTEST = "", NCIt_code = "",
-                        Note = if (p %in% map$app_parameter) "No code for this administration route" else
+                        Note = if (key %in% map$app_parameter) "No code for this administration route" else
                           "Not mapped to a CDISC PK parameter code", stringsAsFactors = FALSE))
     }
     t <- terms[match(cand$PPTESTCD, terms$PPTESTCD), ]
     data.frame(Parameter = p, PPTESTCD = cand$PPTESTCD,
                PPTEST = if (nzchar(cand$PPTESTCD)) t$PPTEST else "",
                NCIt_code = if (nzchar(cand$PPTESTCD)) t$NCIt_code else "",
-               Note = cand$note, stringsAsFactors = FALSE)
+               Note = if (length(iv) > 0 && iv[2] == "AUC")
+                 paste0(cand$note, ": PPSTINT ", iv[3], ", PPENINT ",
+                        if (iv[4] == "t") "the time of the last measurable concentration" else iv[4],
+                        " (time unit of the data)") else cand$note,
+               stringsAsFactors = FALSE)
   })
   do.call(rbind, rows)
 }

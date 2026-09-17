@@ -457,6 +457,8 @@ create_analysis_record <- function(output_path, results, settings, col_map,
     )
     settings_export <- c(settings_export, shipped_adnca$json,
                          list(cdisc_terminology = .cdisc_json()))
+    pauc <- partial_auc_spec(settings$partial_aucs)
+    if (!is.null(pauc)) settings_export$partial_aucs <- pauc
     if (!is.null(be_results)) {
       settings_export$bioequivalence <- be_settings
       settings_export$reproduction_scope <- paste(
@@ -631,6 +633,8 @@ create_single_analysis_record <- function(output_path, result, settings,
     )
     settings_export <- c(settings_export, shipped_adnca$json,
                          list(cdisc_terminology = .cdisc_json()))
+    pauc <- partial_auc_spec(settings$partial_aucs)
+    if (!is.null(pauc)) settings_export$partial_aucs <- pauc
     if (!is.null(lz_overrides)) settings_export$lz_overrides <- lz_overrides
     .write_json(settings_export, file.path(rec_dir, "analysis_settings.json"))
   }, error = function(e) warning("Could not create settings JSON: ", e$message))
@@ -972,7 +976,7 @@ settings <- list(admin_route = rec$admin_route, dose = rec$dose, infusion_durati
                  is_steady_state = isTRUE(rec$steady_state), tau = rec$tau, dose_unit = rec$dose_unit,
                  time_unit = rec$time_unit, conc_unit = rec$conc_unit,
                  trap_method = rec$trap_method, mw = rec$mw,
-                 r2adj_threshold = rec$r2adj_threshold)
+                 r2adj_threshold = rec$r2adj_threshold, partial_aucs = partial_auc_spec(rec$partial_aucs))
 time_used <- if (length(rec$lz_overrides) > 0) rec$lz_overrides[[1]]$time_used else NULL
 result <- run_single_nca(time, conc, settings, time_used = time_used)
 write.csv(data.frame(Parameter = names(result), Value = as.character(result)),

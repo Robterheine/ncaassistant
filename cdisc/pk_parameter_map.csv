@@ -69,3 +69,6 @@ CAVG,any,any,CAVG,"AUC over the dosing interval divided by the dosing interval"
 CMIN_SS,any,any,CMIN,"App column CMIN_SS"
 FLUCTP,any,any,FLUCP,"App column FLUCTP"
 SWING,any,any,SWING,
+AUC_T1_T2,any,any,AUCINT,"Partial AUC columns (AUC_start_end). The interval start and end belong in PPSTINT and PPENINT"
+CMAX_T1_T2,any,any,,"No code for the maximum concentration within an interval in this release"
+TMAX_T1_T2,any,any,,"No code for the time of the maximum concentration within an interval in this release"

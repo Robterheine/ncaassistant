@@ -123,6 +123,7 @@ BE_NO_VERDICT_PARAMS <- c("LAMZHL")
 #'                  do). Ignored for limits within 80-125%, where the CI
 #'                  already implies it.
 #' @param diff_unit Unit label for an untransformed difference, e.g. "h"
+#' @param verdict   FALSE for a supportive metric: ratio and CI without a verdict
 #' @return list(row      = one-row data frame for the CI table,
 #'              anova    = ANOVA table or NULL,
 #'              estimate = unrounded list(pe, ci_lo, ci_hi, dfe, mse) or NULL,
@@ -131,7 +132,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
                              trt_col, subj_col, per_col = NULL, seq_col = NULL,
                              log_transform = TRUE, ci_level = 90,
                              be_lower = 80, be_upper = 125,
-                             pe_constraint = TRUE, diff_unit = NULL) {
+                             pe_constraint = TRUE, diff_unit = NULL, verdict = TRUE) {
 
   out <- list(row = NULL, anova = NULL, estimate = NULL, reason = NULL)
   trt_levels <- levels(be_data[[trt_col]])
@@ -149,7 +150,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   # Only exposure parameters are bioequivalence endpoints. Half-life is
   # reported as a ratio with its confidence interval (useful in drug
   # interaction studies) but is not judged against acceptance limits.
-  has_limits <- is_ratio && !is_paired && !param %in% BE_NO_VERDICT_PARAMS
+  has_limits <- is_ratio && !is_paired && !param %in% BE_NO_VERDICT_PARAMS && isTRUE(verdict)
   scale_label <- if (is_ratio) "Ratio T/R (%)" else
     paste0("Difference T\u2212R", if (!is.null(diff_unit)) paste0(" (", diff_unit, ")") else "")
   widened <- be_lower < 80 || be_upper > 125
@@ -181,7 +182,20 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   }
 
   vals <- as.numeric(be_data[[param]])
-  if (log_transform && param != "TMAX") {
+  if (is_ratio) {
+    # A zero (e.g. an early partial AUC with only BLQ samples) has no
+    # logarithm. Dropping those profiles would bias the ratio, so no estimate
+    # and no verdict are given.
+    zero <- !is.na(vals) & vals == 0
+    if (any(zero)) {
+      trt <- as.character(be_data[[trt_col]])
+      out$reason <- paste0("no verdict: ", sum(zero), " zero value(s) (", trt_levels[2], " ",
+                           sum(zero & trt == trt_levels[2]), ", ", trt_levels[1], " ",
+                           sum(zero & trt == trt_levels[1]), "). A zero cannot be log-transformed ",
+                           "and leaving it out would bias the ratio. Check the BLQ rule and the interval.")
+      out$row <- make_row(verdict = out$reason)
+      return(out)
+    }
     vals <- log(vals); vals[!is.finite(vals)] <- NA
   }
   be_data$.response <- vals
