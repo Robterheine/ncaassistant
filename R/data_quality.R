@@ -376,59 +376,84 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
   # 6. TIME ORDERING & DUPLICATES
   # ===========================================================================
   
-  # Check for duplicate time points per subject (per treatment/period in crossover)
-  dup_count <- 0
-  dup_subjects <- c()
-  
-  # In crossover data, the same time point is expected across periods/treatments.
-  # Check duplicates within each Subject+Treatment or Subject+Period combination.
+  # Check for duplicate time points within each profile. A profile is one
+  # subject under one treatment in one period, so group by whichever of
+  # Treatment and Period are mapped: the same nominal time is expected to recur
+  # across periods and treatments.
   has_trt <- !is.null(col_map$treatment) && col_map$treatment %in% names(data)
   has_per <- !is.null(col_map$period) && col_map$period %in% names(data)
-  
+  prof_group <- if (has_trt && has_per) {
+    paste(data[[col_map$treatment]], data[[col_map$period]], sep = "||")
+  } else if (has_trt) {
+    as.character(data[[col_map$treatment]])
+  } else if (has_per) {
+    as.character(data[[col_map$period]])
+  } else {
+    rep("", nrow(data))
+  }
+
+  dup_count <- 0
+  dup_subjects <- c()
   for (s in subjects) {
     s_idx <- data[[subj_col]] == s & !is.na(time_num)
-    
-    if (has_trt) {
-      # Group by treatment within subject
-      groups <- unique(data[[col_map$treatment]][s_idx])
-      for (g in groups) {
-        g_times <- time_num[s_idx & data[[col_map$treatment]] == g]
-        if (any(duplicated(g_times))) {
-          dup_count <- dup_count + sum(duplicated(g_times))
-          dup_subjects <- c(dup_subjects, s)
-        }
-      }
-    } else if (has_per) {
-      # Group by period within subject
-      groups <- unique(data[[col_map$period]][s_idx])
-      for (g in groups) {
-        g_times <- time_num[s_idx & data[[col_map$period]] == g]
-        if (any(duplicated(g_times))) {
-          dup_count <- dup_count + sum(duplicated(g_times))
-          dup_subjects <- c(dup_subjects, s)
-        }
-      }
-    } else {
-      # No treatment/period: check per subject only
-      s_times <- time_num[s_idx]
-      if (any(duplicated(s_times))) {
-        dup_count <- dup_count + sum(duplicated(s_times))
+    for (g in unique(prof_group[s_idx])) {
+      g_times <- time_num[s_idx & prof_group == g]
+      if (any(duplicated(g_times))) {
+        dup_count <- dup_count + sum(duplicated(g_times))
         dup_subjects <- c(dup_subjects, s)
       }
     }
   }
   dup_subjects <- unique(dup_subjects)
-  
+
   if (dup_count > 0) {
+    unmapped <- c(if (!has_trt) "Treatment", if (!has_per) "Period")
     add("ERROR", "Time",
         paste(dup_count, "duplicate time points across",
               length(dup_subjects), "subjects"),
         paste0("Subjects: ", paste(head(dup_subjects, 5), collapse = ", ")),
-        paste0("Duplicate times usually mean several profiles are stacked in one ",
-               "column: more than one analyte, matrix, period or treatment. Split or ",
-               "filter the file so each subject contributes one profile, or map the ",
-               "Treatment and Period columns. Only average duplicates when they are ",
-               "genuine replicate measurements of the same sample."))
+        if (length(unmapped) == 0) {
+          paste0("Duplicate times within one subject, treatment and period usually mean ",
+                 "several profiles are stacked in one column: more than one analyte or ",
+                 "matrix, or repeated rows. Filter the file so each subject contributes one ",
+                 "profile per treatment and period. Only average duplicates when they are ",
+                 "genuine replicate measurements of the same sample.")
+        } else {
+          paste0("Duplicate times usually mean several profiles are stacked in one ",
+                 "column: more than one analyte, matrix, period or treatment. If your file ",
+                 "has a ", paste(unmapped, collapse = " or "), " column, map it; otherwise ",
+                 "split or filter the file so each subject contributes one profile. Only ",
+                 "average duplicates when they are genuine replicate measurements of the ",
+                 "same sample.")
+        })
+  }
+
+  # Replicate designs (a subject receives the same treatment in more than one
+  # period, e.g. TRTR/RTRT, TRT/RTR, TRR/RTR/RRT). The NCA currently treats
+  # subject + treatment as one profile, so both administrations would be merged
+  # into a single interleaved profile and every parameter would be wrong.
+  # Refuse until period-aware profiles are supported (roadmap Part B).
+  if (has_trt && has_per) {
+    rep_subjects <- c()
+    for (s in subjects) {
+      s_idx <- data[[subj_col]] == s
+      per_by_trt <- tapply(as.character(data[[col_map$period]][s_idx]),
+                           as.character(data[[col_map$treatment]][s_idx]),
+                           function(p) length(unique(p)))
+      if (any(per_by_trt > 1)) rep_subjects <- c(rep_subjects, s)
+    }
+    if (length(rep_subjects) > 0) {
+      add("ERROR", "Design",
+          paste0("Replicate design detected: ", length(rep_subjects),
+                 " subject(s) received the same treatment in more than one period"),
+          paste0("Subjects: ", paste(head(rep_subjects, 5), collapse = ", "),
+                 if (length(rep_subjects) > 5) paste0(" (+ ", length(rep_subjects) - 5, " more)")),
+          paste0("Replicate designs (e.g. TRTR/RTRT, TRT/RTR, TRR/RTR/RRT) are not yet ",
+                 "supported: each administration must be analysed as a separate profile, ",
+                 "which this version does not do. Use dedicated software (e.g. the ",
+                 "replicateBE R package) for these studies. If this is not a replicate ",
+                 "design, check the Treatment and Period columns."))
+    }
   }
   
   # ===========================================================================

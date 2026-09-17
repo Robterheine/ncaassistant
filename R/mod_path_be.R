@@ -87,7 +87,7 @@ path_be_ui <- function(id) {
                           tagList("Study design", help_be_design),
                           choices = c(
                             "Standard 2-period crossover" = "crossover_2x2",
-                            "Fixed-order crossover (all subjects same sequence)" = "crossover_fixed_order",
+                            "Paired comparison (single sequence — not a bioequivalence design)" = "crossover_fixed_order",
                             "3-period crossover" = "crossover_3period",
                             "Parallel groups" = "parallel",
                             "4-period replicate crossover" = "replicate_2x2x4"
@@ -98,16 +98,17 @@ path_be_ui <- function(id) {
                 tags$div(
                   class = "alert alert-warning py-2 small mb-2",
                   icon("triangle-exclamation", class = "me-1"),
-                  tags$strong("Limitation: "),
-                  "All subjects received treatments in the same order. ",
-                  "Period and treatment effects are fully confounded and cannot be separated. ",
-                  "A paired analysis (equivalent to a paired t-test on the log-transformed ",
-                  "parameters) is used. Results should be interpreted with caution."
+                  tags$strong("Not a bioequivalence design: "),
+                  "All subjects received treatments in the same order, so period and ",
+                  "treatment effects cannot be separated. A paired analysis (equivalent to a ",
+                  "paired t-test on the log-transformed parameters) reports the ratio and its ",
+                  "confidence interval, but no bioequivalence verdict is given. Suitable for ",
+                  "before/after comparisons such as drug-interaction or switch studies."
                 )
               ),
               
               conditionalPanel(
-                condition = sprintf("input['%s'] == 'replicate_2x2x4'", ns("be_design")),
+                condition = sprintf("input['%s'] == 'crossover_3period' || input['%s'] == 'replicate_2x2x4'", ns("be_design"), ns("be_design")),
                 tags$div(
                   class = "alert alert-info py-2 small mb-2",
                   icon("circle-info", class = "me-1"),
@@ -365,6 +366,10 @@ path_be_server <- function(id, shared) {
     be_nca_result  <- reactiveVal(NULL)
     be_result      <- reactiveVal(NULL)
     balance_result <- reactiveVal(NULL)   # stores imbalance info for persistent alert
+    # Settings exactly as used by the last completed run. The Analysis Record is
+    # built from this snapshot, not from the inputs at download time, which may
+    # have changed since (and which never held the per-subject dose vector).
+    be_run_settings <- reactiveVal(NULL)
     
     observeEvent(input$run_be, {
       req(shared$pk_data, shared$col_map, shared$col_map$treatment)
@@ -539,11 +544,20 @@ path_be_server <- function(id, shared) {
         if (is.null(params) || length(params) == 0)
           params <- intersect(c("CMAX","AUCLST","AUCIFO"), names(nca_res))
         
+        # A single treatment order is a paired comparison whatever was selected;
+        # analyse it as one rather than fitting a confounded crossover model.
+        design_used <- resolve_be_design(input$be_design, be_data,
+                                         subj_col = subj_col_be, trt_col = trt_col_be,
+                                         per_col = per_col, seq_col = seq_col)
+        if (!is.null(design_used$note)) {
+          showNotification(design_used$note, type = "warning", duration = 15)
+        }
+        
         # Warn when no Sequence column is mapped for crossover designs
         if (is.null(seq_col) &&
-            input$be_design %in% c("crossover_2x2", "crossover_3period", "replicate_2x2x4")) {
+            design_used$design %in% c("crossover_2x2", "crossover_3period", "replicate_2x2x4")) {
           showNotification(
-            paste0("No Sequence column is mapped. For a ", input$be_design,
+            paste0("No Sequence column is mapped. For a ", design_used$design,
                    " design the Sequence term is part of the standard ANOVA model ",
                    "(ln(PK) = Sequence + Subject(Sequence) + Period + Treatment). ",
                    "Without it, between-sequence variance is uncontrolled and ",
@@ -552,17 +566,6 @@ path_be_server <- function(id, shared) {
             type = "warning", duration = 15)
         }
 
-        # Warn if design selection may not match the data
-        if (!is.null(seq_col) && length(unique(be_data[[seq_col]])) < 2 &&
-            input$be_design %in% c("crossover_2x2", "crossover_3period", "replicate_2x2x4")) {
-          showNotification(
-            paste0("Your data has only one sequence level ('",
-                   unique(be_data[[seq_col]])[1],
-                   "'). This looks like a fixed-order crossover. ",
-                   "Consider selecting 'Fixed-order crossover' as the study design."),
-            type = "warning", duration = 10)
-        }
-        
         # ---- Balanced design pre-check ------------------------------------
         # Check each subject appears in both treatment levels in the NCA result.
         # be_data is at the NCA result grain (one row per subject-treatment),
@@ -626,7 +629,7 @@ path_be_server <- function(id, shared) {
         for (param in params) {
           fit_out <- fit_be_parameter(
             be_data, param,
-            design        = input$be_design,
+            design        = design_used$design,
             model_type    = input$model_type,
             trt_col       = trt_col_be,
             subj_col      = subj_col_be,
@@ -649,6 +652,17 @@ path_be_server <- function(id, shared) {
         
         ci_df <- do.call(rbind, ci_results)
         be_result(list(ci_table = ci_df, anova = anova_results))
+        be_run_settings(list(
+          nca = settings,
+          be  = list(
+            design_selected   = input$be_design,
+            design_analysed   = design_used$design,
+            model_type        = input$model_type,
+            log_transform     = isTRUE(input$log_transform),
+            ci_level          = input$ci_level,
+            acceptance_limits = c(input$be_lower, input$be_upper),
+            pe_constraint     = !identical(input$pe_constraint, FALSE),
+            parameters        = params)))
         shared$be_results <- be_result()
         balance_result(balance_info)  # persist for the alert panel
         
@@ -1177,23 +1191,14 @@ path_be_server <- function(id, shared) {
         paste0("Analysis_Record_", study, "_", Sys.Date(), ".zip")
       },
       content = function(file) {
-        req(be_nca_result(), be_result(), shared$col_map, shared$study_info)
+        req(be_nca_result(), be_result(), be_run_settings(), shared$col_map, shared$study_info)
         
         withProgress(message = "Generating analysis record...", value = 0.3, {
           r <- be_nca_result()
           
-          settings <- list(
-            admin_route     = input$admin_route,
-            dose            = input$dose,
-            infusion_duration = 0,
-            is_steady_state = isTRUE(input$is_ss),
-            dose_unit       = input$dose_unit,
-            time_unit       = input$time_unit,
-            conc_unit       = input$conc_unit,
-            trap_method     = input$trap_method,
-            r2adj_threshold = input$r2adj_be,
-            n_obs           = nrow(shared$pk_data)
-          )
+          run <- be_run_settings()
+          settings <- run$nca
+          settings$n_obs <- nrow(shared$pk_data)
           
           si <- shared$study_info
           original_name <- si$file_name
@@ -1219,6 +1224,7 @@ path_be_server <- function(id, shared) {
             analyst        = if (nchar(input$record_analyst) > 0) input$record_analyst else "Analyst",
             study_name     = if (nchar(input$record_study) > 0) input$record_study else "Untitled Study",
             be_results     = be_result(),
+            be_settings    = run$be,
             lz_overrides   = if (length(lz_state$overrides_log) > 0) lz_state$overrides_log else NULL,
             viz_settings   = shared$viz_settings
           )

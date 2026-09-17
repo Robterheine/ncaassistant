@@ -43,6 +43,10 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   # the user switches the transform off: those give a difference in the
   # parameter's own units and no verdict.
   is_ratio <- log_transform && param != "TMAX"
+  # A single-sequence (fixed-order) study confounds period with treatment, so
+  # it can report a paired ratio but cannot support a bioequivalence verdict.
+  is_paired <- design == "crossover_fixed_order"
+  has_limits <- is_ratio && !is_paired
   scale_label <- if (is_ratio) "Ratio T/R (%)" else
     paste0("Difference T\u2212R", if (!is.null(diff_unit)) paste0(" (", diff_unit, ")") else "")
   widened <- be_lower < 80 || be_upper > 125
@@ -56,8 +60,8 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
       Reference = as.character(trt_levels[1]),
       N_Test = n_t, N_Ref = n_r, Scale = scale_label,
       Point_Est = pe, CI_Lower = lo, CI_Upper = hi,
-      BE_Lower = if (is_ratio) be_lower else NA,
-      BE_Upper = if (is_ratio) be_upper else NA,
+      BE_Lower = if (has_limits) be_lower else NA,
+      BE_Upper = if (has_limits) be_upper else NA,
       PE_Constraint = pe_status, Bioequivalent = verdict,
       MSE = mse, DF = dfe, stringsAsFactors = FALSE)
   }
@@ -208,7 +212,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   } else { pe <- diff; ci_lo_p <- ci_lo; ci_hi_p <- ci_hi }
   pe <- unname(pe); ci_lo_p <- unname(ci_lo_p); ci_hi_p <- unname(ci_hi_p)
 
-  if (is_ratio) {
+  if (has_limits) {
     ci_pass <- ci_lo_p >= be_lower && ci_hi_p <= be_upper
     # A CI inside 80-125% already puts the point estimate inside it. Wider
     # limits (ABEL-style, or fixed widened Cmax limits) do not, so the
@@ -232,4 +236,42 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
                       n_t = n2, n_r = n1, pe_status = pe_status, verdict = verdict,
                       mse = round(mse, 6), dfe = unname(dfe))
   out
+}
+
+
+#' Decide which BE design to analyse, given what the data show
+#'
+#' A study in which every subject received the treatments in the same order
+#' is a paired comparison, whatever design was selected. It is detected from a
+#' single Sequence level, or, when no Sequence column is mapped, from every
+#' subject having the same treatment order by Period.
+#'
+#' @return list(design = design to analyse, note = explanation or NULL)
+resolve_be_design <- function(design, be_data, subj_col, trt_col,
+                              per_col = NULL, seq_col = NULL) {
+  crossover <- c("crossover_2x2", "crossover_3period", "replicate_2x2x4")
+  if (!design %in% crossover) return(list(design = design, note = NULL))
+
+  n_orders <- if (!is.null(seq_col) && seq_col %in% names(be_data)) {
+    length(unique(be_data[[seq_col]]))
+  } else if (!is.null(per_col) && per_col %in% names(be_data)) {
+    per_num <- suppressWarnings(as.numeric(as.character(be_data[[per_col]])))
+    ord <- if (anyNA(per_num)) order(as.character(be_data[[per_col]])) else order(per_num)
+    d <- be_data[ord, , drop = FALSE]
+    orders <- tapply(as.character(d[[trt_col]]), as.character(d[[subj_col]]),
+                     paste, collapse = ">")
+    length(unique(orders))
+  } else {
+    NA
+  }
+
+  if (!is.na(n_orders) && n_orders == 1) {
+    list(design = "crossover_fixed_order",
+         note = paste0("All subjects received the treatments in the same order, so period ",
+                       "and treatment cannot be separated. The data were analysed as a paired ",
+                       "comparison, which reports the ratio and its confidence interval but ",
+                       "gives no bioequivalence verdict."))
+  } else {
+    list(design = design, note = NULL)
+  }
 }

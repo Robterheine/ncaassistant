@@ -1232,6 +1232,146 @@ check("REG-BE-AOV-01", "Fixed model: Sequence tested against Subject(Sequence)",
   method = "F = MS(Sequence) / MS(Subject within Sequence)",
   expected = "Df 1, F equal to the textbook crossover test")
 
+# D5: the "no scaled analysis" warning must show on every design the planner
+# offers scaled methods for (2x2x3 and 2x3x3 map to crossover_3period)
+check("REG-BE-D5-01", "ABEL/RSABE warning shows for 3-period and 4-period designs",
+  tryCatch({
+    src <- paste(readLines("R/mod_path_be.R", warn = FALSE), collapse = "\n")
+    pos <- regexpr("This app performs standard ABE", src, fixed = TRUE)
+    if (pos < 0) FALSE else {
+      before <- substr(src, max(1, pos - 400), pos)
+      cond <- regmatches(before, gregexpr("condition = sprintf\\([^\n]*", before))[[1]]
+      last <- tail(cond, 1)
+      length(last) == 1 && grepl("crossover_3period", last) && grepl("replicate_2x2x4", last)
+    }
+  }, error = function(e) FALSE),
+  "URS-BE-02", critical = FALSE,
+  method = "source inspection of the conditionalPanel holding the scaled-analysis note",
+  expected = "condition covers crossover_3period and replicate_2x2x4")
+
+# D6: a single-sequence (fixed-order) comparison is not a BE design
+check("REG-BE-FO-03", "Fixed-order: estimate and CI reported, no BE verdict",
+  tryCatch({
+    fo <- be_d; fo$Sequence <- "RT"; fo$Period <- ifelse(fo$Treatment == "R", 1, 2)
+    r <- run_be_fit(fo, "CMAX", "crossover_fixed_order")
+    !is.na(r$row$Point_Est) && identical(r$row$Bioequivalent, "no verdict") &&
+      is.na(r$row$BE_Lower) && identical(r$row$PE_Constraint, "not applicable")
+  }, error = function(e) FALSE),
+  "URS-BE-02", critical = TRUE,
+  method = "fixed-order data, design crossover_fixed_order",
+  expected = "Point estimate present, Bioequivalent = no verdict, no limits")
+check("REG-BE-FO-04", "Single Sequence level is analysed as a paired comparison",
+  tryCatch({
+    fo <- be_input(be_d); fo$Sequence <- "RT"
+    a <- resolve_be_design("crossover_2x2", fo, subj_col = "Subject", trt_col = "Treatment",
+                           per_col = "Period", seq_col = "Sequence")
+    b <- resolve_be_design("crossover_2x2", be_input(be_d), subj_col = "Subject", trt_col = "Treatment",
+                           per_col = "Period", seq_col = "Sequence")
+    identical(a$design, "crossover_fixed_order") && !is.null(a$note) &&
+      identical(b$design, "crossover_2x2") && is.null(b$note)
+  }, error = function(e) FALSE),
+  "URS-BE-02", critical = TRUE,
+  method = "resolve_be_design() with one vs two Sequence levels",
+  expected = "one level -> crossover_fixed_order with a note; two -> unchanged")
+check("REG-BE-FO-05", "Fixed order detected from Period when no Sequence column is mapped",
+  tryCatch({
+    fo <- be_input(be_d); fo$Period <- ifelse(fo$Treatment == "R", 1, 2)
+    a <- resolve_be_design("crossover_2x2", fo, subj_col = "Subject", trt_col = "Treatment",
+                           per_col = "Period", seq_col = NULL)
+    b <- resolve_be_design("crossover_2x2", be_input(be_d), subj_col = "Subject", trt_col = "Treatment",
+                           per_col = "Period", seq_col = NULL)
+    identical(a$design, "crossover_fixed_order") && identical(b$design, "crossover_2x2")
+  }, error = function(e) FALSE),
+  "URS-BE-02", critical = TRUE,
+  method = "treatment order per subject derived from Period",
+  expected = "all subjects same order -> fixed order; mixed orders -> unchanged")
+
+# D9: a BE analysis record states what was actually used, and reproduces
+check("REG-REP-02", "BE record with per-subject doses reproduces and records BE settings",
+  tryCatch({
+    wd <- file.path(tempdir(), paste0("regrep2", as.integer(runif(1, 1, 1e6))))
+    dir.create(wd, recursive = TRUE, showWarnings = FALSE)
+    mk <- function(s, trt, per, sq) data.frame(
+      Subject = s, Treatment = trt, Period = per, Sequence = sq, Dose = s * 50,
+      Time = c(0, 0.5, 1, 2, 4, 8, 12, 24),
+      Conc = c(0, 8.1, 14.2, 11.0, 6.4, 2.9, 1.1, 0.4) * (1 + 0.05 * s))
+    raw <- do.call(rbind, lapply(1:8, function(s) if (s %% 2)
+      rbind(mk(s, "Test", 1, "TR"), mk(s, "Reference", 2, "TR")) else
+      rbind(mk(s, "Reference", 1, "RT"), mk(s, "Test", 2, "RT"))))
+    csv <- file.path(wd, "be.csv"); write.csv(raw, csv, row.names = FALSE)
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc", treatment = "Treatment",
+               period = "Period", sequence = "Sequence", dose = "Dose")
+    d <- read.csv(csv, stringsAsFactors = FALSE)
+    st <- reg_settings; st$dose <- reg_named_dose(d); st$n_obs <- nrow(d)
+    app <- run_nca(d, cm, st)
+    bes <- list(design_selected = "crossover_2x2", design_analysed = "crossover_2x2",
+                model_type = "fixed", log_transform = TRUE, ci_level = 90,
+                acceptance_limits = c(80, 125), pe_constraint = TRUE,
+                parameters = c("CMAX", "AUCLST"))
+    zp <- file.path(wd, "rec.zip")
+    invisible(create_analysis_record(zp, app, st, cm, csv, "be.csv", blq_rule = "rule1",
+      lloq = 0, analyst = "QA", study_name = "REG-REP-02",
+      be_results = list(ci_table = data.frame(Parameter = "CMAX"), anova = list()),
+      be_settings = bes))
+    ex <- file.path(wd, "ex"); unzip(zp, exdir = ex)
+    js <- jsonlite::fromJSON(list.files(ex, "analysis_settings.json", recursive = TRUE, full.names = TRUE)[1])
+    scr <- list.files(ex, "reproduce_analysis.R", recursive = TRUE, full.names = TRUE)[1]
+    owd <- setwd(dirname(scr))
+    out <- tryCatch(system2("Rscript", "reproduce_analysis.R", stdout = TRUE, stderr = TRUE),
+                    error = function(e) character(0))
+    setwd(owd)
+    identical(js$dose_source, "per_subject") &&
+      identical(js$bioequivalence$design_analysed, "crossover_2x2") &&
+      isTRUE(js$bioequivalence$pe_constraint) &&
+      !is.null(js$reproduction_scope) &&
+      any(grepl("-> MATCH", out)) && !any(grepl("DIFFERENT", out))
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = TRUE,
+  method = "BE record with per-subject doses and BE settings; execute reproduce_analysis.R",
+  expected = "dose_source per_subject; bioequivalence block present; script says MATCH")
+
+# Duplicate times and replicate designs in the quality check
+reg_qc_cm <- list(subject = "Subject", time = "Time", conc = "Conc",
+                  treatment = "Treatment", period = "Period")
+reg_qc_prof <- function(s, trt, per) data.frame(Subject = s, Treatment = trt, Period = per,
+  Time = c(0, 1, 2, 4, 8), Conc = c(0, 10, 8, 4, 1), stringsAsFactors = FALSE)
+check("REG-QC-02", "Standard 2x2 with nominal times passes the duplicate check",
+  tryCatch({
+    d <- rbind(reg_qc_prof("A", "T", 1), reg_qc_prof("A", "R", 2),
+               reg_qc_prof("B", "R", 1), reg_qc_prof("B", "T", 2))
+    qc <- run_data_quality_check(d, reg_qc_cm)
+    !any(qc$findings$Severity == "ERROR")
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE,
+  method = "2 subjects x 2 periods, repeated nominal times", expected = "no ERROR")
+check("REG-QC-03", "Replicate design (same treatment in two periods) is refused clearly",
+  tryCatch({
+    d <- do.call(rbind, list(reg_qc_prof("A", "T", 1), reg_qc_prof("A", "R", 2),
+                             reg_qc_prof("A", "T", 3), reg_qc_prof("A", "R", 4)))
+    qc <- run_data_quality_check(d, reg_qc_cm); f <- qc$findings
+    e <- f[f$Severity == "ERROR", ]
+    nrow(e) >= 1 && any(grepl("eplicate", e$Message)) &&
+      !any(grepl("map the Treatment and Period", e$Action, ignore.case = TRUE))
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE,
+  method = "TRTR with Treatment and Period mapped",
+  expected = "ERROR naming a replicate design; no advice to map columns already mapped")
+check("REG-QC-04", "Duplicates within one treatment-period: advice fits what is mapped",
+  tryCatch({
+    d <- rbind(reg_qc_prof("A", "T", 1), reg_qc_prof("A", "T", 1), reg_qc_prof("A", "R", 2))
+    qc <- run_data_quality_check(d, reg_qc_cm); f <- qc$findings
+    e <- f[f$Severity == "ERROR" & grepl("uplicate", f$Message), ]
+    d2 <- rbind(reg_qc_prof("A", "T", 1), reg_qc_prof("A", "T", 2))
+    qc2 <- run_data_quality_check(d2, list(subject = "Subject", time = "Time", conc = "Conc",
+                                          treatment = "Treatment")); f2 <- qc2$findings
+    e2 <- f2[f2$Severity == "ERROR" & grepl("uplicate", f2$Message), ]
+    nrow(e) == 1 && !grepl("map the Treatment and Period", e$Action, ignore.case = TRUE) &&
+      nrow(e2) == 1 && grepl("Period", e2$Action)
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = FALSE,
+  method = "stacked profile with both columns mapped; replicate with Period unmapped",
+  expected = "first: no map-columns advice; second: advice to map Period")
+
 end_section("REG")
 
 # =============================================================================

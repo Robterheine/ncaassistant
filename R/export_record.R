@@ -723,6 +723,11 @@ This package contains everything needed to independently reproduce the pharmacok
 analysis. The R script (<code>reproduce_analysis.R</code>) repeats the exact same analysis
 step by step, without requiring the NCA Assistant app. The SHA-256 hash verifies that
 the data file has not been modified since the analysis was performed.
+', if (identical(analysis_type, "Bioequivalence")) paste0('<br><br>
+<strong>Scope:</strong> the script recomputes the NCA parameters. The bioequivalence
+statistics (ANOVA, confidence intervals and verdict) are recorded in <code>results.xlsx</code>
+and <code>analysis_settings.json</code> but are not recomputed by the script.
+') else '', '
 </div>
 
 <h2>1. Study Information</h2>
@@ -875,12 +880,15 @@ together with the other files in this package.
 #' @param study_name Study name
 #' @param summary_stats Optional summary statistics data frame
 #' @param be_results Optional BE results list
+#' @param be_settings Optional list of the BE settings used (design, model,
+#'   CI level, limits, point-estimate constraint, parameters)
 create_analysis_record <- function(output_path, results, settings, col_map,
                                     original_file_path, original_file_name,
                                     blq_rule, lloq, analyst = "Analyst",
                                     study_name = "Untitled Study",
                                     summary_stats = NULL,
                                     be_results = NULL,
+                                    be_settings = NULL,
                                     lz_overrides = NULL,
                                     viz_settings = NULL) {
   
@@ -959,6 +967,13 @@ create_analysis_record <- function(output_path, results, settings, col_map,
         PowerTOST  = tryCatch(as.character(packageVersion("PowerTOST")), error = function(e) "?")
       )
     )
+    if (!is.null(be_results)) {
+      settings_export$bioequivalence <- be_settings
+      settings_export$reproduction_scope <- paste(
+        "reproduce_analysis.R recomputes the NCA parameters only. The bioequivalence",
+        "statistics (ANOVA, confidence intervals, verdict) are recorded in results.xlsx",
+        "and are not recomputed by the script.")
+    }
     if (!is.null(lz_overrides) && length(lz_overrides) > 0) {
       settings_export$lz_overrides <- lz_overrides
     }
