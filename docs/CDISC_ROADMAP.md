@@ -555,6 +555,21 @@ file they can attach to their own documentation.
 **If it gets used, that is the evidence the in-app door is worth building. If it
 does not, a year has been saved.**
 
+> **Built (2026-09-17).** `converters/adnca_to_flat.R` (base R; readxl for
+> Excel) and the recipe `converters/ADNCA_TO_FLAT.md`. It applies the Phase 3
+> refusal list: explicit time variable (NRRLT/ARRLT/MRRLT; AFRLT refused;
+> negative ARRLT only with `zero_predose = TRUE`), ANL01FL selection and
+> PCSTAT "NOT DONE" drops with counts, DTYPE refused, one analyte/matrix
+> (refused or selected explicitly, never averaged), one unit and LLOQ,
+> profiles starting near zero, no duplicate times, one dose per subject and
+> period, no infusions, and missing AVAL only when a BLQ result explains it.
+> It writes the flat CSV and a conversion log with SHA-256 hashes. The app's
+> ADNCA refusal message points to it. Tests: EQV-01/02 (converted F1 and flat
+> F2 give identical analysis data and identical NCA results) and CONV-01..12,
+> each guarded refusal confirmed by mutation (disabling it fails its test).
+> **The Phase 3 decision is now open:** it depends on whether the converter
+> is used.
+
 Say plainly in the README what this app is for and what aNCA is for. Pointing
 users to the better tool for CDISC work costs nothing, buys credibility, and
 inoculates against the "why not just use aNCA?" review comment.

@@ -53,7 +53,7 @@ APP_VERSION <- tryCatch({
 
 source_files <- c("R/utils.R", "R/nca_helpers.R", "R/data_quality.R",
                   "R/export_record.R", "R/mod_data_upload.R", "R/designs.R", "R/be_analysis.R",
-                  "R/pipeline.R", "R/interlocks.R")
+                  "R/pipeline.R", "R/interlocks.R", "converters/adnca_to_flat.R")
 hash_files <- c("validation/validation.R", source_files)
 file_hashes <- sapply(hash_files, function(f) {
   if (file.exists(f)) digest(file = f, algo = "sha256") else "FILE_NOT_FOUND"
@@ -2121,6 +2121,147 @@ check("REC-08", "Figure record rebuilds the figure from the processed data",
   expected = "script uses the pipeline; check reports the figure was produced")
 
 end_section("REC")
+
+# =============================================================================
+# SECTION CONV: standalone ADNCA-to-flat converter (converters/adnca_to_flat.R)
+# =============================================================================
+start_section("CONV")
+
+conv_env <- new.env()
+sys.source(file.path("converters", "adnca_to_flat.R"), envir = conv_env)
+conv_fx <- function(f) file.path("validation", "fixtures", f)
+conv_run <- function(f, ...) {
+  out <- tempfile(fileext = ".csv")
+  res <- conv_env$adnca_to_flat(conv_fx(f), out, ...)
+  list(flat = read.csv(out, stringsAsFactors = FALSE), res = res, out = out,
+       log = paste(readLines(sub("\\.csv$", "_conversion_log.txt", out)), collapse = "\n"))
+}
+conv_refused <- function(f, pattern, ...) {
+  msg <- tryCatch({ conv_run(f, ...); "" }, adnca_refusal = function(e) conditionMessage(e))
+  grepl("^Refused:", msg) && grepl(pattern, msg, ignore.case = TRUE)
+}
+conv_cm <- list(subject = "Subject", time = "Time", conc = "Conc", treatment = "Treatment",
+                period = "Period", sequence = "Sequence")
+conv_st <- list(admin_route = "extravascular", dose = 100, infusion_duration = 0, is_steady_state = FALSE,
+                dose_unit = "mg", time_unit = "h", conc_unit = "ng/mL", trap_method = "log",
+                r2adj_threshold = 0.7, mw = 0)
+conv_nca <- function(path, subject_map = NULL) {
+  raw <- read_pk_file(path)
+  ds <- prepare_pk_dataset(raw, conv_cm, list(lloq = 0.5, blq_rule = "rule1"))
+  r <- suppressWarnings(run_nca(ds$data, conv_cm, conv_st))
+  if (!is.null(subject_map)) r$Subject <- subject_map[r$Subject]
+  list(ds = ds, r = r)
+}
+
+check("EQV-02", "Converted ADNCA and the equivalent flat file give the same analysis data",
+  tryCatch({
+    cv <- conv_run("adnca_clean.csv", time = "NRRLT")
+    f1 <- read.csv(conv_fx("adnca_clean.csv"), stringsAsFactors = FALSE)
+    map <- setNames(as.character(f1$SUBJID), f1$USUBJID)
+    a <- conv_nca(cv$out)$ds$data; b <- conv_nca(conv_fx("flat_equivalent.csv"))$ds$data
+    a$Subject <- map[a$Subject]; b$Subject <- as.character(b$Subject)
+    key <- function(x) paste(x$Subject, x$Treatment, x$Period, x$Time)
+    ka <- key(a); kb <- key(b)
+    setequal(ka, kb) && !anyDuplicated(ka) &&
+      identical(a$Conc[order(ka)], b$Conc[match(ka[order(ka)], kb)])
+  }, error = function(e) FALSE),
+  "URS-DAT-01", critical = TRUE,
+  method = "F1 converted with NRRLT vs F2 (generated from F1); keys compared separately from values",
+  expected = "same profiles and times; identical concentrations")
+check("EQV-01", "Converted ADNCA and the equivalent flat file give identical NCA results",
+  tryCatch({
+    cv <- conv_run("adnca_clean.csv", time = "NRRLT")
+    f1 <- read.csv(conv_fx("adnca_clean.csv"), stringsAsFactors = FALSE)
+    map <- setNames(as.character(f1$SUBJID), f1$USUBJID)
+    a <- conv_nca(cv$out, map)$r; b <- conv_nca(conv_fx("flat_equivalent.csv"))$r
+    ka <- paste(a$Subject, a$Treatment, a$Period); kb <- paste(b$Subject, b$Treatment, b$Period)
+    num <- names(b)[sapply(b, is.numeric)]
+    setequal(ka, kb) && nrow(a) == 24 &&
+      identical(unname(as.matrix(a[order(ka), num])), unname(as.matrix(b[match(ka[order(ka)], kb), num])))
+  }, error = function(e) FALSE),
+  "URS-NCA-01", critical = TRUE, method = "full NCA on both, rows matched by subject/treatment/period",
+  expected = "24 profiles, every parameter identical")
+check("CONV-01", "Converter output passes the app's quality check and interlocks",
+  tryCatch({
+    cv <- conv_run("adnca_clean.csv", time = "NRRLT")
+    qc <- run_data_quality_check(read_pk_file(cv$out), conv_cm, lloq = 0.5)
+    qc$pass && nrow(run_interlocks(read_pk_file(cv$out), conv_cm)) == 0 &&
+      identical(names(cv$flat), c("Subject", "Time", "Conc", "Treatment", "Period", "Sequence", "Dose"))
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "F1 -> flat -> run_data_quality_check", expected = "QC passes, no interlock")
+check("CONV-02", "Time variable must be chosen; AFRLT is refused",
+  tryCatch({
+    conv_refused("adnca_clean.csv", "choose the time variable") &&
+      conv_refused("adnca_clean.csv", "first dose", time = "AFRLT")
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "no time argument; time = AFRLT", expected = "both refused")
+check("CONV-03", "Derived records (DTYPE) are refused: no double BLQ imputation",
+  tryCatch(conv_refused("adnca_dtype.csv", "DTYPE.*impute twice", time = "NRRLT"), error = function(e) FALSE),
+  "URS-DAT-04", critical = TRUE, method = "F3 (HALFLLOQ records)", expected = "refused")
+check("CONV-04", "Records outside the analysis set (ANL01FL) are dropped and counted",
+  tryCatch({
+    a <- conv_run("adnca_anl01fl.csv", time = "NRRLT"); b <- conv_run("adnca_clean.csv", time = "NRRLT")
+    identical(a$flat, b$flat) && max(as.numeric(a$flat$Conc)) < 1000 &&
+      grepl("dropped 24", a$log)
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "F4 (24 extra records with AVAL 1e6, ANL01FL blank)",
+  expected = "output identical to F1's; log reports 24 dropped")
+check("CONV-05", "Several analytes: refused, or one selected explicitly (never averaged)",
+  tryCatch({
+    sel <- conv_run("adnca_multi_analyte.csv", time = "NRRLT", paramcd = "DRUGX")
+    conv_refused("adnca_multi_analyte.csv", "more than one Analyte in PARAMCD \\(DRUGX, DRUGXM1\\)", time = "NRRLT") &&
+      identical(sel$flat, conv_run("adnca_clean.csv", time = "NRRLT")$flat) &&
+      !grepl("averag", sel$log, ignore.case = TRUE)
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "F5 without and with paramcd = DRUGX", expected = "refused; selection equals F1")
+check("CONV-06", "Time since first dose is refused",
+  tryCatch(conv_refused("adnca_afrlt.csv", "near time zero", time = "ARRLT", zero_predose = TRUE),
+           error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "F6 (ARRLT holds AFRLT values)", expected = "refused")
+check("CONV-07", "Date-time-only files are refused",
+  tryCatch(conv_refused("adnca_datetime.csv", "missing.*date-times", time = "NRRLT"), error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "F7 (PCDTC/EXSTDTC only)", expected = "refused")
+check("CONV-08", "Mixed units are refused",
+  tryCatch(conv_refused("adnca_units_mixed.csv", "more than one unit", time = "NRRLT"), error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "F8 (ng/mL and ug/L)", expected = "refused")
+check("CONV-09", "More than one dose within a subject and period is refused",
+  tryCatch(conv_refused("adnca_multi_ex.csv", "more than one dose", time = "NRRLT"), error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "F9", expected = "refused")
+check("CONV-10", "Negative actual times need MRRLT semantics to be chosen explicitly",
+  tryCatch({
+    z <- conv_run("adnca_clean.csv", time = "ARRLT", zero_predose = TRUE)
+    conv_refused("adnca_clean.csv", "negative ARRLT", time = "ARRLT") &&
+      min(z$flat$Time) == 0 && grepl("set to 0", z$log)
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "F1 with ARRLT (pre-dose at -0.05 to -0.25 h)",
+  expected = "refused without zero_predose; with it, pre-dose at 0 and logged")
+check("CONV-11", "The conversion log records inputs, choices, counts and file hashes",
+  tryCatch({
+    cv <- conv_run("adnca_clean.csv", time = "NRRLT")
+    all(sapply(c("Input:", "Output:", "Time: NRRLT \\(nominal\\)", "ANL01FL: kept 288",
+                 "Analyte: single PARAMCD", "LLOQ \\(PCLLOQ\\): 0.5", "Subject = USUBJID"),
+               function(p) grepl(p, cv$log))) &&
+      grepl(digest::digest(file = conv_fx("adnca_clean.csv"), algo = "sha256"), cv$log, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = FALSE, method = "read the log for F1", expected = "all items present, input SHA-256 matches")
+check("CONV-12", "Missing AVAL: BLQ results pass on as text, other gaps are refused",
+  tryCatch({
+    d <- read.csv(conv_fx("adnca_clean.csv"), stringsAsFactors = FALSE)
+    d$PCORRES <- as.character(d$AVAL)
+    i <- which(d$AVAL < 0.5 & d$NRRLT > 0)[1:2]; d$AVAL[i] <- NA; d$PCORRES[i] <- "<0.5"
+    f_blq <- tempfile(fileext = ".csv"); write.csv(d, f_blq, row.names = FALSE, na = "")
+    d2 <- d; d2$PCORRES[i[1]] <- ""; f_gap <- tempfile(fileext = ".csv"); write.csv(d2, f_gap, row.names = FALSE, na = "")
+    out <- tempfile(fileext = ".csv")
+    conv_env$adnca_to_flat(f_blq, out, time = "NRRLT")
+    flat <- read.csv(out, stringsAsFactors = FALSE)
+    gap <- tryCatch({ conv_env$adnca_to_flat(f_gap, tempfile(fileext = ".csv"), time = "NRRLT"); "" },
+                    adnca_refusal = function(e) conditionMessage(e))
+    sum(flat$Conc == "<0.5") == 2 && grepl("without a BLQ result", gap)
+  }, error = function(e) FALSE),
+  "URS-DAT-04", critical = TRUE, method = "two AVAL set missing with PCORRES '<0.5'; then one without",
+  expected = "text passed on for BLQ; unexplained gap refused")
+
+end_section("CONV")
 
 # =============================================================================
 # Post-execution

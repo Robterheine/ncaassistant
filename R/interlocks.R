@@ -60,7 +60,9 @@ interlock_adnca_shape <- function(data) {
                   "concentration, ...). A CDISC dataset read this way would ignore its ",
                   "analysis flags (ANL01FL, DTYPE), may mix analytes, and needs a choice between ",
                   "actual and nominal time. Convert it to a flat file first: keep one analyte, ",
-                  "apply ANL01FL and DTYPE, and use ARRLT or NRRLT as time."))
+                  "apply ANL01FL and DTYPE, and use ARRLT or NRRLT as time. The converter ",
+                  "converters/adnca_to_flat.R in the NCA Assistant repository does this and ",
+                  "writes a log of every choice (see converters/ADNCA_TO_FLAT.md)."))
 }
 
 #' Refuse more than one unit in a unit column

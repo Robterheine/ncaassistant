@@ -101,7 +101,7 @@ The documents are provided without version numbers in headers or filenames so th
 
 ## File Integrity
 
-The validation script computes SHA-256 hashes of `validation.R` itself and the nine core R source files it sources (`R/pipeline.R`, `R/interlocks.R`, `R/utils.R`, `R/nca_helpers.R`, `R/data_quality.R`, `R/export_record.R`, `R/mod_data_upload.R`, `R/designs.R`, `R/be_analysis.R`). These hashes are printed at the start of each run and recorded in `validation_results.csv`. Retain these alongside the results as evidence that the validated source files were not modified between qualification and use.
+The validation script computes SHA-256 hashes of `validation.R` itself and the core R source files it tests (`converters/adnca_to_flat.R`, `R/pipeline.R`, `R/interlocks.R`, `R/utils.R`, `R/nca_helpers.R`, `R/data_quality.R`, `R/export_record.R`, `R/mod_data_upload.R`, `R/designs.R`, `R/be_analysis.R`). These hashes are printed at the start of each run and recorded in `validation_results.csv`. Retain these alongside the results as evidence that the validated source files were not modified between qualification and use.
 
 ---
 
