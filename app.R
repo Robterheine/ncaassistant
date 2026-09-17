@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.3.0
+# Non-Compartmental Analysis Assistant v1.4.0
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # Designed by Rob ter Heine
@@ -14,7 +14,7 @@
 #   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.3.0"
+APP_VERSION <- "1.4.0"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 # Mirror APP_VERSION into the global environment. When RStudio runs a single-file
@@ -778,8 +778,34 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.3.0",
+            tags$h6(class = "fw-bold mb-1", "v1.4.0",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "September 2026"),
+            tags$p(class = "mb-1", tags$strong("Results can differ from v1.3.0"),
+                   " for files with different doses per period, with BLQ text such as \"BLQ\" or \"ND\" when an LLOQ is set, ",
+                   "with a replicate design, or with a confidence limit that rounds onto an acceptance limit. See the fixes below."),
+            tags$ul(class = "mb-0",
+              tags$li(tags$strong("Correctness fix: "), "when a subject received different doses in different periods (for example a dose-proportionality crossover), every period was analysed with the subject's highest dose, so clearance, volume and dose-normalised values of the lower-dose periods were wrong. Doses are now taken per profile"),
+              tags$li(tags$strong("Correctness fix: "), "BLQ text other than \"<x\" (for example \"BLQ\" or \"ND\") became a missing value instead of being handled by the selected BLQ rule. It is now handled as BLQ; \"NS\" (no sample) stays missing"),
+              tags$li(tags$strong("Correctness fix: "), "after a manual half-life adjustment, clearance and volume were recalculated without the unit conversion (for example 1000\u00d7 too small for mg with ng/mL), IV clearance and volume were not updated, and some related parameters kept old values. Adjustments are now recalculated by NonCompart itself, and they are kept when the analysis is run again"),
+              tags$li(tags$strong("Correctness fix: "), "the bioequivalence comparison accepted widened acceptance limits without checking that the point estimate lies within 80.00\u2013125.00%. This is now required by default for limits wider than 80\u2013125%"),
+              tags$li(tags$strong("Correctness fix: "), "Tmax and untransformed parameters received a bioequivalence verdict based on a difference compared with percentage limits. They are now reported as a difference in their own units, without a verdict"),
+              tags$li(tags$strong("Correctness fix: "), "Period and Sequence entered the statistical model as numbers instead of categories, which changes the result for designs with more than two periods"),
+              tags$li(tags$strong("Correctness fix: "), "the acceptance verdict now uses the confidence limits rounded to two decimals, as shown in the table (FDA, Statistical Approaches to Establishing Bioequivalence, May 2026)"),
+              tags$li(tags$strong("New: replicate designs. "), "2\u00d72\u00d73, 2\u00d73\u00d73 and 2\u00d72\u00d74 studies are analysed correctly: each administration is its own profile. Results show the within-subject variability of the Reference and the EMA expanded limits it would imply, for information only; the app does not give a scaled verdict. Results agree with the replicateBE package on its 30 reference data sets"),
+              tags$li(tags$strong("New: "), "Plan a Study and Bioequivalence Testing now offer the same designs under the same names. A study where all subjects received the treatments in the same order is analysed as a paired comparison, without a bioequivalence verdict. The app warns when the selected design does not match the data"),
+              tags$li(tags$strong("New: CDISC ADNCA datasets. "), "The Upload page asks what kind of file you have. For a CDISC ADNCA dataset the app shows a summary, asks which time and analyte to use, applies the analysis flags and refuses datasets it cannot use safely. A standalone converter (converters/adnca_to_flat.R) does the same outside the app"),
+              tags$li(tags$strong("New: CDISC parameter codes. "), "Results, downloads and Analysis Records list the official CDISC code of each parameter, from CDISC SDTM Controlled Terminology release 2026-03-27. This is a code lookup only; results are not SDTM PP datasets"),
+              tags$li(tags$strong("New: safety checks on upload. "), "The app refuses CDISC-style files in the simple upload, mixed units, dates or clock times in the Time column, time measured from the first dose instead of the dose of each profile, and stacked profiles. Files with a decimal comma and BLQ text are now read correctly"),
+              tags$li(tags$strong("Analysis Record: "), "every record now contains the app's own data-processing code, and the app runs the reproduction script when the record is created and reports whether it matches. Records state the settings actually used (including per-profile doses and bioequivalence settings) and which model was fitted"),
+              tags$li("Smaller fixes: spaces around subject or treatment names created extra levels; subject counts in crossovers now include only subjects with both treatments; a failed mixed model is reported instead of silently replaced"),
+              tags$li("Validation: 308 automated tests (was 191), including comparisons with replicateBE and PowerTOST and a check that every record reproduces")
+            )
+          ),
+
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.3.0"),
             tags$p(class = "text-muted mb-1", "September 2026"),
             tags$ul(class = "mb-0",
               tags$li(tags$strong("Correctness fix: "), "when a Dose column was mapped and a Treatment column was present, doses were matched to profiles by position rather than by subject. With ten or more subjects the ordering diverged and each subject could be assigned another subject's dose, giving wrong CL/F, Vz/F and dose-normalised parameters while Cmax, AUC and half-life appeared normal. Doses are now matched by subject ID"),
