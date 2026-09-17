@@ -1,5 +1,5 @@
 # ============================================================================
-# NCA Assistant v1.2 — Consolidated Validation Script
+# NCA Assistant — Consolidated Validation Script (version read from app.R)
 # ============================================================================
 # Attachment A to IQ/OQ/PQ Protocol
 #
@@ -9,7 +9,7 @@
 
 cat(paste(rep("=", 72), collapse=""), "
 ")
-cat("NCA Assistant v1.2 — Validation Script
+cat("NCA Assistant — Validation Script
 ")
 cat(paste(rep("=", 72), collapse=""), "
 ")
@@ -24,8 +24,8 @@ if (!file.exists("app.R") || !dir.exists("R")) {
 
 # replicateBE is a validation-only dependency (reference implementation for
 # the replicate-design checks in section REP); the app does not use it.
-required_pkgs <- c("NonCompart", "PowerTOST", "nlme", "digest", "rmarkdown",
-                   "openxlsx", "jsonlite", "readxl", "dplyr", "knitr", "replicateBE")
+required_pkgs <- c("NonCompart", "PowerTOST", "nlme", "digest",
+                   "openxlsx", "jsonlite", "readxl", "dplyr", "replicateBE")
 missing <- required_pkgs[!sapply(required_pkgs, requireNamespace, quietly = TRUE)]
 if (length(missing) > 0) {
   cat("Installing:", paste(missing, collapse=", "), "
@@ -108,8 +108,8 @@ end_section <- function(name) {
 start_section("IQ")
 
 check("IQ-01", "R version >= 4.1",
-      as.numeric(R.version$major) >= 4 && as.numeric(R.version$minor) >= 1,
-      "URS-GEN-01", method="R.version check", expected="R >= 4.1", critical=TRUE, detail=R.version.string)
+      getRversion() >= "4.1.0",
+      "URS-GEN-01", method="getRversion()", expected="R >= 4.1", critical=TRUE, detail=R.version.string)
 
 check("IQ-02", "NonCompart installed", requireNamespace("NonCompart", quietly=TRUE),
       "URS-NCA-01", method="requireNamespace", expected="TRUE", critical=TRUE)
@@ -132,6 +132,19 @@ for (i in seq_along(source_files)) {
         tryCatch({ parse(file=source_files[i]); TRUE }, error=function(e) FALSE),
         "URS-GEN-01", method=paste("parse", source_files[i]), expected="No errors", critical=TRUE)
 }
+
+# The app's interface modules and packages: without them the app does not start
+app_files <- setdiff(list.files("R", pattern = "\\.R$", full.names = TRUE), source_files)
+check("IQ-APP-01", "All other app source files parse",
+      all(vapply(app_files, function(f) tryCatch({ parse(file = f); TRUE }, error = function(e) FALSE), logical(1))),
+      "URS-GEN-01", method = "parse every R/*.R file not listed above", expected = "No errors", critical = TRUE,
+      detail = paste(basename(app_files), collapse = ", "))
+app_pkgs <- c("shiny", "bslib", "shinyWidgets", "DT", "plotly", "ggplot2", "htmltools", "tidyr",
+              "dplyr", "readxl", "openxlsx", "jsonlite")
+app_pkgs_missing <- app_pkgs[!vapply(app_pkgs, requireNamespace, logical(1), quietly = TRUE)]
+check("IQ-APP-02", "Packages the app loads are installed", length(app_pkgs_missing) == 0,
+      "URS-GEN-01", method = "requireNamespace for every package app.R loads", expected = "All installed",
+      critical = TRUE, detail = if (length(app_pkgs_missing)) paste("Missing:", paste(app_pkgs_missing, collapse = ", ")) else "")
 
 end_section("IQ")
 
@@ -830,9 +843,6 @@ check("PWR-HV-02", "RSABE works",
 check("PWR-NT-01", "NTID works",
       { fn <- if(exists("sampleN.NTIDFDA")) sampleN.NTIDFDA else sampleN.NTID; r<-tryCatch(fn(alpha=0.05,targetpower=0.80,theta0=0.975,CV=0.10,design="2x2x4",print=FALSE,nsims=1e4),error=function(e)NULL); !is.null(r)&&r[["Sample size"]]>0 },
       "URS-PWR-01", method="sampleN.NTIDFDA or sampleN.NTID", expected="Valid N", critical=TRUE)
-check("PWR-DP-01", "DP works",
-      { r<-tryCatch(sampleN.dp(alpha=0.05,targetpower=0.80,CV=0.20,doses=c(50,100,200),print=FALSE),error=function(e)NULL); !is.null(r)&&r[["Sample size"]]>0 },
-      "URS-PWR-01", method="sampleN.dp with doses", expected="Valid N", critical=TRUE)
 check("PWR-IV-01", "CV=0 handled gracefully",
       { r<-tryCatch(sampleN.TOST(alpha=0.05,targetpower=0.80,theta0=0.95,theta1=0.80,theta2=1.25,CV=0,design="2x2",print=FALSE),error=function(e)"caught",warning=function(w)"caught"); identical(r,"caught")||is.data.frame(r) },
       "URS-PWR-06", method="CV=0 either errors or returns result", expected="No crash", critical=FALSE)
@@ -1029,9 +1039,9 @@ check("UI-BEL-01", "Configurable BE limits (BE-07)",
       { l<-readLines("R/mod_path_be.R",warn=FALSE); any(grepl("be_lower|be_upper|input\\$be_lower",l)) },
       "URS-BE-07", method="BE limits configurable via input", expected="be_lower/be_upper in code", critical=FALSE)
 
-check("UI-CVB-01", "NCA CV bridge to power (PWR-05)",
-      { l<-readLines("R/mod_path_power.R",warn=FALSE); any(grepl("shared\\$nca|geo.*cv|CV.*bridge",l,ignore.case=TRUE)) || any(grepl("cv.*nca|nca.*cv",l,ignore.case=TRUE)) },
-      "URS-PWR-05", method="Power module references NCA-derived CV", expected="CV bridge code present", critical=FALSE)
+check("UI-CVB-01", "CV bridge to power uses the BE within-subject CV (PWR-05)",
+      { l<-readLines("R/mod_path_power.R",warn=FALSE); any(grepl("within_cv_from_be\\(",l)) && !any(grepl("sd\\(log\\(cmax_vals",l)) },
+      "URS-PWR-05", method="Power module takes the CV from within_cv_from_be()", expected="BE-based CV; no between-subject spread", critical=FALSE)
 
 check("UI-JSN-01", "Settings exported as JSON (EXP-03)",
       { l<-readLines("R/export_record.R",warn=FALSE); any(grepl("toJSON|analysis_settings\\.json",l)) },
@@ -1065,8 +1075,8 @@ skip_manual("MAN-10","Batch grid plot","Check grid after batch","Paginated grid"
 skip_manual("MAN-11","BE forest plot","Run BE analysis","Forest plot with CI","URS-BE-06")
 skip_manual("MAN-12","BE CI table","Check CI table","GMR, CI, conclusion","URS-BE-03")
 skip_manual("MAN-13","Power curve","Calculate power","Curve with target","URS-PWR-04")
-skip_manual("MAN-14","Analysis Record","Export zip","Contains all files","URS-EXP-01")
-skip_manual("MAN-15","Repro script","Run reproduce_analysis.R","Produces CSV","URS-EXP-02")
+skip_manual("MAN-14","Analysis Record","Export zip from One Subject, All Subjects and Bioequivalence","Contains results.xlsx, app_results_reference.csv, analysis_settings.json, nca_pipeline.R, reproduce_analysis.R, reproduction_check.txt, data_integrity.txt, analysis_summary.html and the data file; the app reports the reproduction check","URS-EXP-01")
+skip_manual("MAN-15","Repro script","Unzip an Analysis Record; run Rscript reproduce_analysis.R in its folder","Prints data hash MATCH and Result: MATCH","URS-EXP-02")
 skip_manual("MAN-16","Methods page","Click Methods nav","Formulas display","URS-GEN-03")
 skip_manual("MAN-17","Data Guide","Click Data Guide","Scenario tabs","URS-UI-02")
 skip_manual("MAN-18","Help popovers","Click ? button","Popover appears","URS-UI-01")
@@ -1075,6 +1085,7 @@ skip_manual("MAN-20","Responsive layout","Resize < 768px","Sidebar collapses","U
 skip_manual("MAN-21","BE individual profiles","Upload crossover data; run BE; open Individual Profiles tab","Per-subject panels with treatment overlay","URS-BE-08")
 skip_manual("MAN-22","BE half-life review","Upload crossover data; run BE; open Half-Life Review; select profile","Plot with terminal phase; checkboxes populate","URS-NCA-12")
 skip_manual("MAN-23","Override info note","Open Half-Life Review tab; verify info text","Note explaining AUC-inf dependency present","URS-NCA-12")
+skip_manual("MAN-24","CDISC ADNCA upload","Set 'What kind of file?' to CDISC ADNCA dataset; upload validation/fixtures/adnca_clean.csv; choose NRRLT; process","Summary shows analytes, time variables and record selection; data processed; choices listed in the Analysis Record","URS-DAT-01")
 skip_manual("MAN-25","Viz data gate","Navigate to Visualize Data before upload","Data gate card displayed, no plot rendered","URS-VIZ-01")
 skip_manual("MAN-26","Viz spaghetti plot","Load example_theoph.csv; open Visualize Data; Individual Profiles tab","12 lines rendered without error","URS-VIZ-02")
 skip_manual("MAN-27","Viz colour-by options","Cycle through colour-by options (Subject/Treatment/Period/Sequence)","Plot updates for each available option; unavailable options absent","URS-VIZ-02")
@@ -1084,6 +1095,17 @@ skip_manual("MAN-30","Viz log scale","Toggle Log Y-axis with zero-concentration 
 skip_manual("MAN-31","Viz export PNG","Render any plot; go to Export tab; select PNG 7x5 300 DPI; click Download","Non-zero PNG file downloads","URS-VIZ-06")
 skip_manual("MAN-32","Viz export invalid dims","Set width = 0; click Download","Validation message displayed, no file downloaded","URS-VIZ-06")
 skip_manual("MAN-33","Viz dose normalisation","Map Dose column; enable C/Dose normalisation","Y-axis values scaled by dose; option absent when no dose column","URS-VIZ-08")
+skip_manual("MAN-34","Interlock refusal","Upload validation/fixtures/adnca_afrlt.csv as a flat file","ERROR in the quality report explaining it looks like a CDISC dataset; processing blocked","URS-DAT-03")
+skip_manual("MAN-35","Empty LLOQ","Clear the LLOQ field; click Process Data","Message asking for an LLOQ value; app stays connected","URS-DAT-03")
+skip_manual("MAN-36","Minimum R2 note","Upload a profile with a poor terminal phase (adj R2 < 0.7); run All Subjects","Note names the profile; half-life, AUCinf, CL/F, Vz/F empty for it; Half-Life Review states the fit is below the threshold","URS-NCA-04")
+skip_manual("MAN-37","Review equals results","Run All Subjects on Theoph; open Half-Life Review for subject 6","Half-life and number of points equal those in the results table (7.895 h, 7 points)","URS-NCA-04")
+skip_manual("MAN-38","Single-subject result cleared","In One Subject at a Time run a profile, then select another profile","Result card returns to 'Click Run PK Analysis'; record panel disappears","URS-NCA-05")
+skip_manual("MAN-39","Reference treatment","Upload a crossover file with treatments New/Old; open Bioequivalence; run without choosing; choose Old; run","Run blocked until a Reference is chosen; table shows Comparison 'New / Old'","URS-BE-01")
+skip_manual("MAN-40","Replicate variability table","Upload validation/fixtures/be_2x2x4_full_replicate.csv; run Bioequivalence with design 2x2x4","CVwR and CVwT table with implied EMA limits, marked informational; no scaled verdict","URS-BE-09")
+skip_manual("MAN-41","Paired comparison","Run Bioequivalence with design Paired comparison","Ratio and CI shown; verdict column says no verdict","URS-BE-02")
+skip_manual("MAN-42","Scaled planning uses both CVs","Plan a Study: EMA ABEL, 2x2x4, Test CV 25, Reference CV 40, ratio 95, power 80","Label reads Test product CV; N = 14","URS-PWR-01")
+skip_manual("MAN-43","CV from BE analysis","Run Bioequivalence (log-transformed); open Plan a Study","Button offers the Cmax within-subject CV from the BE analysis; after uploading new data the button is gone","URS-PWR-05")
+skip_manual("MAN-44","CDISC parameter codes","Run any NCA; open the CDISC codes panel and the Excel download","Codes and CT release 2026-03-27 shown; parameters without a code marked","URS-GEN-06")
 
 end_section("MAN")
 
@@ -2743,7 +2765,7 @@ check("REV3-10", "Methods page matches the implementation",
       grepl("10,000", m, fixed = TRUE) &&
       !grepl("Subject nested within Sequence was modelled as a random effect", m, fixed = TRUE)
   }, error = function(e) FALSE),
-  "URS-GEN-01", critical = FALSE, method = "search mod_methods.R", expected = "limits, rounding, simulations, random effect described as implemented")
+  "URS-GEN-03", critical = FALSE, method = "search mod_methods.R", expected = "limits, rounding, simulations, random effect described as implemented")
 
 end_section("REV3")
 

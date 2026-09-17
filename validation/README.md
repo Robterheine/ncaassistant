@@ -29,7 +29,7 @@ Or from within R:
 source("validation/validation.R")
 ```
 
-The script installs any missing packages automatically. Required packages: `NonCompart`, `PowerTOST`, `nlme`, `digest`, `openxlsx`, `jsonlite`, `readxl`, `dplyr`, `knitr`, `replicateBE`. `replicateBE` is needed only for validation: it is the reference implementation that the replicate-design checks compare against (section REP); the app itself does not use it.
+The script installs any missing packages automatically. Required packages: `NonCompart`, `PowerTOST`, `nlme`, `digest`, `openxlsx`, `jsonlite`, `readxl`, `dplyr`, `replicateBE`. The interface packages the app loads (shiny, bslib, shinyWidgets, DT, plotly, ggplot2, htmltools, tidyr) are checked but not installed by the script. `replicateBE` is needed only for validation: it is the reference implementation that the replicate-design checks compare against (section REP); the app itself does not use it.
 
 CDISC parameter codes come from one pinned release of CDISC SDTM Controlled Terminology (`cdisc/ct_release.dcf`, `cdisc/pk_parameter_terms.csv`, extracted by `cdisc/extract_pk_terms.R`); checks EXP-CD-01..03 and REC-09 verify it.
 
@@ -41,16 +41,16 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **325 automated tests** in sixteen sections, each mapped to a URS requirement:
+The script runs **326 automated tests** in sixteen sections, each mapped to a URS requirement:
 
 | Section | Code | Tests | Tests cover |
 |---------|------|------:|-------------|
-| Installation Qualification | IQ | 18 | R version, package availability, file integrity (SHA-256 hashes) |
+| Installation Qualification | IQ | 20 | R version, package availability (analysis and interface packages), every source file parses, file integrity (SHA-256 hashes) |
 | Data Handling | DAT | 63 | Column auto-detection, data quality checks, BLQ rules 1–6 per profile, BLQ text, study design detection, the shared data pipeline, interlocks (IL: CDISC-shaped flat files, mixed units, date/clock time, time since first dose, stacked profiles) and decimal-comma reading |
 | NCA Accuracy | NCA | 40 | Analytical ground truth (mono-exponential IV bolus), Theoph and Indometh datasets, lambda-z, routes, trapezoid methods, dose normalisation, steady state, edge cases, manual data entry, crossover profiles |
 | Bioequivalence | BE | 10 | CI construction, TOST logic, crossover ANOVA, mixed model, paired and parallel designs |
 | Half-life overrides | OQ-NEW | 12 | R² propagation, recalculation by NonCompart, negative slope rejection, 2-point edge case, override audit trail |
-| Power & Sample Size | PWR | 14 | ABE, ABEL, RSABE, NTID and the planner designs via PowerTOST |
+| Power & Sample Size | PWR | 13 | ABE, ABEL, RSABE, NTID and the planner designs via PowerTOST |
 | Export & Reproducibility | EXP | 18 | Determinism, summary statistics, R script generation, SHA-256 integrity, app and package versions, CDISC parameter codes from the pinned release |
 | Usability & Code Quality | UI | 31 | Parameter labels and help topics, column-mapping validation, defensive coding checks, requirement spot checks |
 | Visualisation | VIZ | 9 | Plot data construction, dose normalisation, colour palette handling |
@@ -62,7 +62,9 @@ The script runs **325 automated tests** in sixteen sections, each mapped to a UR
 | Second review (1) | REV2 | 7 | Reference treatment chosen by the user, Test and Reference CV in scaled planning, within-subject CV for the planner, grouped exports, CI labels |
 | Second review (2) | REV3 | 10 | Minimum R² applied to results, half-life review equal to NonCompart's fit, results cleared on new data or profile, empty LLOQ, figure legend, help and Methods wording |
 
-In addition, **32 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload, column mapping, the half-life review inspector, the Complete Analysis Record download (across all four analysis paths), and the Visualize Figure Record. The manual test definitions are included in the script for traceability but are marked SKIP in automated runs.
+In addition, **44 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload (flat and CDISC ADNCA), column mapping, interlock messages, the half-life review and minimum-R² note, choosing the Reference treatment, the replicate variability table, planning with both CVs, CDISC parameter codes, the Complete Analysis Record download and its reproduction check, and the Visualize Figure Record. They are included in the script for traceability but are marked SKIP in automated runs.
+
+The test tables in `NCA_Assistant_IQOQPQ.docx` (IQ, automated OQ/PQ sections, manual tests, traceability matrix and totals) are generated from `validation_results.csv` of a passing reference run, so they list exactly the tests the script defines.
 
 ---
 

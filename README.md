@@ -58,7 +58,7 @@ For the NCA and bioequivalence paths the record contains:
 ## Requirements
 
 - R ≥ 4.1.0
-- Required packages: NonCompart, PowerTOST, nlme, shiny, bslib, plotly, DT, readxl, dplyr, tidyr, ggplot2, openxlsx, jsonlite, digest
+- Required packages: NonCompart, PowerTOST, nlme, shiny, bslib, shinyWidgets, htmltools, plotly, DT, readxl, dplyr, tidyr, ggplot2, openxlsx, jsonlite, digest
 - For validation only: replicateBE (reference implementation for the replicate-design checks)
 
 ---
@@ -95,7 +95,7 @@ A consolidated validation package is available in [`validation/`](validation/), 
 Rscript validation/validation.R
 ```
 
-This executes 325 automated tests and generates a results CSV with environment details, per-section results, and URS traceability.
+This executes 326 automated tests (plus 44 manual tests defined for a running app) and generates a results CSV with environment details, per-section results, and URS traceability.
 
 **Validation deliverables:**
 
