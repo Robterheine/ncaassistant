@@ -52,6 +52,7 @@ PIPELINE_SHA256 <- if (requireNamespace("digest", quietly = TRUE))
 # Modules are sourced into the global environment (see APP_VERSION above)
 assign("PIPELINE_SHA256", PIPELINE_SHA256, envir = globalenv())
 source("R/utils.R")
+source("R/cdisc_terms.R")
 source("R/nca_helpers.R")
 source("R/interlocks.R")
 source("R/data_quality.R")
@@ -723,6 +724,28 @@ server <- function(input, output, session) {
       ),
       
       # License & credits
+      card(
+        card_header(icon("tags"), " Standards and Terminology"),
+        card_body(
+          tags$p(class = "small", cdisc_ct_statement()),
+          tags$table(class = "table table-sm small",
+            tags$tbody(
+              tags$tr(tags$th("Standard"), tags$td(cdisc_ct_release()$Standard)),
+              tags$tr(tags$th("Release"), tags$td(cdisc_ct_release()$Release)),
+              tags$tr(tags$th("Codelists"), tags$td(cdisc_ct_release()$Codelists)),
+              tags$tr(tags$th("Source"), tags$td(cdisc_ct_release()$Source)),
+              tags$tr(tags$th("Terms used"), tags$td(cdisc_ct_release()$Terms)))),
+          tags$p(class = "small",
+                 "The app shows these codes next to its results and includes them in exports and ",
+                 "Analysis Records. It accepts ADNCA-shaped datasets (Upload page, 'CDISC ADNCA ",
+                 "dataset'). Results are not SDTM PP datasets, and no claim of conformance to CDISC ",
+                 "standards is made."),
+          tags$p(class = "small text-muted mb-0",
+                 "NCA Assistant is not affiliated with, endorsed by, or certified by CDISC. CDISC, ",
+                 "SDTM and ADaM are trademarks of the Clinical Data Interchange Standards Consortium.")
+        )
+      ),
+
       card(
         card_header(icon("scale-balanced"), " License & Credits"),
         card_body(

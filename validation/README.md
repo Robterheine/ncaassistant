@@ -31,6 +31,8 @@ source("validation/validation.R")
 
 The script installs any missing packages automatically. Required packages: `NonCompart`, `PowerTOST`, `nlme`, `digest`, `openxlsx`, `jsonlite`, `readxl`, `dplyr`, `knitr`, `replicateBE`. `replicateBE` is needed only for validation: it is the reference implementation that the replicate-design checks compare against (section REP); the app itself does not use it.
 
+CDISC parameter codes come from one pinned release of CDISC SDTM Controlled Terminology (`cdisc/ct_release.dcf`, `cdisc/pk_parameter_terms.csv`, extracted by `cdisc/extract_pk_terms.R`); checks EXP-CD-01..03 and REC-09 verify it.
+
 Test data for crossover and replicate designs live in `validation/fixtures/`, not `data/`. `make_fixtures.R` (crossover/replicate designs) and `make_adnca_fixtures.R` (ADNCA-shaped data, roadmap fixtures F1–F9) generate them deterministically and `make_reference_values.R` records the matching `replicateBE::method.A` results; both the generators and their outputs are committed.
 
 On completion the script prints a results summary to the console and writes `validation/validation_results.csv`.
@@ -101,7 +103,7 @@ The documents are provided without version numbers in headers or filenames so th
 
 ## File Integrity
 
-The validation script computes SHA-256 hashes of `validation.R` itself and the core R source files it tests (`converters/adnca_to_flat.R`, `R/pipeline.R`, `R/interlocks.R`, `R/utils.R`, `R/nca_helpers.R`, `R/data_quality.R`, `R/export_record.R`, `R/mod_data_upload.R`, `R/designs.R`, `R/be_analysis.R`). These hashes are printed at the start of each run and recorded in `validation_results.csv`. Retain these alongside the results as evidence that the validated source files were not modified between qualification and use.
+The validation script computes SHA-256 hashes of `validation.R` itself and the core R source files it tests (`converters/adnca_to_flat.R`, `R/adnca_import.R`, `R/cdisc_terms.R`, `R/pipeline.R`, `R/interlocks.R`, `R/utils.R`, `R/nca_helpers.R`, `R/data_quality.R`, `R/export_record.R`, `R/mod_data_upload.R`, `R/designs.R`, `R/be_analysis.R`). These hashes are printed at the start of each run and recorded in `validation_results.csv`. Retain these alongside the results as evidence that the validated source files were not modified between qualification and use.
 
 ---
 

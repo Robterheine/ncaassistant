@@ -1,0 +1,71 @@
+app_parameter,route,steady_state,PPTESTCD,note
+AUCALL,any,any,AUCALL,
+AUCIFO,any,any,AUCIFO,
+AUCIFOD,any,any,AUCIFOD,
+AUCIFP,any,any,AUCIFP,
+AUCIFPD,any,any,AUCIFPD,
+AUCLST,any,no,AUCLST,
+AUCLST,any,yes,AUCLST,"At steady state the app reports AUClast as AUC over the dosing interval; see AUCTAU"
+AUCPBEO,any,any,AUCPBEO,
+AUCPBEP,any,any,AUCPBEP,
+AUCPEO,any,any,AUCPEO,
+AUCPEP,any,any,AUCPEP,
+AUMCIFO,any,any,AUMCIFO,
+AUMCIFP,any,any,AUMCIFP,
+AUMCLST,any,any,AUMCLST,
+AUMCPEO,any,any,AUMCPEO,
+AUMCPEP,any,any,AUMCPEP,
+C0,any,any,C0,
+CLFO,any,no,CLFO,
+CLFO,any,yes,CLFTAU,"At steady state NonCompart calculates CL/F from AUClast (AUC over the dosing interval)"
+CLFP,any,any,CLFP,
+CLO,any,no,CLO,
+CLO,any,yes,CLTAU,"At steady state NonCompart calculates CL from AUClast (AUC over the dosing interval)"
+CLP,any,any,CLP,
+CLST,any,any,CLST,
+CLSTP,any,any,,"Predicted last concentration: no PK parameter code in this release"
+CMAX,any,any,CMAX,
+CMAXD,any,any,CMAXD,
+CORRXY,any,any,CORRXY,
+LAMZ,any,any,LAMZ,
+LAMZHL,any,any,LAMZHL,
+LAMZLL,any,any,LAMZLL,
+LAMZNPT,any,any,LAMZNPT,
+LAMZUL,any,any,LAMZUL,
+MRTEVIFO,any,any,MRTEVIFO,
+MRTEVIFP,any,any,MRTEVIFP,
+MRTEVLST,any,any,MRTEVLST,
+MRTIVIFO,iv_bolus,any,MRTIBIFO,
+MRTIVIFP,iv_bolus,any,MRTIBIFP,
+MRTIVLST,iv_bolus,any,MRTIBLST,
+MRTIVIFO,iv_infusion,any,MRTICIFO,
+MRTIVIFP,iv_infusion,any,MRTICIFP,
+MRTIVLST,iv_infusion,any,MRTICLST,
+R2,any,any,R2,
+R2ADJ,any,any,R2ADJ,
+TLAG,any,any,TLAG,
+TLST,any,any,TLST,
+TMAX,any,any,TMAX,
+VSSO,any,no,VSSO,
+VSSO,any,yes,,"At steady state NonCompart calculates Vss from AUClast; no matching code in this release"
+VSSP,any,any,VSSP,
+VZFO,any,no,VZFO,
+VZFO,any,yes,VZFTAU,"At steady state NonCompart calculates Vz/F from AUClast (AUC over the dosing interval)"
+VZFP,any,any,VZFP,
+VZO,any,no,VZO,
+VZO,any,yes,VZTAU,"At steady state NonCompart calculates Vz from AUClast (AUC over the dosing interval)"
+VZP,any,any,VZP,
+b0,any,any,,"Intercept of the terminal regression: no PK parameter code in this release"
+CMAX_DN,any,any,CMAXD,
+AUCLST_DN,any,any,AUCLSTD,
+AUCIFO_DN,any,any,AUCIFOD,
+AUCIFP_DN,any,any,AUCIFPD,
+AUMCLST_DN,any,any,AUMCLSTD,
+AUMCIFO_DN,any,any,AUMCIFOD,
+AUMCIFP_DN,any,any,AUMCIFPD,
+AUCTAU,any,any,AUCTAU,"The app takes AUClast as AUC over the dosing interval; valid when sampling covers exactly one interval"
+TAU,any,any,TAU,"The app takes the sampled interval (last minus first time) as the dosing interval"
+CAVG,any,any,CAVG,"AUClast divided by the sampled interval; valid when sampling covers exactly one dosing interval"
+CMIN_SS,any,any,CMIN,"App column CMIN_SS"
+FLUCTP,any,any,FLUCP,"App column FLUCTP"
+SWING,any,any,SWING,

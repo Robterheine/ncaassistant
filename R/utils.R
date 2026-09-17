@@ -376,35 +376,6 @@ validate_mapping <- function(col_map, required = c("subject", "time", "conc")) {
   }
 }
 
-#' CDISC SDTM PK parameter names lookup
-cdisc_pk_names <- function() {
-  data.frame(
-    NonCompart = c("CMAX", "TMAX", "AUCLST", "AUCIFO", "AUCIFP",
-                   "AUMCLST", "AUMCIFO", "LAMZ", "LAMZHL",
-                   "CLFO", "CLFP", "VZFO", "VZFP",
-                   "MRTEVLST", "MRTEVIFO"),
-    CDISC      = c("CMAX", "TMAX", "AUCLST", "AUCIFO", "AUCIFP",
-                   "AUMCLST", "AUMCIFO", "LAMZ", "LAMZHL",
-                   "CLFO", "CLFP", "VZFO", "VZFP",
-                   "MRTEVLST", "MRTEVIFO"),
-    Description = c("Max observed concentration",
-                    "Time of Cmax",
-                    "AUC to last measurable conc",
-                    "AUC extrapolated to inf (obs)",
-                    "AUC extrapolated to inf (pred)",
-                    "AUMC to last measurable conc",
-                    "AUMC extrapolated to inf (obs)",
-                    "Terminal rate constant",
-                    "Terminal half-life",
-                    "Clearance (obs, extravascular)",
-                    "Clearance (pred, extravascular)",
-                    "Vz (obs, extravascular)",
-                    "Vz (pred, extravascular)",
-                    "MRT extravascular (last)",
-                    "MRT extravascular (inf, obs)"),
-    stringsAsFactors = FALSE
-  )
-}
 
 # --- UNITS -----------------------------------------------------------------
 
@@ -488,4 +459,33 @@ notify_reproduction <- function(rec_out) {
                      type = "error", duration = NULL)
   }
   invisible(v)
+}
+
+
+#' Collapsible list of the official CDISC codes for the parameters shown
+#'
+#' States the Controlled Terminology release used (see R/cdisc_terms.R).
+cdisc_codes_ui <- function(params, admin_route, is_ss) {
+  codes <- tryCatch(cdisc_pk_codes(params, admin_route, is_ss), error = function(e) NULL)
+  if (is.null(codes) || nrow(codes) == 0) return(NULL)
+  rel <- cdisc_ct_release()$Release
+  tags$details(
+    class = "mt-3 small",
+    tags$summary(class = "fw-semibold",
+                 icon("tags", class = "me-1"),
+                 paste0("CDISC parameter codes (SDTM Controlled Terminology ", rel, ")")),
+    tags$p(class = "text-muted mt-2 mb-1", cdisc_ct_statement(),
+           " Code lookup only: these results are not an SDTM PP dataset, and no claim of ",
+           "conformance to CDISC standards is made."),
+    tags$div(style = "max-height: 260px; overflow-y: auto;",
+      tags$table(class = "table table-sm table-striped mb-0",
+        tags$thead(tags$tr(tags$th("App parameter"), tags$th("PPTESTCD"), tags$th("PPTEST"),
+                           tags$th("NCIt"), tags$th("Note"))),
+        tags$tbody(lapply(seq_len(nrow(codes)), function(i) {
+          x <- codes[i, ]
+          tags$tr(tags$td(x$Parameter),
+                  tags$td(if (nzchar(x$PPTESTCD)) tags$code(x$PPTESTCD) else tags$span(class = "text-muted", "\u2014")),
+                  tags$td(x$PPTEST), tags$td(x$NCIt_code), tags$td(class = "text-muted", x$Note))
+        }))))
+  )
 }

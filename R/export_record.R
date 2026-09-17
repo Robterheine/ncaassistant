@@ -176,6 +176,11 @@ verify that the data file and the pipeline code are the ones used.
   htmltools::htmlEscape(reproduction), ' (details in <code>reproduction_check.txt</code>). ',
   'This demonstrates reproducibility, not independent verification: the same algorithms and ',
   'packages are re-executed.') else '', '
+<br><br>
+<strong>CDISC parameter codes:</strong> ', htmltools::htmlEscape(cdisc_ct_statement()),
+' The codes are listed in the sheet <code>CDISC_Parameter_Codes</code> of <code>results.xlsx</code>.
+This is a code lookup only; the results are not an SDTM PP dataset and no claim of conformance to
+CDISC standards is made.
 
 ', if (identical(analysis_type, "Bioequivalence")) paste0('<br><br>
 <strong>Scope:</strong> the script recomputes the NCA parameters. The bioequivalence
@@ -394,6 +399,8 @@ create_analysis_record <- function(output_path, results, settings, col_map,
         openxlsx::writeData(wb, sn, df)
       }
     }
+    add_cdisc_code_sheet(wb, names(results)[vapply(results, is.numeric, logical(1))],
+                         settings$admin_route, isTRUE(settings$is_steady_state))
     openxlsx::saveWorkbook(wb, file.path(rec_dir, "results.xlsx"), overwrite = TRUE)
   }, error = function(e) warning("Could not create results.xlsx: ", e$message))
 
@@ -441,7 +448,8 @@ create_analysis_record <- function(output_path, results, settings, col_map,
         PowerTOST  = tryCatch(as.character(packageVersion("PowerTOST")), error = function(e) "?")
       )
     )
-    settings_export <- c(settings_export, shipped_adnca$json)
+    settings_export <- c(settings_export, shipped_adnca$json,
+                         list(cdisc_terminology = .cdisc_json()))
     if (!is.null(be_results)) {
       settings_export$bioequivalence <- be_settings
       settings_export$reproduction_scope <- paste(
@@ -566,6 +574,7 @@ create_single_analysis_record <- function(output_path, result, settings,
     wb <- openxlsx::createWorkbook()
     openxlsx::addWorksheet(wb, "NCA_Parameters")
     openxlsx::writeData(wb, 1, df)
+    add_cdisc_code_sheet(wb, names(result), settings$admin_route, isTRUE(settings$is_steady_state))
     openxlsx::saveWorkbook(wb, file.path(rec_dir, "results.xlsx"), overwrite = TRUE)
   }, error = function(e) warning("Could not create results.xlsx: ", e$message))
 
@@ -611,7 +620,8 @@ create_single_analysis_record <- function(output_path, result, settings,
         PowerTOST  = tryCatch(as.character(packageVersion("PowerTOST")), error = function(e) "?")
       )
     )
-    settings_export <- c(settings_export, shipped_adnca$json)
+    settings_export <- c(settings_export, shipped_adnca$json,
+                         list(cdisc_terminology = .cdisc_json()))
     if (!is.null(lz_overrides)) settings_export$lz_overrides <- lz_overrides
     .write_json(settings_export, file.path(rec_dir, "analysis_settings.json"))
   }, error = function(e) warning("Could not create settings JSON: ", e$message))
@@ -1023,6 +1033,26 @@ run_reproduction_check <- function(rec_dir, script, outputs = "reproduced_result
                    adnca_import_sha256 = sha256_or_na(file.path(rec_dir, "adnca_import.R"))),
        manifest = list("ADNCA import code" = file.path(rec_dir, "adnca_import.R"),
                        "ADNCA conversion log" = log_path))
+}
+
+#' Add a sheet with the official CDISC code and name of each parameter
+#'
+#' The first rows state the Controlled Terminology release used and that this
+#' is a code lookup, not an SDTM PP dataset.
+add_cdisc_code_sheet <- function(wb, params, admin_route, is_ss, sheet = "CDISC_Parameter_Codes") {
+  codes <- cdisc_pk_codes(params, admin_route, is_ss)
+  openxlsx::addWorksheet(wb, sheet)
+  openxlsx::writeData(wb, sheet, cdisc_ct_statement(), startRow = 1)
+  openxlsx::writeData(wb, sheet, paste("Code lookup only: these results are not an SDTM PP dataset and",
+                                       "no claim of conformance to CDISC standards is made."), startRow = 2)
+  openxlsx::writeData(wb, sheet, codes, startRow = 4)
+  invisible(codes)
+}
+
+#' The pinned CDISC release, for settings JSON
+.cdisc_json <- function() {
+  r <- cdisc_ct_release()
+  r[c("Standard", "Release", "Codelists", "Source", "Source_SHA256")]
 }
 
 #' Write a settings JSON; digits = NA keeps full precision (doses, LLOQ,

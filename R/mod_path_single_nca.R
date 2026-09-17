@@ -146,7 +146,7 @@ path_single_nca_ui <- function(id) {
         tagList(
           card(
             card_header(tagList("PK Parameters", help_what_is_nca)),
-            card_body(uiOutput(ns("nca_card")))
+            card_body(uiOutput(ns("nca_card")), uiOutput(ns("cdisc_codes")))
           ),
           card(
             card_header(tagList("Half-Life Calculation", help_lambda_z)),
@@ -439,6 +439,12 @@ path_single_nca_server <- function(id, shared) {
       nca_res(r)
     })
     
+    # Official CDISC codes for the parameters computed, with the release used
+    output$cdisc_codes <- renderUI({
+      r <- nca_res(); req(r)
+      cdisc_codes_ui(names(r), input$admin_route, isTRUE(input$is_ss))
+    })
+
     output$nca_card <- renderUI({
       r <- nca_res()
       if (is.null(r)) return(tags$p(class="text-muted", "Click 'Run PK Analysis'."))

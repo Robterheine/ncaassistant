@@ -213,7 +213,8 @@ path_be_ui <- function(id) {
               tags$p(class = "text-muted small",
                      "Individual NCA results for all subject-treatment profiles."),
               checkboxInput(ns("nca_show_all"), "Show all parameters (37 columns)", FALSE),
-              DTOutput(ns("nca_table"))
+              DTOutput(ns("nca_table")),
+              uiOutput(ns("cdisc_codes"))
             ),
             
             nav_panel(
@@ -873,6 +874,13 @@ path_be_server <- function(id, shared) {
                                            input$ci_level, "% CI")))
     })
     
+    # Official CDISC codes for the parameters in the table, with the release used
+    output$cdisc_codes <- renderUI({
+      req(be_nca_result())
+      r <- be_nca_result()
+      cdisc_codes_ui(names(r)[vapply(r, is.numeric, logical(1))], input$admin_route, isTRUE(input$is_ss))
+    })
+
     # NCA table
     output$nca_table <- renderDT({
       req(be_nca_result())
@@ -1181,6 +1189,11 @@ path_be_server <- function(id, shared) {
         if (!is.null(be_nca_result())) {
           addWorksheet(wb, "NCA_Parameters")
           writeData(wb, 2, rename_nca_columns(be_nca_result()))
+        }
+        if (!is.null(be_nca_result())) {
+          r <- be_nca_result()
+          add_cdisc_code_sheet(wb, names(r)[vapply(r, is.numeric, logical(1))],
+                               input$admin_route, isTRUE(input$is_ss))
         }
         if (!is.null(be_result()$cv_table)) {
           addWorksheet(wb, "Within_Subject_Variability")

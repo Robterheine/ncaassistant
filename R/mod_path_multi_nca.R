@@ -136,6 +136,7 @@ path_multi_nca_ui <- function(id) {
               checkboxInput(ns("show_all_params"),
                             "Show all parameters (37 columns)", FALSE),
               DTOutput(ns("param_table")),
+              uiOutput(ns("cdisc_codes")),
               downloadButton(ns("dl_params_csv"), "Download Results (CSV)",
                              class = "btn-outline-primary btn-sm mt-2"),
               downloadButton(ns("dl_params_xlsx"), "Download Results (Excel)",
@@ -532,6 +533,13 @@ path_multi_nca_server <- function(id, shared) {
       dt
     })
     
+    # Official CDISC codes for the parameters in the table, with the release used
+    output$cdisc_codes <- renderUI({
+      req(nca_result())
+      r <- nca_result()
+      cdisc_codes_ui(names(r)[vapply(r, is.numeric, logical(1))], input$admin_route, isTRUE(input$is_ss))
+    })
+
     # Replicate designs: a subject contributes more than one profile per
     # treatment, so the summary pools administrations. Say so, because readers
     # take N as subjects and geometric CV as between-subject variability.
@@ -825,10 +833,12 @@ path_multi_nca_server <- function(id, shared) {
         addWorksheet(wb, "Individual_Parameters")
         writeData(wb, 1, rename_nca_columns(nca_result()))
         r <- nca_result()
+        add_cdisc_code_sheet(wb, names(r)[vapply(r, is.numeric, logical(1))],
+                             input$admin_route, isTRUE(input$is_ss))
         key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r))
         if (length(key)>0) {
           addWorksheet(wb, "Summary_Statistics")
-          writeData(wb, 2, rename_summary_columns(summarize_pk_params(r, key)))
+          writeData(wb, "Summary_Statistics", rename_summary_columns(summarize_pk_params(r, key)))
         }
         saveWorkbook(wb, file, overwrite=TRUE)
       }

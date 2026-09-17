@@ -34,7 +34,7 @@ if (length(missing) > 0) {
 }
 library(NonCompart); library(PowerTOST); library(nlme); library(digest)
 
-for (f in c("R/pipeline.R", "R/adnca_import.R", "R/utils.R", "R/nca_helpers.R", "R/interlocks.R", "R/data_quality.R",
+for (f in c("R/pipeline.R", "R/adnca_import.R", "R/utils.R", "R/cdisc_terms.R", "R/nca_helpers.R", "R/interlocks.R", "R/data_quality.R",
            "R/export_record.R", "R/designs.R", "R/be_analysis.R")) {
   tryCatch(source(f, local = TRUE), error = function(e) NULL)
 }
@@ -53,7 +53,8 @@ APP_VERSION <- tryCatch({
 
 source_files <- c("R/utils.R", "R/nca_helpers.R", "R/data_quality.R",
                   "R/export_record.R", "R/mod_data_upload.R", "R/designs.R", "R/be_analysis.R",
-                  "R/pipeline.R", "R/interlocks.R", "R/adnca_import.R", "converters/adnca_to_flat.R")
+                  "R/pipeline.R", "R/interlocks.R", "R/adnca_import.R", "R/cdisc_terms.R",
+                  "converters/adnca_to_flat.R")
 hash_files <- c("validation/validation.R", source_files)
 file_hashes <- sapply(hash_files, function(f) {
   if (file.exists(f)) digest(file = f, algo = "sha256") else "FILE_NOT_FOUND"
@@ -910,8 +911,53 @@ check("EXP-SM-02", "Summary: Mean>0", summarize_pk_params(theoph_result,"CMAX")$
       "URS-EXP-01", method="Mean Cmax", expected=">0", critical=TRUE)
 check("EXP-SM-03", "Summary: GeoMean", { s<-summarize_pk_params(theoph_result,"CMAX"); !is.na(s$Geo_Mean[1])&&s$Geo_Mean[1]>0 },
       "URS-EXP-01", method="Geometric mean", expected=">0", critical=TRUE)
-check("EXP-CD-01", "CDISC names", is.data.frame(cdisc_pk_names())&&nrow(cdisc_pk_names())>10,
-      "URS-GEN-06", method="cdisc_pk_names()", expected=">10 rows", critical=FALSE)
+check("EXP-CD-01", "CDISC PK parameter codes come from one pinned, stated release",
+  tryCatch({
+    r <- cdisc_ct_release()
+    terms <- read.csv(file.path("cdisc", "pk_parameter_terms.csv"), stringsAsFactors = FALSE)
+    map <- read.csv(file.path("cdisc", "pk_parameter_map.csv"), stringsAsFactors = FALSE, na.strings = character(0))
+    used <- unique(map$PPTESTCD[nzchar(map$PPTESTCD)])
+    identical(r$Standard, "CDISC SDTM Controlled Terminology") && grepl("^\\d{4}-\\d{2}-\\d{2}$", r$Release) &&
+      grepl("C85839", r$Codelists) && grepl("C85493", r$Codelists) && nchar(r$Source_SHA256) == 64 &&
+      setequal(used, terms$PPTESTCD) && !anyDuplicated(terms$PPTESTCD) &&
+      all(grepl("^C\\d+$", terms$NCIt_code)) && all(nzchar(terms$PPTEST)) &&
+      grepl(r$Release, cdisc_ct_statement(), fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-GEN-06", critical = TRUE,
+  method = "cdisc/ct_release.dcf and pk_parameter_terms.csv vs pk_parameter_map.csv",
+  expected = "dated release with codelist IDs and source hash; every mapped code has a pinned term")
+check("EXP-CD-02", "Codes follow route and steady state",
+  tryCatch({
+    code <- function(p, route = "extravascular", ss = FALSE) cdisc_pk_codes(p, route, ss)$PPTESTCD
+    code("CLFO") == "CLFO" && code("CLFO", ss = TRUE) == "CLFTAU" && code("VZFO", ss = TRUE) == "VZFTAU" &&
+      code("CLO", "iv_bolus", TRUE) == "CLTAU" && code("MRTIVIFO", "iv_bolus") == "MRTIBIFO" &&
+      code("MRTIVIFO", "iv_infusion") == "MRTICIFO" && code("CMIN_SS") == "CMIN" && code("FLUCTP") == "FLUCP" &&
+      code("CMAX_DN") == "CMAXD" && code("AUCLST_DN") == "AUCLSTD" && code("VSSO", "iv_bolus", TRUE) == "" &&
+      code("b0") == "" && nzchar(cdisc_pk_codes("b0")$Note) && code("CMAX") == "CMAX" &&
+      cdisc_pk_codes("LAMZHL")$PPTEST == "Half-Life Lambda z"
+  }, error = function(e) FALSE),
+  "URS-GEN-06", critical = TRUE, method = "cdisc_pk_codes() for selected parameters",
+  expected = "steady-state and route-specific codes; explicit blanks with a note")
+check("EXP-CD-03", "Every NonCompart output parameter has a code or an explicit reason why not",
+  tryCatch({
+    d <- read.csv(file.path("validation", "fixtures", "be_2x2x2_crossover.csv"), stringsAsFactors = FALSE)
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc", treatment = "Treatment", period = "Period")
+    st <- list(dose = 100, infusion_duration = 0.5, dose_unit = "mg", time_unit = "h", conc_unit = "ng/mL",
+               trap_method = "log", r2adj_threshold = 0.7, mw = 0)
+    ok <- TRUE
+    for (route in c("extravascular", "iv_bolus", "iv_infusion")) for (ss in c(FALSE, TRUE)) {
+      st$admin_route <- route; st$is_steady_state <- ss
+      r <- suppressWarnings(run_nca(d, cm, st))
+      params <- setdiff(names(r), c("Subject", "Treatment", "Period"))
+      cc <- cdisc_pk_codes(params, route, ss)
+      ok <- ok && nrow(cc) == length(params) && all(nzchar(cc$PPTESTCD) | nzchar(cc$Note)) &&
+        !any(cc$Note == "Not mapped to a CDISC PK parameter code")
+    }
+    ss_extra <- cdisc_pk_codes(c("AUCTAU", "TAU", "CAVG", "CMIN_SS", "FLUCTP", "SWING"), is_ss = TRUE)
+    ok && all(nzchar(ss_extra$PPTESTCD))
+  }, error = function(e) FALSE),
+  "URS-GEN-06", critical = TRUE, method = "all run_nca outputs for 3 routes x steady state; single-subject SS extras",
+  expected = "no parameter silently unmapped")
 check("EXP-FM-01", "fmt_pk: formats", nchar(fmt_pk(123.456,4))>0,
       "URS-UI-01", method="fmt_pk", expected="Non-empty", critical=FALSE)
 check("EXP-FM-02", "fmt_pk: NA->dash",
@@ -2119,6 +2165,22 @@ check("REC-08", "Figure record rebuilds the figure from the processed data",
   }, error = function(e) FALSE),
   "URS-VIZ-08", critical = FALSE, method = "spaghetti figure record from the 2x2 fixture with LLOQ 0.5",
   expected = "script uses the pipeline; check reports the figure was produced")
+
+check("REC-09", "Records state the CDISC release and include the parameter codes",
+  tryCatch({
+    r <- rec_build(df = theoph, cm = theoph_cm, st = theoph_settings)
+    js <- jsonlite::fromJSON(file.path(r$ex, "analysis_settings.json"))
+    html <- paste(readLines(file.path(r$ex, "analysis_summary.html"), warn = FALSE), collapse = "\n")
+    codes <- openxlsx::read.xlsx(file.path(r$ex, "results.xlsx"), sheet = "CDISC_Parameter_Codes", startRow = 4)
+    rel <- cdisc_ct_release()$Release
+    identical(js$cdisc_terminology$Release, rel) && grepl(rel, html, fixed = TRUE) &&
+      all(c("Parameter", "PPTESTCD", "PPTEST", "NCIt_code") %in% names(codes)) &&
+      codes$PPTESTCD[codes$Parameter == "CMAX"] == "CMAX" &&
+      grepl(rel, paste(unlist(openxlsx::read.xlsx(file.path(r$ex, "results.xlsx"), sheet = "CDISC_Parameter_Codes",
+                                                  colNames = FALSE, rows = 1:2)), collapse = " "), fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-GEN-06", critical = TRUE, method = "theophylline record: JSON, HTML, results.xlsx",
+  expected = "release in JSON, HTML and the code sheet header; CMAX coded CMAX")
 
 end_section("REC")
 

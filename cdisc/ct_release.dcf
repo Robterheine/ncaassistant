@@ -1,0 +1,10 @@
+Standard: CDISC SDTM Controlled Terminology
+Release: 2026-03-27
+Codelists: C85839 PK Parameters Code (PKPARMCD, for PPTESTCD); C85493
+        PK Parameters (PKPARM, for PPTEST)
+Source: NCI EVS, https://evs.nci.nih.gov/ftp1/CDISC/SDTM/ (SDTM
+        Terminology.txt)
+Source_SHA256:
+        bf463677654171d701d09ffcb0a122e9523029b42d542269f45fb496a35ecef9
+Extracted: 2026-09-17
+Terms: 63
