@@ -2,7 +2,17 @@
 
 **Audience:** the owner (decision) and a future session or maintainer (implementation).
 **Written:** 17 September 2026, against app v1.4.0 (`main` at `cbbd4c6`).
-**Status:** decisions made (2026-09-18, owner). Nothing is built yet. Section 5 lists the decisions and their resolutions.
+**Status:** decisions made (2026-09-18, owner). Phases 1–5 and the in-app text of phase 6 (§7.1–7.3) are built on branch `claude/partial-auc-handoff-a2cad0` (commits 9e0349f, b472e37, dfcd546); validation 356/356 automated (section PAUC, 18 tests) plus MAN-45 to MAN-49. Not merged. Still to do after merge: §7.4–7.8 (URS, IQ/OQ/PQ, manual v1.6, READMEs, version bump).
+
+**Implementation notes (deviations and choices to review):**
+- D1 uses Tlast, the last *measurable* concentration, as the limit (section 4.2), not the last sampling time. An interval starting exactly at Tlast with end t gives 0.
+- D2: a metric with a zero gets no estimate either, not only no verdict (the estimate without those profiles would be biased).
+- End t is refused at steady state (intervals must end at a time ≤ τ).
+- D11 "mainly" = more than half of the samples used in the interval.
+- The interval editor allows up to 6 intervals. Tmax in an interval is reported but not offered in Bioequivalence.
+- D5 shades the intervals of the last analysis on the Visualize summary plot; an end at t is drawn to the last time shown.
+- The EMA modified-release guideline is not cited yet (§9, verify first).
+- Fixed on the way: the summary-plot Figure Record script used `%>%` without loading dplyr and failed to reproduce.
 
 Review team: statistician, clinical pharmacologist, R/Shiny engineer.
 
