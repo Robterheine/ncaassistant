@@ -1,7 +1,8 @@
 # NCA Assistant — roadmap and handoff
 
 **Audience:** a fresh session, or a future maintainer, picking this up cold.
-**Written:** September 2026, against app v1.3.0. Last updated 2026-09-17.
+**Written:** September 2026, against app v1.3.0. Last updated 2026-09-17
+(Part B verified against the code; see §10.5).
 
 This document is the design record for two separate workstreams, both arising
 from peer review of the manuscript. It exists so that the reasoning behind the
@@ -11,7 +12,7 @@ refusals that look like omissions.
 | Part | Workstream | Status |
 |---|---|---|
 | **A** (§1–9) | CDISC / SDTM interoperability | Phase 0 shipped in v1.3.0 (`58d6f5b`). Phases 1–5 pending. |
-| **B** (§10–15) | Bioequivalence design coverage — replicate designs | Reviewed, decided, not yet built. **This is the next version.** |
+| **B** (§10–15) | Bioequivalence design coverage — replicate designs | Reviewed, decided, not yet built. **This is the next version.** Verified against the code on 2026-09-17 (§10.5). |
 
 The two interact: Part B's implementation is cheaper and cleaner if Part A's
 Phase 1 (extract `R/pipeline.R`) is done first. See §14.
@@ -151,7 +152,7 @@ see Phase 2.
 Effort is in **focused days** for one part-time maintainer. At ~4–6 h/week,
 one focused day ≈ 1.5–2 calendar weeks.
 
-### Phase 1 — Extract the pipeline (4–5 days) — **do this next**
+### Phase 1 — Extract the pipeline (4–5 days) — first within Part A, after Part B (see §16)
 
 Independently shippable. No visible change; validated by "all existing tests
 still pass, plus new ones".
@@ -417,8 +418,8 @@ These are independent of the phases and should be done regardless.
 
 | Where | Problem |
 |---|---|
-| `README.md`, `validation/README.md` | Both claim the URS contains an **"ALCOA+ data integrity framework"**. The string "ALCOA" does not appear anywhere in `NCA_Assistant_URS.docx` (sections are Purpose, System Description, Supplier Assessment, FMEA, Requirements, Traceability, Configuration Management, Regulatory References, Glossary). Either add a real section — honestly marking *Attributable* as **not met**, since `analyst` is free text with no authentication — or delete the claim. |
-| `app.R` (About page, package list) | Describes `ncar` as "CDISC SDTM compatible". That is an unsourced claim about a third-party package. Quote its own wording or drop it. Separately, `library(ncar)` is loaded but **never used anywhere in `R/`** — drop it or use it. |
+| `README.md:91` | Claims the URS contains an **"ALCOA+ data integrity framework"**. (`validation/README.md` does not repeat it — verified 2026-09-17.) The string "ALCOA" does not appear anywhere in `NCA_Assistant_URS.docx` (sections are Purpose, System Description, Supplier Assessment, FMEA, Requirements, Traceability, Configuration Management, Regulatory References, Glossary). Either add a real section — honestly marking *Attributable* as **not met**, since `analyst` is free text with no authentication — or delete the claim. |
+| `app.R:501` (About page, package list) | Describes `ncar` as "NCA report generation. Produces formatted PDF and RTF reports from NonCompart output. CDISC SDTM compatible." The last sentence is an unsourced claim about a third-party package — quote its own wording or drop it — and the first two describe a role `ncar` does not play in this app. Separately, `library(ncar)` is loaded but **never used anywhere in `R/`** — drop it or use it. |
 | `README.md` (Complete Analysis Record section) | "a self-contained zip file **for regulatory submissions**" reads as submission material. Prefer "for archiving, audit trails, publication supplements, and inclusion in a sponsor's study documentation". |
 | `README.md` (feature list) | Claims column auto-detection "including CDISC … naming conventions". Only `USUBJID` matches; `AVAL` and `PCSTRESN` fall through to the positional fallback. Fix the claim or (after Phase 2) point at the sniffer. |
 | `URS-GEN-06` + `EXP-CD-01` | Circular: the requirement says parameter names "follow CDISC conventions", the acceptance criterion is that `cdisc_pk_names()` maps them, and that function's two columns are identical. The test asserts only `nrow() > 10` and **cannot fail**. Rewrite against a dated CT release. |
@@ -579,6 +580,13 @@ generic "3-period crossover" option is statistically correct for both `2x2x3`
 and `2x3x3` in the EMA Method A sense. This is worth stating in the manuscript:
 the app's BE analysis *is* EMA Method A, demonstrably.
 
+> **Correction (2026-09-17): true of the model formula, not of the shipped code.**
+> The agreement above holds when Period enters the model as a factor. The app
+> never coerces Period, and an uploaded Period column is almost always integer,
+> so with more than two periods it is fitted as a 1-df linear trend. See **D7**
+> in §10.5. The manuscript claim must wait until D7 is fixed and the agreement
+> is re-demonstrated through the app's own code path.
+
 ### 10.2 But a shipping design is silently broken
 
 Two independent defects, both reproduced directly against the app's own code.
@@ -616,7 +624,7 @@ The failure is data-dependent and mostly silent:
 |---|---|
 | Nominal times repeated each period | `data_quality.R:421` raises a duplicate-time ERROR and blocks the upload — but its remediation text tells the user to map Treatment and Period, which they already did. Dead end. |
 | Actual/elapsed times (no exact ties) | **24 → 12 profiles, silently.** Warning count is dataset-dependent; on one run there were none at all. |
-| An internal tie in the interleaved profile | `run_nca()` returns NULL, "the condition has length > 1" → generic "NCA failed." |
+| An internal tie in the interleaved profile | `run_nca()` returns NULL, "the condition has length > 1" → generic "NCA failed." **This is the common case**: a pre-dose sample recorded at exactly t = 0 in every period is already a tie. The silent 24 → 12 path needs untied pre-dose times (e.g. actual times like −0.05 h). |
 
 Where warnings do appear they are cryptic R internals ("numerical expression has
 2 elements: only the first used"), which `mod_path_be.R` catches and renders as a
@@ -663,7 +671,7 @@ before the replicate fixture test exists and fails for the right reason.
 | ID | Defect | Location |
 |---|---|---|
 | **D3** | **No point-estimate constraint.** Acceptance is `be_pass <- ci_lo >= be_lower & ci_hi <= be_upper`, and the limits are free numeric inputs. A user who plans ABEL, reads off 69.84/143.19 and types them in gets "Bioequivalent: YES" with a point estimate of 135 % — which is not an ABEL verdict, since ABEL also requires the PE inside 80–125. | `mod_path_be.R:715` |
-| **D4** | **`random = ~1\|Sequence/Subject` is the wrong nesting.** Subject IDs are already unique, so this puts a random intercept on Sequence while Sequence is also a fixed effect. Produces `DF = 0` / `F = NaN` for the Sequence row in the ANOVA table and the `pt(...): NaNs produced` warnings on every mixed-model run. Treatment inference is unaffected. Fix: drop `Sequence/`. | `mod_path_be.R:631` |
+| **D4** | **`random = ~1\|Sequence/Subject` is the wrong nesting.** Subject IDs are already unique, so this puts a random intercept on Sequence while Sequence is also a fixed effect. Produces `DF = 0` / `F = NaN` for the Sequence row in the ANOVA table and the `pt(...): NaNs produced` warnings on every mixed-model run. Treatment inference is unaffected (verified: identical estimate, SE and DF). Fix: drop `Sequence/`. **Does not fix the fixed-effects ANOVA**, where `drop1()` also reports Sequence with `Df 0` because Sequence is aliased with Subject; Method A tests Sequence against Subject(Sequence), which `drop1()` cannot do. | `mod_path_be.R:631`, `:658` |
 | **D5** | **The "no ABEL/RSABE" warning is on the wrong design.** It sits inside `conditionalPanel(be_design == 'replicate_2x2x4')`, but the planner offers scaled methods on `2x2x3` and `2x3x3` too — which map to `crossover_3period`, which shows nothing. Two of the three designs that need the warning do not get it. | `mod_path_be.R:110` |
 | **D6** | **`crossover_fixed_order` is numerically identical to a paired t-test** (verified: same estimate, SE, df = n−1) — i.e. PowerTOST's `paired`. Period and treatment are fully confounded, so it cannot support a BE conclusion, yet the results pane still prints a BE verdict against 80–125 %. The warning and the output contradict each other, and the output wins. | `mod_path_be.R:618` |
 
@@ -683,6 +691,47 @@ These must move in lockstep with D1 or the fix is only half done:
   `if (length(row_idx) == 1)`. With replicates that is length 2 → **silent
   no-op**: the user adjusts a terminal slope, sees the "Recalculated"
   notification, and nothing is written back.
+- The half-life **profile selector labels** are built as `Subject | Treatment` at
+  `mod_path_be.R:1028` and `mod_path_multi_nca.R:395`; with replicates two
+  profiles share one label. `lz_sub_data` (`mod_path_be.R:1039-1049`, and its
+  twin in `mod_path_multi_nca.R`) subsets by Subject + Treatment only, so the
+  plotted profile is the interleaved one.
+- `export_record.R:453-456` — the generated script's λz override replay uses the
+  same `Subject | Treatment` match and `if (length(idx) == 1)` guard, so the
+  **reproduction script would silently skip overrides** for replicates.
+
+### 10.5 Found during pre-implementation verification (2026-09-17)
+
+Every claim in §10.1–10.4 was re-checked against the code at v1.3.0 before any
+implementation began: cited lines read, the validation suite run (191 automated
+checks pass, 32 manual), defects reproduced by driving the real `run_nca()` with
+the BE merge and model mirrored from `mod_path_be.R`, and the model compared
+against `replicateBE::method.A` (1.1.3) on its reference datasets. D1–D6 are
+confirmed. Five further defects were found.
+
+| ID | Defect | Location |
+|---|---|---|
+| **D7** | **Period enters the model as a number, not a factor.** Only Treatment is coerced (`:501`). With > 2 periods, Period is fitted as a 1-df linear trend instead of Method A's period factor. Sequence is also uncoerced: harmless in `lm` (aliased with Subject), but wrong in `lme` if sequences are coded 1/2/3. Masked today because every 2-treatment design with > 2 periods also hits D1/D2, and invisible to the suite because its model copy coerces (D10). No effect on 2-period designs. | `mod_path_be.R:498-501` |
+| **D8** | **Untransformed parameters get a verdict against percentage limits.** When `log_transform` is off, and **always for TMAX**, `pe`/`ci` are raw differences (h, ng/mL) and are compared with `be_lower`/`be_upper` as if they were percentages. Every TMAX row carries a meaningless YES/NO. | `mod_path_be.R:711-715` |
+| **D9** | **BE Analysis Records with per-subject doses do not reproduce.** The record is built with `dose = input$dose` (a scalar) even when doses came from the Dose column, so `analysis_settings.json` says `dose_source: single` and the shipped script recomputes CL/F and Vz/F with the wrong dose. Also: BE settings (design, model type, CI level, limits, log-transform, parameters) are not written to the settings JSON, and the script does not reproduce the BE statistics at all. | `mod_path_be.R:1262-1273`; `export_record.R:933-966` |
+| **D10** | **The BE validation tests exercise a copy, not the app.** `validation.R:449` defines its own `run_be()`, which coerces Period and Sequence to factors and uses its own formula. BE-AN, BE-MX and BE-NE pass or fail independently of `mod_path_be.R`, so no Tier 0 fix would be regression-tested. | `validation/validation.R:449-462` |
+| **D11** | **Planner uses the generic label "3-period crossover" for `2x2x3`**, which is a full replicate. Fold into B5. | `mod_path_power.R:218, 222, 225` |
+
+**D7, measured on `replicateBE` reference data** (app formula, fixed effects):
+
+```
+         method.A                          Period factor       Period integer (as shipped)
+rds17    PE 134.18  CI 116.02-155.19 df 34  identical           PE 136.41  CI 118.78-156.67 df 35
+rds01    PE 115.66  CI 107.11-124.89 df 217 identical           PE 115.74  CI 107.20-124.96 df 219
+rds03    PE 124.19  CI 113.05-136.43 df 143 identical           PE 124.22  CI 113.11-136.42 df 144
+```
+
+**D8, measured:** 2×2, 24 subjects, true ratio 1, Cmax untransformed →
+"PE" −1.61 (ng/mL difference), CI −7.60 to 4.39, verdict "NO" against 80–125.
+
+**D9, measured:** 8-subject 2×2 with per-subject doses, record built exactly as
+`mod_path_be.R` builds it, shipped script executed →
+`Max relative difference: 3 -> DIFFERENT`.
 
 ---
 
@@ -807,18 +856,42 @@ variance interval assumes CVwT ≈ CVwR.
 
 ## 12. Implementation plan
 
-### Tier 0 — Safety fixes, ship first and independently (~1 day)
+### Tier 0 — Safety fixes, ship first and independently (~1.5 days)
 
 None of these depend on the replicate work, and D3 is a live false-pass risk.
+Revised 2026-09-17 after the verification in §10.5: step 1 is new and must come
+first, otherwise none of the fixes below can be regression-tested (D10).
 
-1. **D3 — point-estimate constraint** (`mod_path_be.R:715`). ~1 h.
-2. **D4 — `~1|Sequence/Subject` → `~1|Subject`** (`:631`). ~30 min. Removes the
-   `NaN` warnings and the `DF = 0` ANOVA row; treatment inference unaffected.
-3. **D5 — relocate the ABEL/RSABE warning** so it shows on `crossover_3period`
+1. **D10 — extract the BE fit and verdict** from the `observeEvent` in
+   `mod_path_be.R` (`:597-727`) into a Shiny-free function in `R/` (model
+   formula, coefficient extraction, CI, verdict). Point BE-AN / BE-MX / BE-NE at
+   it and delete `run_be()` from `validation.R`. ~2 h. This is a narrow slice of
+   Part A Phase 1, not a substitute for it.
+2. **D3 — point-estimate constraint** (`mod_path_be.R:715`). ~1 h.
+3. **D8 — no verdict for untransformed analyses** (`:711-715`): TMAX always, and
+   any parameter when log-transform is off. Report the difference and CI in the
+   parameter's units, labelled as such. ~1 h.
+4. **D7 — coerce Period and Sequence to factors** before fitting (`:498-501`).
+   ~30 min. No numeric change for any design that currently works (all have ≤ 2
+   periods); required for B2 to reproduce Method A.
+5. **D4 — `~1|Sequence/Subject` → `~1|Subject`** (`:631`). ~30 min. Removes the
+   `NaN` warnings and the `DF = 0` row in the mixed-model ANOVA; treatment
+   inference unaffected. The fixed-effects `drop1()` table still shows Sequence
+   with `Df 0` — either test Sequence against Subject(Sequence) or omit that row.
+6. **D5 — relocate the ABEL/RSABE warning** so it shows on `crossover_3period`
    as well as `replicate_2x2x4`.
-4. **D6 — reframe `fixed_order`** and suppress its BE verdict (§11.4). ~2 h.
-5. **Fix the misdirecting duplicate-time remediation text** (`data_quality.R:428`),
+7. **D6 — reframe `fixed_order`** and suppress its BE verdict (§11.4). ~2 h.
+8. **D9 — record what was actually used**: the named per-subject dose vector
+   (`mod_path_be.R:1264`), and the BE settings (design, model type, CI level,
+   limits, log-transform, parameters) in `analysis_settings.json`. Add a
+   regression test that a per-subject-dose BE record reproduces (MATCH).
+   Reproducing the BE statistics in the script is a separate, larger item;
+   until then, state in the record that the script reproduces the NCA only.
+9. **Fix the misdirecting duplicate-time remediation text** (`data_quality.R:425-432`),
    which currently tells users to map columns they already mapped.
+
+Each of 2–8 gets a regression test through the function from step 1, written to
+fail before the fix.
 
 ### Phase B1 — Period-aware profile key (0.5 d)
 
@@ -853,23 +926,28 @@ a profile is.
 > Period becomes all-NA, and `lm` drops every row. Coerce both — exactly as the
 > existing Subject coercion at `:480-483` already does, which exists because this
 > class of bug was hit once before.
+>
+> This is a separate problem from D7. Coercing Period to character for the
+> *merge* does not make it a factor in the *model*; Tier 0 step 4 handles that.
 
-Also in this phase: `n1`/`n2` at `:702-703` count **rows**, and the results table
+Also in this phase: `n1`/`n2` at `:665-666` count **rows**, and the results table
 labels them "N (Test)". With replicates that reports 2n where every reader will
-read subjects. Same in the design summary at `:773-820`. Fix the labelling to
+read subjects. Same in the design summary at `:770-822`. Fix the labelling to
 distinguish subjects from administrations.
 
 ### Phase B3 — Downstream grain assumptions (2 d)
 
 - **Half-life override across three modules** (`mod_path_be.R:1172`,
-  `mod_path_multi_nca.R:779`, and the `lz_sub_data` subset at `mod_path_be.R:~1155`):
+  `mod_path_multi_nca.R:781`, the `lz_sub_data` subsets at `mod_path_be.R:1039-1049` and in
+  `mod_path_multi_nca.R`, the selector labels at `mod_path_be.R:1028` and
+  `mod_path_multi_nca.R:395`, and the script's override replay at `export_record.R:453-456`):
   profile labels become `Subject | Treatment | Period`, which makes the
-  `length == 1` guard work again. Three near-copies — a candidate for sharing.
+  `length == 1` guard work again. Three near-copies in the modules plus one string-built copy in the script generator — a candidate for sharing.
 - **Summary statistics** (`utils.R:305-319` via `mod_path_multi_nca.R:549`):
   `summarize_pk_params()` pools both administrations into one geometric mean and
   labels the result "Geometric CV (%)", which readers take as between-subject CV.
   Decide and document what that column means for replicates.
-- **NCA results table** gains a Period column (`mod_path_be.R:891-896`).
+- **NCA results table** gains a Period column (`mod_path_be.R:894-909`).
 - **Forest plot is unaffected** — it works off `ci_table`, one row per parameter.
 - **Exports are mostly free** — they write the result frame wholesale and pick up
   Period automatically.
@@ -934,9 +1012,12 @@ the app can finally check **what the data is** against **what the user selected*
   and it is worth more than any number of extra dropdown entries.
 - **Profile-count tests**: a 2×2×4 with n subjects must yield 4n NCA profiles and
   4n `be_data` rows — the test that would have caught both D1 and D2.
-- **Regression tests for D3–D6.**
-- Four join keys in `validation.R` use `paste(Subject, Treatment, sep="||")`
-  (`:907, 921, 936, 1063`) and need updating.
+- **Regression tests for D3–D9**, through the extracted BE function (Tier 0 step 1).
+- **Method A agreement through the app's code path**, with Period supplied as
+  integer (as real files have it), so D7 cannot silently return.
+- Four join keys in `validation.R` need updating: three use
+  `paste(Subject, Treatment, sep="||")` (`:907, 921, 936`) and one uses
+  `paste(Subject, Treatment)` (`:1066`).
 
 > **Note on the existing suite.** `validation.R` cannot source the Shiny modules,
 > so it text-extracts functions with brace counting (`:40`), and several checks
@@ -1002,7 +1083,7 @@ support out months sooner. Phase 1 can then collapse the remainder.
 
 | Phase | Work | Focused days |
 |---|---|---|
-| Tier 0 | Safety fixes (D3–D6) — **independently shippable** | 1 |
+| Tier 0 | Extract BE fit + safety fixes (D3–D10) — **independently shippable** | 1.5 |
 | B1 | Period-aware profile key | 0.5 |
 | B2 | Merge + type coercion + n-vs-rows labelling | 1.5 |
 | B3 | Half-life review, summary stats, table columns | 2 |
@@ -1010,9 +1091,9 @@ support out months sooner. Phase 1 can then collapse the remainder.
 | B5 | Design menu split + shared registry | 1 |
 | B6 | Fixtures, replicateBE agreement, regression tests | 1.5 |
 | — | Contingency (merge and half-life both have silent failure modes) | +2 |
-| | **Total** | **~10.5** |
+| | **Total** | **~11** |
 
-At 4–6 h/week that is roughly **4–6 calendar months**. Tier 0 alone is one day
+At 4–6 h/week that is roughly **4–6 calendar months**. Tier 0 alone is 1.5 days
 and should not wait.
 
 ### Risks
@@ -1051,9 +1132,10 @@ no further verification. The regulatory claims do:
 
 Reconciling Part A and Part B. Part B is the next version; Part A resumes after.
 
-1. **Tier 0 safety fixes** (§12). One day, independently shippable, and D3 (the
+1. **Tier 0 safety fixes** (§12). About 1.5 days, independently shippable, and D3 (the
    missing point-estimate constraint) is a live false-pass risk that should not
-   wait for anything else.
+   wait for anything else. Start by extracting the BE fit (D10) so every fix is
+   regression-tested.
 2. **The documentation overclaims** (§6) — the unsupported ALCOA+ claim, the
    `ncar` "CDISC SDTM compatible" attribution, `README.md:24`'s replicate claim,
    and the circular `URS-GEN-06` / `EXP-CD-01` pair. Cheap, and some are live in
