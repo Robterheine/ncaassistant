@@ -1,6 +1,6 @@
 # NCA Assistant
 
-**Version 1.4.0** | Designed by Rob ter Heine
+**Version 1.5.0** | Designed by Rob ter Heine
 
 A freely available, open-source Shiny application for pharmacokinetic non-compartmental analysis (NCA), bioequivalence testing, study planning, and data visualization. Developed by the [Radboud Applied Pharmacometrics](https://www.radboudumc.nl/en/research/research-groups/radboud-applied-pharmacometrics) research group at Radboudumc, Nijmegen, The Netherlands.
 
@@ -15,13 +15,13 @@ The app offers six self-contained workflow paths accessible from a central hub:
 
 **2. Upload & Check Data** — Import CSV or Excel files (comma or semicolon separator, point or decimal comma) and auto-detect common column names (including common export and European naming conventions). CDISC ADNCA datasets are read through a separate *CDISC ADNCA dataset* option (see below). Set the LLOQ and one of 6 BLQ rules, applied per profile; text such as `<0.5`, BLQ, BQL, BLOQ, ND and NQ is handled as below the LLOQ. 20+ automated data quality checks, including safety checks that refuse data the app cannot analyse safely: mixed units, dates or clock times as time, time since the first dose instead of the dose of each period, and several profiles stacked in one column.
 
-**3. Visualize Data** — Create publication-ready concentration-time plots directly from uploaded data. Individual profiles (spaghetti plot) with flexible colour grouping, and geometric mean ×/÷ geometric SD summary curves with treatment overlays for crossover data. Export to PNG, PDF, or SVG at up to 600 DPI. Includes an auto-generated figure legend ready to paste into a manuscript.
+**3. Visualize Data** — Create publication-ready concentration-time plots directly from uploaded data. Individual profiles (spaghetti plot) with flexible colour grouping, and geometric mean ×/÷ geometric SD summary curves with treatment overlays for crossover data. Export to PNG, PDF, or SVG at up to 600 DPI. Includes an auto-generated figure legend ready to paste into a manuscript, and can shade the partial AUC intervals of the last analysis on the summary plot.
 
-**4. Analyze One Subject at a Time** — Step through individual profiles with Previous/Next navigation. Includes manual data entry, an interactive half-life inspector with point-by-point adjustment, and dose auto-fill from the data for each profile.
+**4. Analyze One Subject at a Time** — Step through individual profiles with Previous/Next navigation. Includes manual data entry, an interactive half-life inspector with point-by-point adjustment, and dose auto-fill from the data for each profile. Partial AUCs over intervals you enter are reported alongside the other parameters.
 
-**5. Analyze All Subjects (Batch)** — Run NCA on all profiles at once (one profile per subject, treatment and period, so replicate administrations stay separate). Summary statistics per treatment, individual profile grid, spaghetti and mean±SD plots, half-life review, and steady-state analysis with an entered dosing interval (AUCτ, average concentration, fluctuation and swing). When the automatic terminal fit is below the minimum adjusted R² (default 0.70), half-life and the parameters derived from it are not reported for that profile, unless you select the points yourself.
+**5. Analyze All Subjects (Batch)** — Run NCA on all profiles at once (one profile per subject, treatment and period, so replicate administrations stay separate). Summary statistics per treatment, individual profile grid, spaghetti and mean±SD plots, half-life review, and steady-state analysis with an entered dosing interval (AUCτ, average concentration, fluctuation and swing). When the automatic terminal fit is below the minimum adjusted R² (default 0.70), half-life and the parameters derived from it are not reported for that profile, unless you select the points yourself. Partial AUCs over intervals from your protocol, ending at a time or at the last measurable concentration, can be added to the table, the summary statistics and the downloads, optionally with the highest observed concentration and its time within each interval.
 
-**6. Bioequivalence Testing** — NCA → ANOVA (EMA Method A: Sequence, Subject, Period and Treatment as factors) → confidence interval (90% by default) → forest plot → bioequivalence conclusion. You choose the Reference treatment; the conclusion uses confidence limits rounded to two decimals and, for limits wider than 80–125%, also requires the point estimate within 80.00–125.00% by default. Designs: 2×2 crossover, 2×2×3 and 2×2×4 full replicate, 2×3×3 partial replicate, parallel groups, and paired comparison (all subjects in the same order; ratio without a verdict). For replicate designs the within-subject variability of Reference and Test and the EMA expanded limits they would imply are shown for information; the app performs average bioequivalence only, not reference-scaled (ABEL/RSABE) or NTID analyses. Results agree with the replicateBE package on its 30 reference data sets.
+**6. Bioequivalence Testing** — NCA → ANOVA (EMA Method A: Sequence, Subject, Period and Treatment as factors) → confidence interval (90% by default) → forest plot → bioequivalence conclusion. You choose the Reference treatment; the conclusion uses confidence limits rounded to two decimals and, for limits wider than 80–125%, also requires the point estimate within 80.00–125.00% by default. Designs: 2×2 crossover, 2×2×3 and 2×2×4 full replicate, 2×3×3 partial replicate, parallel groups, and paired comparison (all subjects in the same order; ratio without a verdict). For replicate designs the within-subject variability of Reference and Test and the EMA expanded limits they would imply are shown for information; the app performs average bioequivalence only, not reference-scaled (ABEL/RSABE) or NTID analyses. Partial AUCs and the maximum concentration within an interval can be compared as well: intervals you mark pivotal get a conclusion, supportive intervals a ratio and confidence interval only. Results agree with the replicateBE package on its 30 reference data sets.
 
 Plus: **Statistical Methods** page (text for a manuscript's Methods section), **Data Preparation Guide** (10 scenario tabs), and **About & Packages** with version history.
 
@@ -30,7 +30,7 @@ Plus: **Statistical Methods** page (text for a manuscript's Methods section), **
 ## CDISC data and terminology
 
 - **ADNCA datasets:** set *What kind of file?* to **CDISC ADNCA dataset** on the Upload page. The app shows a summary, asks which time variable (NRRLT, ARRLT or MRRLT) and analyte to use, applies ANL01FL, refuses derived records (DTYPE) and other data it cannot convert safely, and stores the choices in the Analysis Record. The standalone converter [`converters/adnca_to_flat.R`](converters/adnca_to_flat.R) does the same outside the app; see [`converters/ADNCA_TO_FLAT.md`](converters/ADNCA_TO_FLAT.md), which also gives a recipe for SAS transport (`.xpt`) files, which are not read directly.
-- **Parameter codes:** results, downloads and Analysis Records list the official CDISC PK parameter code of each parameter from CDISC SDTM Controlled Terminology release 2026-03-27 ([`cdisc/`](cdisc/)). This is a code lookup; the results are not SDTM PP datasets.
+- **Parameter codes:** results, downloads and Analysis Records list the official CDISC PK parameter code of each parameter from CDISC SDTM Controlled Terminology release 2026-03-27 ([`cdisc/`](cdisc/)). A partial AUC maps to AUCINT, with the interval start and end named for PPSTINT and PPENINT. This is a code lookup; the results are not SDTM PP datasets.
 
 NCA Assistant has not been checked against a specific version of the ADNCA Implementation Guide and is not affiliated with, endorsed by, or certified by CDISC.
 
@@ -44,7 +44,7 @@ For the NCA and bioequivalence paths the record contains:
 
 - **results.xlsx** — Individual NCA parameters, summary statistics, and (for BE) confidence intervals and ANOVA tables
 - **app_results_reference.csv** — The app's computed results in machine-readable form, used by the reproduction script for an automated comparison
-- **analysis_settings.json** — Every setting that affects the analysis (including per-profile doses and, for bioequivalence, the design, Reference treatment, model, confidence level, limits and point-estimate constraint), with package versions, schema version, timestamp, and (if used in the same session) visualization settings
+- **analysis_settings.json** — Every setting that affects the analysis (including per-profile doses and, for bioequivalence, the design, Reference treatment, model, confidence level, limits and point-estimate constraint), with package versions, schema version, timestamp, the partial AUC intervals and their roles, and (if used in the same session) visualization settings
 - **nca_pipeline.R** — The app's own data-processing code, so the reproduction runs exactly the code the app used
 - **reproduce_analysis.R** — Standalone R script that reproduces the exact analysis without the app. It re-checks the source-data SHA-256 against the recorded value, and **automatically compares** its output against `app_results_reference.csv`, printing a `MATCH` / `DIFFERENT` verdict. The app runs this script when it creates the record and stores the outcome in `reproduction_check.txt`
 - **data_integrity.txt** — Three-way SHA-256 manifest fingerprinting the **source data, the analysis settings, and the results**, so every artefact is independently verifiable (source data → settings → results)
@@ -95,11 +95,11 @@ A consolidated validation package is available in [`validation/`](validation/), 
 Rscript validation/validation.R
 ```
 
-This executes 338 automated tests (plus 44 manual tests defined for a running app) and generates a results CSV with environment details, per-section results, and URS traceability.
+This executes 358 automated tests (plus 49 manual tests defined for a running app) and generates a results CSV with environment details, per-section results, and URS traceability.
 
 **Validation deliverables:**
 
-- **User Requirement Specification** ([`validation/NCA_Assistant_URS.docx`](validation/NCA_Assistant_URS.docx)) — 58 requirements across 8 categories (GEN, DAT, NCA, BE, PWR, EXP, UI, VIZ), with FMEA risk assessment, supplier assessment, and change control procedures
+- **User Requirement Specification** ([`validation/NCA_Assistant_URS.docx`](validation/NCA_Assistant_URS.docx)) — 62 requirements across 8 categories (GEN, DAT, NCA, BE, PWR, EXP, UI, VIZ), with FMEA risk assessment, supplier assessment, and change control procedures
 - **IQ/OQ/PQ Protocol** ([`validation/NCA_Assistant_IQOQPQ.docx`](validation/NCA_Assistant_IQOQPQ.docx)) — every automated and manual test listed individually with method, expected result, URS cross-reference, and criticality classification
 - **Consolidated test script** ([`validation/validation.R`](validation/validation.R)) — automated tests + manual test definitions, covering IQ, data handling, NCA accuracy, bioequivalence, power/sample size, export/reproducibility, usability, and visualization (URS-VIZ)
 
@@ -111,7 +111,7 @@ See [`validation/README.md`](validation/README.md) for detailed instructions on 
 
 ## Citation
 
-> ter Heine R. NCA Assistant (v1.4.0). Radboud Applied Pharmacometrics, Radboudumc, Nijmegen, The Netherlands. https://github.com/robterheine/ncaassistant
+> ter Heine R. NCA Assistant (v1.5.0). Radboud Applied Pharmacometrics, Radboudumc, Nijmegen, The Netherlands. https://github.com/robterheine/ncaassistant
 
 > Kim H, Han S, Cho YS, Yoon SK, Bae KS. Development of R packages: 'NonCompart' and 'ncar' for noncompartmental analysis (NCA). *Transl Clin Pharmacol*. 2018;26(1):10-15.
 

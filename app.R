@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.4.0
+# Non-Compartmental Analysis Assistant v1.5.0
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # Designed by Rob ter Heine
@@ -14,7 +14,7 @@
 #   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.4.0"
+APP_VERSION <- "1.5.0"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 # Mirror APP_VERSION into the global environment. When RStudio runs a single-file
@@ -127,7 +127,7 @@ ui <- page_fluid(
           icon("circle-info", class = "me-1"), "About"
         ),
         tags$a(
-          href = "NCA_Assistant_User_Manual_v1.5.pdf",
+          href = "NCA_Assistant_User_Manual_v1.6.pdf",
           target = "_blank",
           class = "btn btn-outline-success btn-sm ms-2",
           style = "font-size: 0.7rem; padding: 2px 8px;",
@@ -773,8 +773,45 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.4.0",
+            tags$h6(class = "fw-bold mb-1", "v1.5.0",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "September 2026"),
+            tags$p(class = "mb-1", tags$strong("Results do not change"),
+                   " for analyses that do not use partial AUCs."),
+            tags$ul(class = "mb-0",
+              tags$li(tags$strong("New: partial AUCs. "),
+                      "One Subject at a Time, All Subjects and Bioequivalence take intervals from your protocol, ",
+                      "with an end at a time or at the last measurable concentration (t). They use the trapezoidal ",
+                      "method of the analysis and are never extrapolated: an interval reaching past the last ",
+                      "measurable concentration of a profile is left empty, with a note naming that profile. ",
+                      "A cutoff between two samples is interpolated, which the app also reports"),
+              tags$li(tags$strong("New: Cmax and Tmax within an interval. "),
+                      "Both are observed values, without interpolation, and Cmax can be compared in ",
+                      "Bioequivalence (the EMA asks for it for some long-acting products)"),
+              tags$li(tags$strong("New: pivotal and supportive metrics. "),
+                      "A pivotal interval receives a bioequivalence verdict, a supportive interval only its ratio ",
+                      "and confidence interval. A metric with a value of zero in any profile receives no estimate ",
+                      "and no verdict, because zero cannot be log-transformed and the profiles that would drop out ",
+                      "are the low-exposure ones. The results table and the forest plot keep that metric, with the ",
+                      "reason and the number of zero and missing profiles per treatment"),
+              tags$li(tags$strong("New: "), "notes when an interval rests mainly on concentrations set by the BLQ ",
+                      "rule, or on fewer than three measurable concentrations. At steady state an interval must lie ",
+                      "within 0 to \u03C4; AUC\u03C4 itself is unchanged and is still completed to \u03C4 with \u03BBz"),
+              tags$li(tags$strong("New: "), "Visualize Data can shade the intervals of the last analysis on the ",
+                      "summary plot, and the Figure Record reproduces the shading"),
+              tags$li(tags$strong("Analysis Record: "), "the intervals and their roles are recorded and recalculated ",
+                      "by the reproduction script; a changed interval is reported as DIFFERENT. Partial AUCs are ",
+                      "listed with the CDISC code AUCINT"),
+              tags$li(tags$strong("Fix: "), "the reproduction script of a Figure Record for a summary plot stopped ",
+                      "with an error, so that figure was never rebuilt"),
+              tags$li("Validation: 358 automated and 49 manual tests (was 338 and 44), with a new section for ",
+                      "partial AUCs; 62 user requirements (was 58)")
+            )
+          ),
+
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.4.0"),
             tags$p(class = "text-muted mb-1", "September 2026"),
             tags$p(class = "mb-1", tags$strong("Results can differ from v1.3.0"),
                    " for files with different doses per period, with BLQ text such as \"BLQ\" or \"ND\" when an LLOQ is set, ",
