@@ -457,13 +457,13 @@ be_input <- function(bd) {
   bd
 }
 run_be_fit <- function(bd, param, design="crossover_2x2", mt="fixed", ci=90,
-                       log_transform=TRUE, be_lower=80, be_upper=125) {
+                       log_transform=TRUE, be_lower=80, be_upper=125, ...) {
   fit_be_parameter(be_input(bd), param, design = design, model_type = mt,
                    trt_col = "Treatment", subj_col = "Subject",
                    per_col = if ("Period" %in% names(bd)) "Period" else NULL,
                    seq_col = if ("Sequence" %in% names(bd)) "Sequence" else NULL,
                    log_transform = log_transform, ci_level = ci,
-                   be_lower = be_lower, be_upper = be_upper)
+                   be_lower = be_lower, be_upper = be_upper, ...)
 }
 run_be <- function(bd, param, design="crossover_2x2", mt="fixed", ci=90) {
   run_be_fit(bd, param, design, mt, ci)$estimate
@@ -1094,6 +1094,143 @@ check("REG-QC-01", "Duplicate-time advice does not recommend averaging replicate
   "URS-DAT-07", critical = FALSE,
   method = "grep R/data_quality.R for the previous remediation wording",
   expected = "advice points to splitting stacked profiles instead")
+
+# --- REG-BE: BE verdict and model defects found on 2026-09-17 (roadmap §10.5) --
+# All run through fit_be_parameter(), the code the app executes.
+# NCA-grain generator: one row per subject x period, true T/R ratio `ratio`,
+# within-subject SD `sd_w`, optional period effects, integer Period as uploaded.
+reg_be_grain <- function(seqs, n_per_seq, ratio = 1, sd_w = 0.05, per_eff = NULL, seed = 1) {
+  set.seed(seed); rows <- list(); sid <- 0
+  for (sq in seqs) for (j in seq_len(n_per_seq)) {
+    sid <- sid + 1; bsv <- rnorm(1, 0, 0.3); trts <- strsplit(sq, "")[[1]]
+    for (p in seq_along(trts)) {
+      pe <- if (is.null(per_eff)) 0 else per_eff[p]
+      rows[[length(rows) + 1]] <- data.frame(
+        Subject = sid, Treatment = trts[p], Period = p, Sequence = sq,
+        CMAX = exp(log(100) + bsv + pe + (trts[p] == "T") * log(ratio) + rnorm(1, 0, sd_w)),
+        TMAX = sample(c(1, 1.5, 2), 1), stringsAsFactors = FALSE)
+    }
+  }
+  do.call(rbind, rows)
+}
+
+# D3: widened limits must not drop the point-estimate constraint
+reg_be_pe <- reg_be_grain(c("TR", "RT"), 12, ratio = 1.35, sd_w = 0.05, seed = 21)
+check("REG-BE-PE-01", "Widened limits: PE outside 80-125 gives NO by default",
+  tryCatch({
+    r <- run_be_fit(reg_be_pe, "CMAX", be_lower = 69.84, be_upper = 143.19)
+    r$estimate$ci_lo >= 69.84 && r$estimate$ci_hi <= 143.19 && r$estimate$pe > 125 &&
+      identical(r$row$Bioequivalent, "NO") && identical(r$row$PE_Constraint, "NO")
+  }, error = function(e) FALSE),
+  "URS-BE-04", critical = TRUE,
+  method = "2x2, true ratio 135%, limits 69.84-143.19, default settings",
+  expected = "CI inside widened limits, PE > 125 -> Bioequivalent NO")
+check("REG-BE-PE-02", "Widened limits: PE constraint can be switched off explicitly",
+  tryCatch({
+    r <- run_be_fit(reg_be_pe, "CMAX", be_lower = 69.84, be_upper = 143.19, pe_constraint = FALSE)
+    identical(r$row$Bioequivalent, "YES") && identical(r$row$PE_Constraint, "not applied")
+  }, error = function(e) FALSE),
+  "URS-BE-04", critical = TRUE,
+  method = "same data, pe_constraint = FALSE (e.g. DDI no-effect boundaries)",
+  expected = "verdict on CI alone, constraint recorded as not applied")
+check("REG-BE-PE-03", "Standard limits: verdict unchanged, constraint not required",
+  tryCatch({
+    r <- run_be_fit(be_d, "CMAX")
+    identical(r$row$Bioequivalent, "YES") && identical(r$row$PE_Constraint, "not required")
+  }, error = function(e) FALSE),
+  "URS-BE-04", critical = TRUE,
+  method = "BE section dataset, limits 80-125",
+  expected = "YES, PE_Constraint = not required")
+
+# D8: untransformed analyses get no verdict against percentage limits
+check("REG-BE-UT-01", "TMAX: difference with no verdict",
+  tryCatch({
+    r <- run_be_fit(reg_be_pe, "TMAX")
+    identical(r$row$Bioequivalent, "no verdict") && grepl("Difference", r$row$Scale)
+  }, error = function(e) FALSE),
+  "URS-BE-04", critical = TRUE,
+  method = "TMAX (never log-transformed)", expected = "Bioequivalent = no verdict, Scale = Difference")
+check("REG-BE-UT-02", "Log-transform off: difference with no verdict",
+  tryCatch({
+    r <- run_be_fit(reg_be_pe, "CMAX", log_transform = FALSE)
+    identical(r$row$Bioequivalent, "no verdict") && grepl("Difference", r$row$Scale)
+  }, error = function(e) FALSE),
+  "URS-BE-04", critical = TRUE,
+  method = "CMAX with log_transform = FALSE", expected = "Bioequivalent = no verdict")
+check("REG-BE-UT-03", "Log-transformed parameters keep a ratio verdict",
+  tryCatch({
+    r <- run_be_fit(be_d, "CMAX")
+    r$row$Bioequivalent %in% c("YES", "NO") && grepl("Ratio", r$row$Scale)
+  }, error = function(e) FALSE),
+  "URS-BE-04", critical = TRUE,
+  method = "CMAX log-transformed", expected = "YES/NO, Scale = Ratio")
+
+# D7: Period (and Sequence, Subject) must enter the model as factors
+reg_be_rep <- reg_be_grain(c("TRTR", "RTRT"), 6, ratio = 0.95, sd_w = 0.15,
+                           per_eff = c(0, 0.25, -0.15, 0.10), seed = 17)
+check("REG-BE-PER-01", "Integer Period with 4 periods reproduces the Method A model",
+  tryCatch({
+    r <- run_be_fit(reg_be_rep, "CMAX")
+    d <- reg_be_rep; d$Treatment <- factor(d$Treatment)
+    ref <- lm(log(CMAX) ~ Sequence + factor(Subject) + factor(Period) + Treatment, data = d)
+    s <- summary(ref)$coefficients["TreatmentT", ]; tc <- qt(0.95, ref$df.residual)
+    r$estimate$dfe == 3 * 12 - 4 && ref$df.residual == 3 * 12 - 4 &&
+      abs(r$estimate$ci_lo - exp(s[[1]] - tc * s[[2]]) * 100) < 1e-8 &&
+      abs(r$estimate$ci_hi - exp(s[[1]] + tc * s[[2]]) * 100) < 1e-8
+  }, error = function(e) FALSE),
+  "URS-BE-03", critical = TRUE,
+  method = "2x2x4 at NCA grain, integer Period, non-linear period effects",
+  expected = "df = 3n-4 = 32; CI equal to lm with factor(Period)")
+check("REG-BE-PER-02", "Mixed model with integer Period and Sequence codes matches the factor model",
+  tryCatch({
+    d3 <- reg_be_grain(c("TRR", "RTR", "RRT"), 6, sd_w = 0.15, per_eff = c(0, 0.2, -0.1), seed = 5)
+    d3$Sequence <- match(d3$Sequence, c("TRR", "RTR", "RRT"))   # coded 1/2/3
+    r <- run_be_fit(d3, "CMAX", design = "crossover_3period", mt = "mixed")$estimate
+    d <- be_input(d3); d$y <- log(d$CMAX)
+    ref <- nlme::lme(y ~ factor(Sequence) + factor(Period) + Treatment, random = ~1 | Subject, data = d)
+    tt <- summary(ref)$tTable["TreatmentT", ]
+    abs(log(r$pe / 100) - tt[["Value"]]) < 1e-6 && r$dfe == tt[["DF"]]
+  }, error = function(e) FALSE),
+  "URS-BE-05", critical = TRUE,
+  method = "2x3x3 with Sequence 1/2/3 and integer Period vs lme with factors, random ~1|Subject",
+  expected = "same treatment estimate and DF")
+check("REG-BE-PER-03", "Integer Subject IDs are not treated as a covariate",
+  tryCatch({
+    d <- reg_be_rep; d$Treatment <- factor(d$Treatment)   # Subject left integer
+    r <- fit_be_parameter(d, "CMAX", design = "replicate_2x2x4", trt_col = "Treatment",
+                          subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
+    r$estimate$dfe == 3 * 12 - 4
+  }, error = function(e) FALSE),
+  "URS-BE-03", critical = TRUE,
+  method = "call fit_be_parameter directly with integer Subject", expected = "df = 32")
+
+# D4: mixed-model random structure and the Sequence row of the ANOVA tables
+check("REG-BE-MX-03", "Mixed model: ~1|Subject, no degenerate Sequence row",
+  tryCatch({
+    r <- run_be_fit(be_d, "CMAX", mt = "mixed")
+    d <- be_input(be_d); d$y <- log(d$CMAX)
+    ref <- nlme::lme(y ~ Sequence + Period + Treatment, random = ~1 | Subject, data = d)
+    tt <- summary(ref)$tTable["TreatmentT", ]
+    a <- as.data.frame(r$anova)
+    abs(log(r$estimate$pe / 100) - tt[["Value"]]) < 1e-8 && r$estimate$dfe == tt[["DF"]] &&
+      a["Sequence", "denDF"] > 0 && !is.nan(a["Sequence", "p-value"])
+  }, error = function(e) FALSE),
+  "URS-BE-05", critical = FALSE,
+  method = "compare with lme(random = ~1|Subject); inspect marginal ANOVA",
+  expected = "same estimate and DF; Sequence denDF > 0, p-value not NaN")
+check("REG-BE-AOV-01", "Fixed model: Sequence tested against Subject(Sequence)",
+  tryCatch({
+    r <- run_be_fit(be_d, "CMAX")
+    d <- be_input(be_d); d$y <- log(d$CMAX)
+    a1 <- anova(lm(y ~ Sequence + Subject + Period + Treatment, data = d))
+    f_ref <- (a1["Sequence", "Sum Sq"] / a1["Sequence", "Df"]) /
+             (a1["Subject", "Sum Sq"] / a1["Subject", "Df"])
+    a <- as.data.frame(r$anova)
+    a["Sequence", "Df"] == 1 && abs(a["Sequence", "F value"] - f_ref) < 1e-8
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = FALSE,
+  method = "F = MS(Sequence) / MS(Subject within Sequence)",
+  expected = "Df 1, F equal to the textbook crossover test")
 
 end_section("REG")
 

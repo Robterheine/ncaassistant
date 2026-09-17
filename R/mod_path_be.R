@@ -144,6 +144,21 @@ path_be_ui <- function(id) {
                 col_widths = c(6, 6),
                 numericInput(ns("be_lower"), "Lower (%)", value = 80),
                 numericInput(ns("be_upper"), "Upper (%)", value = 125)
+              ),
+              conditionalPanel(
+                condition = sprintf("input['%s'] < 80 || input['%s'] > 125",
+                                    ns("be_lower"), ns("be_upper")),
+                checkboxInput(ns("pe_constraint"),
+                              "Also require the point estimate within 80.00\u2013125.00%",
+                              value = TRUE),
+                tags$div(
+                  class = "alert alert-warning py-2 small mb-2",
+                  icon("triangle-exclamation", class = "me-1"),
+                  "Widened limits must be pre-specified in the protocol. This app does not ",
+                  "derive them or check them against CV", tags$sub("wR"), ". Reference-scaled ",
+                  "methods (ABEL, RSABE) require the point-estimate constraint; untick it only ",
+                  "for comparisons that have none, such as drug-interaction no-effect boundaries."
+                )
               )
             )
           ),
@@ -174,7 +189,11 @@ path_be_ui <- function(id) {
               tags$p(class = "text-muted small",
                      "The table shows the geometric mean ratio (Test ÷ Reference) ",
                      "and its 90% confidence interval. If the CI falls entirely within ",
-                     "the acceptance limits (usually 80–125%), the formulations are bioequivalent."),
+                     "the acceptance limits (usually 80–125%), the formulations are bioequivalent. ",
+                     "With limits wider than 80–125%, the point estimate must also lie within ",
+                     "80–125% unless that constraint is switched off. Tmax, and any parameter ",
+                     "analysed without log-transformation, is shown as a difference in its own ",
+                     "units and has no verdict."),
               DTOutput(ns("ci_table")),
               tags$p(class = "text-muted small mt-2",
                      icon("circle-info", class = "me-1"),
@@ -587,10 +606,21 @@ path_be_server <- function(id, shared) {
                    "A parametric ANOVA model is not the regulatory standard for Tmax. ",
                    "EMA and FDA guidance recommends a non-parametric approach ",
                    "(Wilcoxon signed-rank / Hodges-Lehmann) for Tmax. ",
-                   "The parametric CI shown here is provided for completeness only ",
+                   "The parametric CI shown here is provided for completeness only, ",
+                   "carries no bioequivalence verdict, ",
                    "and should not be used as the primary Tmax analysis in a ",
                    "regulatory submission."),
             type = "warning", duration = 20)
+        }
+
+        # Unit of an untransformed difference (TMAX, or any parameter when the
+        # log-transform is off), so the table never presents it as a ratio.
+        diff_unit_for <- function(param) {
+          switch(param,
+                 TMAX = , LAMZHL = input$time_unit,
+                 CMAX = input$conc_unit,
+                 AUCLST = , AUCIFO = , AUCIFP = paste0(input$conc_unit, "\u00B7", input$time_unit),
+                 NULL)
         }
 
         for (param in params) {
@@ -605,7 +635,9 @@ path_be_server <- function(id, shared) {
             log_transform = input$log_transform,
             ci_level      = input$ci_level,
             be_lower      = input$be_lower,
-            be_upper      = input$be_upper)
+            be_upper      = input$be_upper,
+            pe_constraint = !identical(input$pe_constraint, FALSE),
+            diff_unit     = diff_unit_for(param))
           if (!is.null(fit_out$reason)) {
             showNotification(
               paste0("Could not compute BE results for ", friendly_name(param), ": ", fit_out$reason),
@@ -732,13 +764,13 @@ path_be_server <- function(id, shared) {
       be_col <- if ("Bioequivalent?" %in% names(display_ci)) "Bioequivalent?" else "Bioequivalent"
       
       # Show only key columns — the rest are in the Excel export
-      key_cols <- intersect(c("PK Parameter", "Ratio (%)", "90% CI Lower",
-                              "90% CI Upper", "Bioequivalent?"),
+      key_cols <- intersect(c("PK Parameter", "Scale", "Estimate", "90% CI Lower",
+                              "90% CI Upper", "PE within 80\u2013125%", "Bioequivalent?"),
                             names(display_ci))
       display_ci <- display_ci[, key_cols, drop = FALSE]
       
       # Fixed 2 decimal places for ratio and CI columns (regulatory standard)
-      num_cols <- intersect(c("Ratio (%)", "90% CI Lower", "90% CI Upper"),
+      num_cols <- intersect(c("Estimate", "90% CI Lower", "90% CI Upper"),
                             names(display_ci))
       dt <- datatable(display_ci,
                 options = list(scrollX = TRUE, dom = "t", ordering = FALSE),
@@ -755,7 +787,9 @@ path_be_server <- function(id, shared) {
     output$forest_plot <- renderPlotly({
       req(be_result())
       ci <- be_result()$ci_table
-      ci <- ci[!is.na(ci$Point_Est), ]
+      # Only ratios belong on this axis; differences (TMAX, untransformed
+      # parameters) are in their own units and carry no verdict.
+      ci <- ci[!is.na(ci$Point_Est) & ci$Bioequivalent %in% c("YES", "NO"), ]
       if (nrow(ci) == 0) return(plotly_empty())
       ci$Label <- sapply(ci$Parameter, friendly_name)
       ci$Label <- factor(ci$Label, levels = rev(ci$Label))

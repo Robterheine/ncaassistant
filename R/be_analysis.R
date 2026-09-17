@@ -19,6 +19,11 @@
 #' @param log_transform Analyse log(param); never applied to TMAX
 #' @param ci_level  Confidence level in percent
 #' @param be_lower,be_upper Acceptance limits in percent
+#' @param pe_constraint When the limits are wider than 80-125%, also require
+#'                  the point estimate within 80.00-125.00% (as ABEL and RSABE
+#'                  do). Ignored for limits within 80-125%, where the CI
+#'                  already implies it.
+#' @param diff_unit Unit label for an untransformed difference, e.g. "h"
 #' @return list(row      = one-row data frame for the CI table,
 #'              anova    = ANOVA table or NULL,
 #'              estimate = unrounded list(pe, ci_lo, ci_hi, dfe, mse) or NULL,
@@ -26,11 +31,46 @@
 fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
                              trt_col, subj_col, per_col = NULL, seq_col = NULL,
                              log_transform = TRUE, ci_level = 90,
-                             be_lower = 80, be_upper = 125) {
+                             be_lower = 80, be_upper = 125,
+                             pe_constraint = TRUE, diff_unit = NULL) {
 
   out <- list(row = NULL, anova = NULL, estimate = NULL, reason = NULL)
   trt_levels <- levels(be_data[[trt_col]])
   alpha <- 1 - ci_level / 100
+
+  # Only a log-transformed analysis yields a ratio that can be judged against
+  # percentage limits. TMAX is never transformed, and neither is anything when
+  # the user switches the transform off: those give a difference in the
+  # parameter's own units and no verdict.
+  is_ratio <- log_transform && param != "TMAX"
+  scale_label <- if (is_ratio) "Ratio T/R (%)" else
+    paste0("Difference T\u2212R", if (!is.null(diff_unit)) paste0(" (", diff_unit, ")") else "")
+  widened <- be_lower < 80 || be_upper > 125
+
+  # Every row carries the same columns, so rows for parameters that could not
+  # be estimated bind with the rest instead of breaking rbind().
+  make_row <- function(pe = NA, lo = NA, hi = NA, n_t = NA, n_r = NA,
+                       pe_status = NA, verdict = NA, mse = NA, dfe = NA) {
+    data.frame(
+      Parameter = param, Test = as.character(trt_levels[2]),
+      Reference = as.character(trt_levels[1]),
+      N_Test = n_t, N_Ref = n_r, Scale = scale_label,
+      Point_Est = pe, CI_Lower = lo, CI_Upper = hi,
+      BE_Lower = if (is_ratio) be_lower else NA,
+      BE_Upper = if (is_ratio) be_upper else NA,
+      PE_Constraint = pe_status, Bioequivalent = verdict,
+      MSE = mse, DF = dfe, stringsAsFactors = FALSE)
+  }
+
+  # Subject, Period and Sequence are classification factors in the ANOVA
+  # model. Uploaded files usually code them as integers, and lm()/lme() would
+  # then fit each as a single linear covariate: harmless with two periods,
+  # but with three or four it is no longer the EMA Method A model and both
+  # the CI and the degrees of freedom change.
+  for (col in c(subj_col, per_col, seq_col)) {
+    if (!is.null(col) && col %in% names(be_data) && !is.factor(be_data[[col]]))
+      be_data[[col]] <- factor(as.character(be_data[[col]]))
+  }
 
   vals <- as.numeric(be_data[[param]])
   if (log_transform && param != "TMAX") {
@@ -65,7 +105,11 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
     if (!is.null(seq_col)) fixed_terms <- c(fixed_terms, seq_col)
     if (!is.null(per_col)) fixed_terms <- c(fixed_terms, per_col)
     fixed_terms <- c(fixed_terms, trt_col)
-    random_f <- if (!is.null(seq_col)) paste0("~1|", seq_col, "/", subj_col) else paste0("~1|", subj_col)
+    # Subject IDs are unique across sequences, so the random intercept is on
+    # Subject alone. Nesting it in Sequence (~1|Sequence/Subject) also put a
+    # random effect on Sequence, which is already a fixed effect, and left the
+    # Sequence row of the ANOVA with zero denominator degrees of freedom.
+    random_f <- paste0("~1|", subj_col)
     fit <- tryCatch(
       nlme::lme(fixed = as.formula(paste(".response~", paste(fixed_terms, collapse = "+"))),
                 random = as.formula(random_f), data = be_data, na.action = na.exclude),
@@ -84,8 +128,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   }
 
   if (is.null(fit)) {
-    out$row <- data.frame(Parameter = param, Point_Est = NA, CI_Lower = NA, CI_Upper = NA,
-                          Bioequivalent = NA, stringsAsFactors = FALSE)
+    out$row <- make_row()
     return(out)
   }
 
@@ -96,7 +139,23 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
       anova(fit, type = "marginal")
     } else {
       # drop1 with F-test gives Type III SS for lm objects.
-      drop1(fit, test = "F")
+      tbl <- drop1(fit, test = "F")
+      # Sequence is a between-subject effect and is aliased with Subject, so
+      # drop1() reports it with 0 df. Test it the crossover way instead:
+      # sequential SS for Sequence (entered first) against Subject(Sequence).
+      if (!is.null(seq_col) && all(c(seq_col, subj_col) %in% rownames(tbl))) {
+        a1 <- anova(fit)
+        if (seq_col %in% rownames(a1) && identical(rownames(a1)[1], seq_col)) {
+          df_seq  <- a1[seq_col, "Df"];   ss_seq  <- a1[seq_col, "Sum Sq"]
+          df_subj <- tbl[subj_col, "Df"]; ss_subj <- tbl[subj_col, "Sum of Sq"]
+          f_seq <- (ss_seq / df_seq) / (ss_subj / df_subj)
+          tbl[seq_col, "Df"]        <- df_seq
+          tbl[seq_col, "Sum of Sq"] <- ss_seq
+          tbl[seq_col, "F value"]   <- f_seq
+          tbl[seq_col, "Pr(>F)"]    <- pf(f_seq, df_seq, df_subj, lower.tail = FALSE)
+        }
+      }
+      tbl
     }
   }, error = function(e) NULL)
 
@@ -133,10 +192,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
       "The statistical model could not estimate the treatment effect. Check that the study design selection matches your data."
     }
     out$reason <- reason
-    out$row <- data.frame(
-      Parameter = param, Point_Est = NA, CI_Lower = NA, CI_Upper = NA,
-      Bioequivalent = reason,
-      stringsAsFactors = FALSE)
+    out$row <- make_row(verdict = reason)
     return(out)
   }
 
@@ -147,23 +203,33 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   ci_lo <- diff - t_crit * se_diff
   ci_hi <- diff + t_crit * se_diff
 
-  if (log_transform && param != "TMAX") {
+  if (is_ratio) {
     pe <- exp(diff) * 100; ci_lo_p <- exp(ci_lo) * 100; ci_hi_p <- exp(ci_hi) * 100
   } else { pe <- diff; ci_lo_p <- ci_lo; ci_hi_p <- ci_hi }
+  pe <- unname(pe); ci_lo_p <- unname(ci_lo_p); ci_hi_p <- unname(ci_hi_p)
 
-  be_pass <- ci_lo_p >= be_lower & ci_hi_p <= be_upper
+  if (is_ratio) {
+    ci_pass <- ci_lo_p >= be_lower && ci_hi_p <= be_upper
+    # A CI inside 80-125% already puts the point estimate inside it. Wider
+    # limits (ABEL-style, or fixed widened Cmax limits) do not, so the
+    # constraint is applied unless the user has explicitly switched it off.
+    if (!widened) {
+      pe_status <- "not required"; be_pass <- ci_pass
+    } else if (isTRUE(pe_constraint)) {
+      pe_ok <- pe >= 80 && pe <= 125
+      pe_status <- if (pe_ok) "YES" else "NO"; be_pass <- ci_pass && pe_ok
+    } else {
+      pe_status <- "not applied"; be_pass <- ci_pass
+    }
+    verdict <- if (be_pass) "YES" else "NO"
+  } else {
+    pe_status <- "not applicable"; verdict <- "no verdict"
+  }
 
-  out$estimate <- list(pe = unname(pe), ci_lo = unname(ci_lo_p), ci_hi = unname(ci_hi_p),
+  out$estimate <- list(pe = pe, ci_lo = ci_lo_p, ci_hi = ci_hi_p,
                        dfe = unname(dfe), mse = unname(mse))
-  out$row <- data.frame(
-    Parameter = param, Test = as.character(trt_levels[2]),
-    Reference = as.character(trt_levels[1]),
-    N_Test = n2, N_Ref = n1,
-    Point_Est = round(pe, 2),
-    CI_Lower = round(ci_lo_p, 2), CI_Upper = round(ci_hi_p, 2),
-    BE_Lower = be_lower, BE_Upper = be_upper,
-    Bioequivalent = ifelse(be_pass, "YES", "NO"),
-    MSE = round(mse, 6), DF = dfe, stringsAsFactors = FALSE
-  )
+  out$row <- make_row(pe = round(pe, 2), lo = round(ci_lo_p, 2), hi = round(ci_hi_p, 2),
+                      n_t = n2, n_r = n1, pe_status = pe_status, verdict = verdict,
+                      mse = round(mse, 6), dfe = unname(dfe))
   out
 }
