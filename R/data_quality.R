@@ -138,7 +138,7 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
     add("WARNING", "Time",
         paste(n_neg_time, "negative time values detected"),
         paste("Range:", min(time_valid), "to", max(time_valid)),
-        "Pre-dose samples? Verify these are intentional. NCA uses time ≥ 0.")
+        "Pre-dose samples? Negative times are kept in the analysis; set pre-dose samples to time 0 or remove them.")
   }
   
   if (length(time_valid) > 0 && all(!is.na(time_valid))) {
@@ -446,12 +446,19 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
           incomplete <- c(incomplete, s)
         }
       }
-      if (length(incomplete) > 0) {
+      # In a parallel design every subject has one treatment: that is not a dropout
+      parallel_like <- length(incomplete) == length(subjects)
+      if (parallel_like) {
+        add("INFO", "Design",
+            "Each subject received one treatment (parallel-group layout)",
+            "",
+            "Select 'Parallel groups' as the design in Bioequivalence. If this is a crossover, check the Treatment column.")
+      } else if (length(incomplete) > 0) {
         add("WARNING", "Design",
             paste(length(incomplete), "subjects missing data for one or more treatments"),
             paste0("Subjects: ", paste(head(incomplete, 5), collapse = ", "),
                    if (length(incomplete) > 5) paste0(" (+ ", length(incomplete)-5, " more)")),
-            "Dropouts or incomplete crossover. These subjects will be excluded from BE analysis.")
+            "Dropouts or incomplete crossover. With fixed effects these subjects do not contribute to the treatment comparison; the mixed model uses their data.")
       } else {
         add("OK", "Design",
             "All subjects have data for all treatments (complete crossover)")

@@ -127,7 +127,7 @@ generate_summary_html <- function(settings, col_map, file_name, file_hash,
     "rule3" = "Rule 3: All BLQ excluded",
     "rule4" = "Rule 4: All BLQ = LLOQ/2",
     "rule5" = "Rule 5: Pre-Cmax = 0, post-Cmax = missing",
-    "rule6" = "Rule 6: First BLQ = LLOQ/2, rest = 0",
+    "rule6" = "Rule 6: BLQ before first quantifiable = LLOQ/2, other BLQ = 0",
     blq_rule
   )
   
@@ -216,7 +216,7 @@ this analysis was performed.
 if (settings$admin_route == "iv_infusion")
   paste0('<tr><th>Infusion duration</th><td>', settings$infusion_duration, ' ', settings$time_unit, '</td></tr>') else "",
 '<tr><th>Dose</th><td>', if (length(settings$dose) > 1) paste(unique(settings$dose), collapse=", ") else settings$dose,
-  ' ', settings$dose_unit, if (length(settings$dose) > 1) " (per subject from data)" else "", '</td></tr>
+  ' ', settings$dose_unit, if (length(settings$dose) > 1) " (per profile, from the Dose column)" else "", '</td></tr>
 <tr><th>Steady state</th><td>', if (settings$is_steady_state) "Yes" else "No", '</td></tr>
 <tr><th>Trapezoidal method</th><td>', trap_desc, '</td></tr>
 <tr><th>Min R&sup2; for half-life</th><td>', settings$r2adj_threshold, '</td></tr>
@@ -290,8 +290,8 @@ package can be verified separately.</p>
 </div>
 
 <h2>8. References</h2>
-<p>Kim H, Yun H, Cho S, et al. NonCompart: Noncompartmental Analysis for
-Pharmacokinetic Data. <em>Transl Clin Pharmacol</em>. 2018;26(1):10&ndash;15.</p>
+<p>Kim H, Han S, Cho YS, Yoon SK, Bae KS. Development of R packages: &lsquo;NonCompart&rsquo; and &lsquo;ncar&rsquo;
+for noncompartmental analysis (NCA). <em>Transl Clin Pharmacol</em>. 2018;26(1):10&ndash;15.</p>
 <p>R Core Team. R: A Language and Environment for Statistical Computing.
 R Foundation for Statistical Computing, Vienna, Austria.</p>
 

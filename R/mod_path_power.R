@@ -274,7 +274,7 @@ path_power_server <- function(id, shared) {
         ),
         "abel" = tagList(
           tags$p(class = "text-muted small fst-italic mt-1 mb-1",
-                 "For drugs with high within-subject variability (CV > 30%). ",
+                 "For drugs whose Reference has a within-subject CV above 30%. ",
                  "The EMA and WHO allow the acceptance limits to widen based on ",
                  "the measured variability of the Reference product. ",
                  "Requires a replicate or 3-period design."),
@@ -285,9 +285,9 @@ path_power_server <- function(id, shared) {
             tags$strong("Acceptance limits: "), "variable \u2014 widen with Reference CV",
             tags$br(),
             tags$span(class = "text-muted",
-                      "At CVwr = 30%: approx. 74.6\u2013134.2% \u2022 ",
-                      "At CVwr = 40%: approx. 71.2\u2013140.4% \u2022 ",
-                      "At CVwr \u2265 50%: maximum 69.8\u2013143.2%"),
+                      "At CVwR \u2264 30%: 80.00\u2013125.00% \u2022 ",
+                      "At CVwR = 40%: 74.62\u2013134.02% \u2022 ",
+                      "At CVwR \u2265 50%: maximum 69.84\u2013143.19%"),
             tags$br(),
             tags$span(class = "text-muted",
                       "Computed automatically from your Reference CV input. ",
@@ -296,7 +296,7 @@ path_power_server <- function(id, shared) {
         ),
         "rsabe" = tagList(
           tags$p(class = "text-muted small fst-italic mt-1 mb-1",
-                 "The US FDA\u2019s approach for highly variable drugs (CV > 30%). ",
+                 "The US FDA\u2019s approach for highly variable drugs (Reference within-subject CV above 30%). ",
                  "Uses a reference-scaling criterion rather than fixed limits. ",
                  "Requires a replicate or 3-period design."),
           tags$div(
@@ -306,10 +306,10 @@ path_power_server <- function(id, shared) {
             tags$strong("Acceptance limits: "), "reference-scaled \u2014 no fixed bounds",
             tags$br(),
             tags$span(class = "text-muted",
-                      "The FDA uses a scaled criterion: the test-to-reference variance ratio ",
-                      "must be within a regulatory constant (\u03b8 = 2.494) times the ",
-                      "Reference variance. Additionally, the point estimate must fall ",
-                      "within 80\u2013125%. Limits are computed internally by the simulation.")
+                      "The FDA uses a scaled criterion: the squared log difference of the means ",
+                      "minus \u03b8 \u00D7 the Reference within-subject variance must be \u2264 0, with ",
+                      "\u03b8 = (ln 1.25 / 0.25)\u00B2 \u2248 0.797. Additionally, the point estimate must fall ",
+                      "within 80\u2013125%. The criterion is evaluated in the simulation.")
           )
         ),
         "ntid" = tagList(
@@ -328,10 +328,9 @@ path_power_server <- function(id, shared) {
                       "The limits are computed from the within-subject variability of the ",
                       "Reference product: 90\u2013111.11% at a Reference CV of about 10% ",
                       "(\u03c3", tags$sub("wR"), " = 0.10), tighter below and wider above, ",
-                      "but never beyond the conventional 80\u2013125%. The FDA also requires ",
-                      "that the within-subject variance of the Test is not greater than that ",
-                      "of the Reference (variance ratio test). Both criteria are evaluated ",
-                      "together in the simulation.")
+                      "but never beyond the conventional 80\u2013125%, which must also be met. ",
+                      "The FDA also requires the upper 90% confidence limit of \u03c3wT/\u03c3wR ",
+                      "to be at most 2.5. All criteria are evaluated together in the simulation.")
           )
         )
       )

@@ -70,7 +70,7 @@ help_data_format <- info_btn("help_data_format", "What should my data look like?
   <li><b>Time</b> — when the sample was taken, as a number (e.g., 0, 0.5, 1, 2, 4, 8, 24)</li>
   <li><b>Concentration</b> — how much drug was measured (e.g., 12.5, 0, BLQ)</li>
   </ul>
-  For crossover studies (e.g., bioequivalence), you also need Treatment, Period, and Sequence columns.")
+  For crossover studies (e.g., bioequivalence), you also need Treatment and Period columns, and preferably Sequence.")
 
 help_data_type <- info_btn("help_data_type", "What kind of file do I have?",
   "<b>Simple table</b> (most users): one row per blood sample, with columns such as
@@ -127,8 +127,8 @@ help_column_mapping <- info_btn("help_col_mapping", "What is column mapping?",
   It tries to guess automatically. If it guesses wrong, just select the correct 
   column from the dropdown. The <b>required</b> fields are Subject, Time, and Concentration.
   <br><br>
-  The optional fields (Treatment, Period, Sequence) are only needed if you're doing 
-  a crossover study or bioequivalence analysis.")
+  The optional fields (Treatment, Period, Sequence) are needed for crossover studies and 
+  bioequivalence analysis; map Dose when doses differ between subjects or periods.")
 
 help_lloq <- info_btn("help_lloq", "What is LLOQ?",
   "LLOQ = <b>Lower Limit of Quantification</b>. It's the lowest concentration your 
@@ -147,18 +147,20 @@ help_blq_rules <- info_btn("help_blq_rules", "Which BLQ rule should I use?",
   "BLQ values are drug concentrations too low to measure accurately. 
   Different rules handle them differently:
   <br><br>
-  <b>Rule 1</b> (recommended, WinNonlin default): Before the first measurable value → set to 0. 
+  <b>Rule 1</b> (default): Before the first measurable value → set to 0. 
   After the last measurable value → treat as missing. Between → set to 0.
   <br><br>
-  <b>Rule 2</b>: Set all BLQ to 0. Simple but may overestimate AUC slightly.
+  <b>Rule 2</b>: Set all BLQ to 0. Late BLQ samples then add a declining tail to AUC.
   <br><br>
-  <b>Rule 3</b>: Exclude all BLQ (treat as missing). Removes data, which may underestimate AUC.
+  <b>Rule 3</b>: Treat all BLQ as missing. Early BLQ samples no longer anchor the start of the curve.
   <br><br>
-  <b>Rule 4</b>: Set all BLQ to half the LLOQ (LLOQ/2). A common compromise.
+  <b>Rule 4</b>: Set all BLQ to half the LLOQ (LLOQ/2). Adds a little area wherever it is used.
   <br><br>
-  <b>Rule 5</b>: Before Cmax → 0; after Cmax → missing. Focuses on accurate terminal phase.
+  <b>Rule 5</b>: Before Cmax → 0; after Cmax → missing.
   <br><br>
-  <em>When in doubt, use Rule 1. It's the industry standard.</em>")
+  <b>Rule 6</b>: Before the first measurable value → LLOQ/2; all later BLQ → 0. For drugs with an absorption lag.
+  <br><br>
+  <em>Rule 1 is the usual choice in NCA. Follow your analysis plan if it specifies a rule.</em>")
 
 # --- NCA SETTINGS ----------------------------------------------------------
 
@@ -172,7 +174,7 @@ help_what_is_nca <- info_btn("help_what_is_nca", "What is NCA?",
   <li><b>Tmax</b> — the time when Cmax occurs</li>
   <li><b>AUC</b> — the total drug exposure (area under the curve)</li>
   <li><b>Half-life</b> — how long it takes for the concentration to drop by half</li>
-  <li><b>Clearance</b> — how fast the body removes the drug</li>
+  <li><b>Clearance</b> — the volume of blood cleared of drug per unit of time</li>
   </ul>
   No mathematical model is assumed — it works directly from the observed data.")
 
@@ -191,7 +193,7 @@ help_trapezoidal <- info_btn("help_trapezoidal", "What trapezoidal method should
   <br><br>
   <b>Linear-up / Log-down</b> (recommended): Uses linear interpolation while concentrations 
   are rising and logarithmic interpolation while they're declining. This is more accurate 
-  for the typical drug profile shape and is the <b>industry standard</b> (WinNonlin default).
+  for the typical drug profile shape and is widely used.
   <br><br>
   <b>Linear-up / Linear-down</b>: Uses straight lines everywhere. Simpler but slightly 
   overestimates AUC during the elimination phase.
@@ -211,7 +213,7 @@ help_lambda_z <- info_btn("help_lambda_z", "What is Lambda Z?",
   <li><b>AUC extrapolated to infinity</b></li>
   <li><b>Clearance and Volume of distribution</b></li>
   </ul>
-  The <b>Lambda Z Inspector</b> tab lets you see which points were used and 
+  The <b>Half-Life Review</b> tab lets you see which points were used and 
   change them if needed.")
 
 help_r2adj <- info_btn("help_r2adj", "What is Adjusted R²?",
@@ -249,17 +251,6 @@ help_dose_norm <- info_btn("help_dose_norm", "What is dose normalization?",
   <br><br>
   <em>Enable this if your study includes multiple dose levels.</em>")
 
-help_partial_auc <- info_btn("help_partial_auc", "What are partial AUCs?",
-  "A partial AUC measures drug exposure over a specific time window, 
-  not the entire curve.
-  <br><br>
-  For example, <b>AUC(0-4h)</b> measures early exposure (important for 
-  onset of action), while <b>AUC(4-12h)</b> might capture sustained exposure.
-  <br><br>
-  Some regulatory guidelines require specific partial AUCs for 
-  modified-release formulations.
-  <br><br>
-  <em>Leave empty for standard NCA. Add intervals if your protocol requires them.</em>")
 
 # --- BE / STATISTICS -------------------------------------------------------
 
@@ -307,10 +298,10 @@ help_be_limits <- info_btn("help_be_limits", "What are the BE limits?",
   (Test/Reference) falls entirely within 80–125%, the formulations are 
   considered bioequivalent.
   <br><br>
-  <b>Narrow therapeutic index drugs</b> (e.g., warfarin, cyclosporine) may 
-  use tighter limits: <b>90% to 111%</b>.
+  <b>Narrow therapeutic index drugs</b> (e.g., warfarin, cyclosporine): the EMA 
+  uses tighter limits of <b>90.00% to 111.11%</b>; the FDA uses a reference-scaled method.
   <br><br>
-  <b>Highly variable drugs</b> (CV > 30%) may use wider limits under 
+  <b>Highly variable drugs</b> (within-subject CV of the Reference above 30%) may use wider limits under 
   scaled approaches (ABEL, RSABE). Those approaches also require the
   <b>point estimate</b> to lie within 80–125%. When you enter limits wider
   than 80–125%, the app applies that constraint by default. This app does not
@@ -355,8 +346,8 @@ help_mixed_effects <- info_btn("help_mixed_effects", "Fixed vs. Mixed effects?",
 help_what_is_power <- info_btn("help_what_is_power", "What is power & sample size?",
   "Before running a study, you need to know: <b>how many subjects do I need?</b>
   <br><br>
-  <b>Power</b> is the probability that your study will correctly conclude 
-  bioequivalence if the two formulations truly are equivalent. 
+  <b>Power</b> is the probability that your study concludes bioequivalence 
+  when the true Test/Reference ratio equals the ratio you expect. 
   The standard target is <b>80%</b> (meaning 80% chance of success).
   <br><br>
   The sample size depends on:
@@ -376,13 +367,13 @@ help_cv <- info_btn("help_cv", "What CV should I use?",
   <ul>
   <li>From a pilot study or previous BE study with the same drug</li>
   <li>From published literature</li>
-  <li>From NCA results in this app (use the button that appears below if you have run an analysis)</li>
+  <li>From a bioequivalence analysis in this app (use the button that appears below after a log-transformed analysis)</li>
   </ul>
   <b>Typical ranges:</b>
   <ul>
   <li>Low variability: CV &lt; 15%</li>
   <li>Moderate: 15–30%</li>
-  <li>Highly variable: &gt; 30% (requires a scaled approach — ABEL or RSABE)</li>
+  <li>Highly variable: &gt; 30% (a scaled approach, ABEL or RSABE, may then be allowed)</li>
   </ul>")
 
 help_cv_wr <- info_btn("help_cv_wr", "What is the Reference CV?",
@@ -393,7 +384,7 @@ help_cv_wr <- info_btn("help_cv_wr", "What is the Reference CV?",
   allowing its variability to be estimated separately from the Test.
   <br><br>
   <b>If you only have one CV estimate</b> (e.g., from a standard 2-period study), 
-  enter the same value here as above. The calculation will be conservative.
+  enter the same value here as above. This assumes Test and Reference are equally variable.
   <br><br>
   <b>Enter as a percentage</b> — for example, type <b>35</b> for 35%.")
 
@@ -413,59 +404,10 @@ help_theta0 <- info_btn("help_theta0", "What is the expected T/R ratio?",
 
 # --- LAMBDA Z INSPECTOR ----------------------------------------------------
 
-help_lz_inspector <- info_btn("help_lz_inspector", "How to use the Lambda Z Inspector",
-  "This plot shows the <b>terminal elimination phase</b> of each subject's 
-  concentration profile on a log scale.
-  <br><br>
-  <b>Red points</b> = currently included in the Lambda Z regression.
-  <br>
-  <b>Open circles</b> = excluded.
-  <br>
-  <b>Dashed red line</b> = the fitted regression line.
-  <br><br>
-  <b>To override the automatic selection:</b>
-  <ol>
-  <li>Click on a point to toggle it in/out of the regression</li>
-  <li>The Lambda Z, half-life, and R² update automatically</li>
-  <li>Look for a straight line on the log scale — that's a good fit</li>
-  </ol>
-  <b>When to override:</b>
-  <ul>
-  <li>If an early point bends the line (distribution phase not yet complete)</li>
-  <li>If a late point is noisy and pulls the fit off</li>
-  <li>If the automatic R² criterion excluded too many or too few points</li>
-  </ul>")
 
 # --- VISUALIZATION ---------------------------------------------------------
 
-help_plot_types <- info_btn("help_plot_types", "Which plot type should I use?",
-  "<b>Spaghetti plot</b>: Shows all subjects at once. Good for getting an overview 
-  and spotting outliers. If you see one line far from the others, investigate.
-  <br><br>
-  <b>Mean ± SD/SEM</b>: Shows the average profile with error bars. Good for 
-  presentations and reports. SD shows total spread, SEM shows precision of the mean.
-  <br><br>
-  <b>Individual browser</b>: Look at one subject at a time. Essential for quality 
-  checking each profile before NCA.
-  <br><br>
-  <b>Box plots by time</b>: Shows the distribution at each time point. Good for 
-  spotting time points with high variability.
-  <br><br>
-  <em>Start with the spaghetti plot on log scale to check your data, then 
-  use mean ± SD for your report.</em>")
 
-help_log_scale <- info_btn("help_log_scale", "Linear vs. log scale?",
-  "<b>Linear scale</b>: What you'd normally expect. Good for seeing the actual
-  concentration values and peak height.
-  <br><br>
-  <b>Log scale</b>: Compresses high values and expands low values.
-  <b>Essential for PK analysis</b> because:
-  <ul>
-  <li>The terminal elimination phase appears as a straight line</li>
-  <li>You can spot multi-phasic elimination (the line bends)</li>
-  <li>Low concentrations become visible instead of being squashed at the bottom</li>
-  </ul>
-  <em>Always check both. Use log scale to assess the terminal phase.</em>")
 
 # --- ANALYSIS RECORD -------------------------------------------------------
 
@@ -479,7 +421,7 @@ help_analysis_record <- info_btn("help_analysis_record",
   <li><b>Results</b> — an Excel file with the parameters / figure</li>
   <li><b>Settings (JSON)</b> — every choice that affects the output, with package versions</li>
   <li><b>Reproducibility R script</b> — re-runs the exact analysis without this app</li>
-  <li><b>Data integrity hash (SHA-256)</b> — proves the data file wasn't changed</li>
+  <li><b>Data integrity hash (SHA-256)</b> — shows whether the data file has changed since</li>
   <li><b>HTML summary</b> — a human-readable record of methods and environment</li>
   <li><b>A copy of your original data</b> — so the package stands on its own</li>
   </ul>

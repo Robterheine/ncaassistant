@@ -111,7 +111,7 @@ data_upload_ui <- function(id) {
               radioButtons(ns("blq_rule"),
                            tagList("BLQ handling rule", help_blq_rules),
                            choiceNames = list(
-                             tags$span("Standard", tags$span(class="text-muted", " \u2014 pre-first = 0, post-last = missing (Rule 1, WinNonlin default)")),
+                             tags$span("Standard", tags$span(class="text-muted", " \u2014 pre-first = 0, post-last = missing (Rule 1, default)")),
                              tags$span("All BLQ \u2192 zero", tags$span(class="text-muted", " (Rule 2)")),
                              tags$span("All BLQ \u2192 excluded", tags$span(class="text-muted", " (Rule 3)")),
                              tags$span("All BLQ \u2192 LLOQ/2", tags$span(class="text-muted", " (Rule 4)")),

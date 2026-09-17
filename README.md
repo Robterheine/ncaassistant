@@ -23,7 +23,7 @@ The app offers six self-contained workflow paths accessible from a central hub:
 
 **6. Bioequivalence Testing** — NCA → ANOVA (EMA Method A: Sequence, Subject, Period and Treatment as factors) → confidence interval (90% by default) → forest plot → bioequivalence conclusion. You choose the Reference treatment; the conclusion uses confidence limits rounded to two decimals and, for limits wider than 80–125%, also requires the point estimate within 80.00–125.00% by default. Designs: 2×2 crossover, 2×2×3 and 2×2×4 full replicate, 2×3×3 partial replicate, parallel groups, and paired comparison (all subjects in the same order; ratio without a verdict). For replicate designs the within-subject variability of Reference and Test and the EMA expanded limits they would imply are shown for information; the app performs average bioequivalence only, not reference-scaled (ABEL/RSABE) or NTID analyses. Results agree with the replicateBE package on its 30 reference data sets.
 
-Plus: **Statistical Methods** page (publication-ready, expert-reviewed), **Data Preparation Guide** (10 scenario tabs), and **About & Packages** with version history.
+Plus: **Statistical Methods** page (text for a manuscript's Methods section), **Data Preparation Guide** (10 scenario tabs), and **About & Packages** with version history.
 
 ---
 
@@ -113,7 +113,7 @@ See [`validation/README.md`](validation/README.md) for detailed instructions on 
 
 > ter Heine R. NCA Assistant (v1.4.0). Radboud Applied Pharmacometrics, Radboudumc, Nijmegen, The Netherlands. https://github.com/robterheine/ncaassistant
 
-> Kim H, et al. NonCompart: Noncompartmental Analysis for Pharmacokinetic Data. *Transl Clin Pharmacol*. 2018;26(1):10-15.
+> Kim H, Han S, Cho YS, Yoon SK, Bae KS. Development of R packages: 'NonCompart' and 'ncar' for noncompartmental analysis (NCA). *Transl Clin Pharmacol*. 2018;26(1):10-15.
 
 ---
 

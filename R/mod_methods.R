@@ -66,9 +66,9 @@ methods_ui <- function() {
         tags$p(
           "Pharmacokinetic parameters were estimated by non-compartmental analysis ",
           "using the NonCompart R package (version ", pkg_ver("NonCompart"),
-          "; Kim et al., 2018). The NonCompart package has been validated against ",
-          "Certara Phoenix WinNonlin\u00AE by its authors using multiple reference datasets, ",
-          "with results matching to at least four significant digits (Kim et al., 2018)."
+          "; Kim et al., 2018). Its authors compared it with Certara Phoenix WinNonlin\u00AE ",
+          "on the Indometh dataset and on phase 1 data with bolus, infusion and oral dosing, ",
+          "and found no discrepancies (Kim et al., 2018)."
         ),
         
         tags$h6(class = "fw-semibold mt-3", "Peak Exposure"),
@@ -76,8 +76,8 @@ methods_ui <- function() {
           "The maximum observed concentration (C", tags$sub("max"), ") and the time at which it ",
           "occurred (T", tags$sub("max"), ") were obtained directly from the observed data ",
           "without interpolation. T", tags$sub("max"),
-          " is a discrete variable determined by the sampling schedule and was summarised ",
-          "as median (range), not as arithmetic mean."
+          " is a discrete variable determined by the sampling schedule and is best summarised ",
+          "as median (range)."
         ),
         
         tags$h6(class = "fw-semibold mt-3", "Pre-Dose Concentration at Time Zero"),
@@ -206,8 +206,8 @@ methods_ui <- function() {
         
         ref_box(
           tags$strong("Software reference: "),
-          "Kim H, Yun H, Cho S, et al. NonCompart: Noncompartmental Analysis for ",
-          "Pharmacokinetic Data. ", tags$em("Transl Clin Pharmacol"), ". 2018;26(1):10\u201315.",
+          "Kim H, Han S, Cho YS, Yoon SK, Bae KS. Development of R packages: 'NonCompart' and ",
+          "'ncar' for noncompartmental analysis (NCA). ", tags$em("Transl Clin Pharmacol"), ". 2018;26(1):10\u201315.",
           tags$br(), tags$br(),
           tags$strong("Methodological reference: "),
           "Yeh KC, Kwan KC. A comparison of numerical integrating algorithms by trapezoidal, ",
@@ -242,7 +242,8 @@ methods_ui <- function() {
         tags$p(class = "small",
                "Computed by the trapezoidal rule over the dosing interval, where \u03C4 is ",
                "the time between consecutive doses (e.g., 24 h for once-daily, ",
-               "12 h for twice-daily dosing)."),
+               "12 h for twice-daily dosing). The application takes \u03C4 as the sampled interval ",
+               "(last minus first sampling time), so sampling must cover exactly one dosing interval."),
         
         tags$h6(class = "fw-semibold mt-3", "Average Concentration"),
         eq("C", tags$sub("avg"), " = AUC", tags$sub("\u03C4"), " / \u03C4"),
@@ -292,8 +293,7 @@ methods_ui <- function() {
         tags$p(
           "Concentrations below the lower limit of quantification (LLOQ) were handled ",
           "according to one of the following rules, selected prior to analysis. ",
-          "These rules follow the recommendations described by Beal (2001) and are ",
-          "consistent with the approaches implemented in Certara Phoenix WinNonlin\u00AE."
+          "Each rule was applied per concentration-time profile, in time order."
         ),
         
         tags$table(
@@ -332,7 +332,8 @@ methods_ui <- function() {
                "exported audit trail and analysis report."),
         
         ref_box(
-          tags$strong("Reference: "),
+          tags$strong("Further reading: "),
+          "these rules are conventions for NCA. For BLQ data in model-based (population) analysis, see ",
           "Beal SL. Ways to fit a PK model with some data below the quantification limit. ",
           tags$em("J Pharmacokinet Pharmacodyn"), ". 2001;28(5):481\u2013504."
         )
@@ -349,7 +350,7 @@ methods_ui <- function() {
         
         tags$h6(class = "fw-semibold mt-3", "Log-Transformation"),
         tags$p(
-          "In accordance with regulatory guidance (EMA, 2010; FDA, 2003), the pharmacokinetic ",
+          "In accordance with regulatory guidance (EMA, 2010; FDA, 2026), the pharmacokinetic ",
           "parameters C", tags$sub("max"), " and AUC were log-transformed (natural logarithm) ",
           "prior to statistical analysis. Bioequivalence was assessed on the log scale; results ",
           "were back-transformed by exponentiation and are presented as geometric mean ratios ",
@@ -456,7 +457,7 @@ methods_ui <- function() {
         tags$p(class = "small",
                "The residual degrees of freedom (N", tags$sub("T"), " + N", tags$sub("R"),
                " \u2212 2) were used for the confidence interval construction. ",
-               "The between-subject variance was estimated from the residual mean square error. ",
+               "The residual mean square error estimated the total (between- plus within-subject) variance. ",
                "Parallel designs have lower statistical power than crossover designs because the ",
                "between-subject variability is not separated from the within-subject variability."),
         
@@ -485,9 +486,8 @@ methods_ui <- function() {
                "denominator degrees of freedom for the treatment effect. For higher-order designs, ",
                "the containment degrees of freedom depend on the nesting structure and the number ",
                "of subjects completing all periods. ",
-               "The mixed-effects approach is recommended by the FDA for unbalanced designs ",
-               "(e.g., when subjects drop out) and provides valid inference ",
-               "regardless of balance."),
+               "Unlike the fixed-effects model, the mixed-effects model also uses subjects with ",
+               "data for only one treatment. The EMA guideline specifies fixed effects for all terms."),
         
         tags$h6(class = "fw-semibold mt-3", "90% Confidence Interval and TOST Equivalence"),
         tags$p(
@@ -519,7 +519,7 @@ methods_ui <- function() {
         tags$p(
           "Bioequivalence was concluded if the 90% confidence interval for the geometric ",
           "mean ratio (Test/Reference) fell entirely within the pre-specified acceptance ",
-          "limits (default: 80.00\u2013125.00%), in accordance with EMA (2010) and FDA (2003) guidance. ",
+          "limits (default: 80.00\u2013125.00%), in accordance with EMA (2010) and FDA (2026) guidance. ",
           "The confidence limits were rounded to two decimals before comparison with the acceptance ",
           "limits (FDA, Statistical Approaches to Establishing Bioequivalence, 2026). The Reference ",
           "treatment was chosen by the analyst."
@@ -544,8 +544,7 @@ methods_ui <- function() {
           tags$br(),
           "EMA. Guideline on the Investigation of Bioequivalence. CPMP/EWP/QWP/1401/98 Rev. 1. 2010.",
           tags$br(),
-          "FDA. Guidance for Industry: Bioavailability and Bioequivalence Studies Submitted in NDAs or ",
-          "INDs \u2014 General Considerations. 2003."
+          "FDA. Statistical Approaches to Establishing Bioequivalence. Guidance for Industry. May 2026."
         )
       ),
       
@@ -616,9 +615,9 @@ methods_ui <- function() {
                 "Narrow Therapeutic Index Drugs (NTID)"),
         tags$p(class = "small",
                "For NTI drugs, the FDA requires tightened limits using a scaled approach ",
-               "that constrains the ratio of within-subject variabilities: ",
-               "\u03C3", tags$sub("wT"), " / \u03C3", tags$sub("wR"), " must not substantially ",
-               "exceed 1. Power was estimated by simulation using PowerTOST."),
+               "(regulatory constant ln(1.11111)/0.10), combined with the conventional 80.00\u2013125.00% ",
+               "test and the requirement that the upper 90% confidence limit of \u03C3", tags$sub("wT"),
+               " / \u03C3", tags$sub("wR"), " does not exceed 2.5. Power was estimated by simulation using PowerTOST."),
         
         tags$h6(class = "fw-semibold mt-3", "Supported Study Designs"),
         tags$table(
@@ -687,7 +686,7 @@ methods_ui <- function() {
             "/F) as Dose/(\u03BB", tags$sub("z"), " \u00D7 AUC", tags$sub("0\u2013\u221E"),
             "). Concentrations below the LLOQ ([state value and unit]) were handled ",
             "according to [state rule, e.g., Rule 1: pre-first-quantifiable set to zero, ",
-            "post-last-quantifiable treated as missing (Beal, 2001)]. ",
+            "post-last-quantifiable treated as missing]. ",
             "Descriptive statistics included arithmetic mean, SD, CV%, geometric mean, ",
             "and geometric CV% for C", tags$sub("max"), " and AUC parameters. ",
             "All NCA computations were performed using the NonCompart R package (version ",
@@ -708,8 +707,8 @@ methods_ui <- function() {
             ", AUC", tags$sub("0\u2013t"), ", AUC", tags$sub("0\u2013\u221E"),
             ") were determined by non-compartmental analysis as described above. ",
             "Log-transformed PK parameters were analysed using a linear ",
-            "[fixed-effects / mixed-effects] model with Sequence, Period, and Treatment ",
-            "as fixed effects [and Subject nested within Sequence as a random effect]. ",
+            "[fixed-effects model with Sequence, Subject(Sequence), Period and Treatment as fixed effects / ",
+            "mixed-effects model with Sequence, Period and Treatment as fixed effects and Subject as a random effect]. ",
             "[For the mixed-effects model, denominator degrees of freedom were determined ",
             "by the containment method as implemented in the nlme R package.] ",
             "The 90% confidence interval for the geometric mean ratio (Test/Reference) ",
@@ -717,7 +716,7 @@ methods_ui <- function() {
             "This 90% CI approach is equivalent to two one-sided tests at the 5% level ",
             "(Schuirmann, 1987). ",
             "Bioequivalence was concluded if the 90% CI fell entirely within the ",
-            "standard acceptance limits of 80.00\u2013125.00% (EMA, 2010; FDA, 2003). ",
+            "standard acceptance limits of 80.00\u2013125.00%, with the confidence limits rounded to two decimals (EMA, 2010; FDA, 2026). ",
             "[Note: for highly variable drugs analysed using a replicate design, ",
             "reference-scaled approaches (ABEL/RSABE) may be appropriate but were not applied ",
             "in this analysis.] ",
@@ -737,10 +736,8 @@ methods_ui <- function() {
         tags$h6(class = "fw-semibold mt-3", "References for your manuscript"),
         tags$div(
           class = "border rounded p-3 bg-light small",
-          tags$p("Beal SL. Ways to fit a PK model with some data below the quantification limit. ",
-                 tags$em("J Pharmacokinet Pharmacodyn"), ". 2001;28(5):481\u2013504."),
-          tags$p("Kim H, Yun H, Cho S, et al. NonCompart: Noncompartmental Analysis for ",
-                 "Pharmacokinetic Data. ", tags$em("Transl Clin Pharmacol"), ". 2018;26(1):10\u201315."),
+          tags$p("Kim H, Han S, Cho YS, Yoon SK, Bae KS. Development of R packages: 'NonCompart' and ",
+                 "'ncar' for noncompartmental analysis (NCA). ", tags$em("Transl Clin Pharmacol"), ". 2018;26(1):10\u201315."),
           tags$p("Labes D, Sch\u00FCtz H, Lang B. PowerTOST: Power and Sample Size for ",
                  "(Bio)Equivalence Studies. R package version ",
                  pkg_ver("PowerTOST"), "."),
@@ -758,8 +755,7 @@ methods_ui <- function() {
                  tags$em("J Pharmacokinet Biopharm"), ". 1978;6(1):79\u201398."),
           tags$p("EMA. Guideline on the Investigation of Bioequivalence. ",
                  "CPMP/EWP/QWP/1401/98 Rev. 1. 2010."),
-          tags$p("FDA. Guidance for Industry: Bioavailability and Bioequivalence Studies ",
-                 "Submitted in NDAs or INDs \u2014 General Considerations. 2003.")
+          tags$p("FDA. Statistical Approaches to Establishing Bioequivalence. Guidance for Industry. May 2026.")
         )
       )
     )

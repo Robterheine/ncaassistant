@@ -1587,7 +1587,7 @@ check("REG-BE-AOV-01", "Fixed model: Sequence tested against Subject(Sequence)",
 check("REG-BE-D5-01", "ABEL/RSABE note shows for every design the planner offers scaled methods for",
   tryCatch({
     src <- paste(readLines("R/mod_path_be.R", warn = FALSE), collapse = "\n")
-    pos <- regexpr("This app performs standard ABE", src, fixed = TRUE)
+    pos <- regexpr("This app performs average bioequivalence (ABE)", src, fixed = TRUE)
     before <- substr(src, max(1, pos - 700), pos)
     pos > 0 && grepl("BE_DESIGNS$code[BE_DESIGNS$plan_scaled]", before, fixed = TRUE) &&
       setequal(BE_DESIGNS$code[BE_DESIGNS$plan_scaled], c("2x2x3", "2x3x3", "2x2x4"))

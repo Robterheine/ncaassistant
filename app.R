@@ -315,7 +315,7 @@ server <- function(input, output, session) {
                      "success (power)."),
               tags$p(class = "small text-muted mb-0",
                      icon("check-circle", class = "text-success me-1"),
-                     "Supports crossover, parallel, and replicate designs for all major regulatory agencies.")
+                     "Standard bioequivalence and the EMA and FDA scaled methods, for crossover, parallel and replicate designs.")
             )
           )
         ),
@@ -343,7 +343,7 @@ server <- function(input, output, session) {
               ),
               tags$p(class = "text-muted mb-2",
                      "Upload your concentration-time data (CSV or Excel), ",
-                     "map the columns, handle values below the detection limit, ",
+                     "map the columns, handle values below the limit of quantification, ",
                      "and run an automatic quality check."),
               tags$p(class = "small text-muted mb-0",
                      icon("check-circle", class = "text-success me-1"),
@@ -465,7 +465,7 @@ server <- function(input, output, session) {
                      "Compare two formulations (Test vs. Reference). ",
                      "Runs NCA, computes 90% confidence intervals, and concludes equivalence."),
               tags$p(class = "small text-muted mb-0",
-                     "Complete BE workflow from data to regulatory-ready results.")
+                     "Complete BE workflow from data to confidence intervals and forest plot.")
             )
           )
         )
@@ -501,9 +501,9 @@ server <- function(input, output, session) {
       list(
         name    = "NonCompart",
         version = as.character(packageVersion("NonCompart")),
-        role    = "Non-compartmental analysis engine. Calculates Cmax, AUC, half-life, clearance, and all standard NCA parameters. Validated against WinNonlin\u00AE.",
+        role    = "Non-compartmental analysis engine. Calculates Cmax, AUC, half-life, clearance, and all standard NCA parameters. Its authors found no discrepancies with WinNonlin\u00AE.",
         url     = "https://cran.r-project.org/package=NonCompart",
-        ref     = "Kim H et al. Transl Clin Pharmacol. 2018;26(1):10-15"
+        ref     = "Kim H, Han S, Cho YS, Yoon SK, Bae KS. Transl Clin Pharmacol. 2018;26(1):10-15"
       ),
       list(
         name    = "PowerTOST",
@@ -515,7 +515,7 @@ server <- function(input, output, session) {
       list(
         name    = "nlme",
         version = as.character(packageVersion("nlme")),
-        role    = "Linear and nonlinear mixed-effects models. Used for the mixed-effects ANOVA in bioequivalence analysis (FDA-recommended approach for crossover studies).",
+        role    = "Linear and nonlinear mixed-effects models. Used for the optional mixed-effects model in bioequivalence analysis.",
         url     = "https://cran.r-project.org/package=nlme",
         ref     = "Pinheiro J, Bates D. Mixed-Effects Models in S and S-PLUS. Springer, 2000."
       ),
@@ -702,7 +702,7 @@ server <- function(input, output, session) {
                         "NonCompart ", tags$code(nc$version), " ",
                         tags$span(class = paste("badge", badge_class), nc$label),
                         tags$div(class = "text-muted", style = "font-size: 0.85em;",
-                                 "Validated against WinNonlin\u00AE (Kim et al. 2018); ",
+                                 "No discrepancies with WinNonlin\u00AE reported by its authors (Kim et al. 2018); ",
                                  "app validated with NonCompart ", NONCOMPART_TESTED_VERSION, ".")
                       ))
             }),

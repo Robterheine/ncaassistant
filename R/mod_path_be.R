@@ -111,7 +111,7 @@ path_be_ui <- function(id) {
                   class = "alert alert-info py-2 small mb-2",
                   icon("circle-info", class = "me-1"),
                   tags$strong("Note: "),
-                  "This app performs standard ABE (fixed 80\u2013125% limits) for all designs. ",
+                  "This app performs average bioequivalence (ABE) with the acceptance limits you enter, for all designs. ",
                   "It does not perform reference-scaled analysis (ABEL/RSABE). ",
                   "When the reference is replicated, the results show CV", tags$sub("wR"),
                   " and the limits it would imply, for information. If your drug requires ",
@@ -123,8 +123,8 @@ path_be_ui <- function(id) {
               selectInput(ns("model_type"),
                           tagList("Statistical model", help_mixed_effects),
                           choices = c(
-                            "Fixed effects — standard for balanced data" = "fixed",
-                            "Mixed effects — handles dropouts (FDA recommended)" = "mixed"
+                            "Fixed effects (EMA: all terms fixed)" = "fixed",
+                            "Mixed effects (subject random; uses dropouts)" = "mixed"
                           )),
               
               checkboxGroupInput(ns("be_params"), "Parameters to compare",
@@ -588,9 +588,9 @@ path_be_server <- function(id, shared) {
           showNotification(
             paste0("Tmax is included in your analysis. Note: Tmax is a discrete ",
                    "variable that takes only values present in the sampling schedule. ",
-                   "A parametric ANOVA model is not the regulatory standard for Tmax. ",
-                   "EMA and FDA guidance recommends a non-parametric approach ",
-                   "(Wilcoxon signed-rank / Hodges-Lehmann) for Tmax. ",
+                   "A parametric ANOVA model is not the usual analysis for Tmax. ",
+                   "When a Tmax comparison is relevant (for example a claim of rapid release), ",
+                   "the EMA guideline asks for a non-parametric analysis. ",
                    "The parametric CI shown here is provided for completeness only, ",
                    "carries no bioequivalence verdict, ",
                    "and should not be used as the primary Tmax analysis in a ",

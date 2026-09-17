@@ -130,7 +130,7 @@ path_multi_nca_ui <- function(id) {
               "All Parameters (per subject)",
               icon = icon("table"),
               tags$p(class = "text-muted small",
-                     "One row per subject (or per subject-treatment for crossover data). ",
+                     "One row per profile (subject, and treatment and period when mapped). ",
                      "Key PK parameters shown. Tick the box below for all 37 parameters, ",
                      "or download the full table as Excel."),
               checkboxInput(ns("show_all_params"),
@@ -145,11 +145,11 @@ path_multi_nca_ui <- function(id) {
             
             # Summary stats
             nav_panel(
-              "Summary Statistics (across subjects)",
+              "Summary Statistics",
               icon = icon("chart-bar"),
               tags$p(class = "text-muted small",
                      "Mean, SD, CV%, median, range, geometric mean, and geometric CV% ",
-                     "for key PK parameters across all subjects."),
+                     "for key PK parameters, per treatment when a Treatment column is mapped."),
               uiOutput(ns("ss_note")),
               uiOutput(ns("replicate_note")),
               DTOutput(ns("summary_table")),
