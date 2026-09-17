@@ -91,7 +91,12 @@ help_data_type <- info_btn("help_data_type", "What kind of file do I have?",
   (<code>ANL01FL = Y</code>) and refuses files it cannot use safely, with the reason.</li>
   <li>Continue as usual: the columns and LLOQ are filled in for you.</li>
   </ol>
-  The choices and a conversion log are saved in the Analysis Record.")
+  The choices and a conversion log are saved in the Analysis Record.
+  <br><br>
+  <b>Received a .xpt (SAS transport) file?</b> The app does not read XPT. Convert it
+  to CSV first, for example in R:<br>
+  <code>d &lt;- haven::read_xpt(\"adnca.xpt\")</code><br>
+  <code>write.csv(haven::zap_labels(d), \"adnca.csv\", row.names = FALSE, na = \"\")</code>")
 
 help_adnca_time <- info_btn("help_adnca_time", "Which time should I use?",
   "NCA needs the time since the dose of each profile.

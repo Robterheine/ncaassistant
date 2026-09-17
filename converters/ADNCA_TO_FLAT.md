@@ -17,6 +17,22 @@ folder) next to it: it contains the conversion, shared with the app. Both make
 every choice explicit, refuse what they cannot convert safely, and write a log
 you can keep with your study documentation.
 
+## If your dataset is a .xpt file
+
+Neither the app nor the converter reads SAS transport (`.xpt`) files. Convert
+the file to CSV first, for example in R:
+
+```r
+d <- haven::read_xpt("adnca.xpt")
+write.csv(haven::zap_labels(d), "adnca.csv", row.names = FALSE, na = "")
+```
+
+`zap_labels()` removes the SAS variable labels, and `na = ""` writes missing
+values as empty cells. This keeps values at full precision and missing values
+missing; a conversion of the test fixtures this way gave results identical to
+the original CSV. Keep the `.xpt` file with your documentation: the Analysis
+Record hashes the CSV you upload.
+
 ## 1. Convert
 
 In R, with the dataset as `.csv` or `.xlsx`:

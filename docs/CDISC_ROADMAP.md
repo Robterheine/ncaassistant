@@ -11,7 +11,7 @@ refusals that look like omissions.
 
 | Part | Workstream | Status |
 |---|---|---|
-| **A** (§1–9) | CDISC / SDTM interoperability | Phase 0 shipped in v1.3.0 (`58d6f5b`). **Phases 1–3 shipped; Phase 4 shipped as parameter codes only** (see §4.1–§4.4). Phase 5 pending (decision). |
+| **A** (§1–9) | CDISC / SDTM interoperability | Phase 0 shipped in v1.3.0 (`58d6f5b`). **Phases 1–3 shipped; Phase 4 as parameter codes only; Phase 5 not built (decision)** (see §4.1–§4.5). |
 | **B** (§10–15) | Bioequivalence design coverage — replicate designs | Reviewed and decided. **This is the next version.** Verified against the code on 2026-09-17 (§10.5). **Tier 0 and B1–B6 shipped** (Tier 0: `a85936b`, `7faf9bf`, `5a73794`; Part B: `0ad844b`, `138ea3d`, `e277f37`, `37a2a12`, `c47dbfc`, `193da3d`). README and user manual update pending. |
 
 The two interact: Part B's implementation is cheaper and cleaner if Part A's
@@ -488,6 +488,15 @@ that the app and the reports say which standard was used.
 `haven::read_xpt` makes this easy, which is the problem: it is the step that
 invites "so it reads submission data" claims. Build it only after Phase 3 is
 validated and only if real users ask. Read-only. Never write XPT.
+
+> **Decision (2026-09-17, with the maintainer): not built (option A).** The app
+> and the converter read CSV and Excel only. For `.xpt` files, the ADNCA
+> tooltip, the ADNCA upload screen (explicit message when a `.xpt` is uploaded)
+> and `converters/ADNCA_TO_FLAT.md` give a two-line R recipe:
+> `haven::read_xpt()` then `write.csv(haven::zap_labels(d), ..., na = "")`.
+> Checked on a fixture with a missing value, BLQ text and a non-terminating
+> decimal: the converted tables were identical to the CSV route. Revisit if
+> ADNCA users report that they mainly receive XPT files.
 
 ---
 

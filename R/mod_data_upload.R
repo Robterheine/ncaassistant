@@ -218,7 +218,7 @@ data_upload_server <- function(id, shared) {
     adnca_error <- reactiveVal(NULL)   # refusal message
 
     adnca_file <- reactive({
-      req(input$file_upload, input$data_type == "adnca")
+      req(input$file_upload, input$data_type == "adnca", !identical(tolower(file_ext()), "xpt"))
       tryCatch(adnca_read(input$file_upload$datapath, read_args(), ext = file_ext()),
                error = function(e) {
                  showNotification(paste("Error reading file:", e$message), type = "error", duration = 8)
@@ -235,6 +235,15 @@ data_upload_server <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     output$adnca_panel <- renderUI({
+      if (identical(tolower(file_ext()), "xpt")) {
+        return(card(card_body(class = "alert alert-warning mb-0",
+          icon("triangle-exclamation", class = "me-1"),
+          tags$strong("XPT files are not read. "),
+          "Convert the file to CSV first, for example in R: ",
+          tags$code('d <- haven::read_xpt("adnca.xpt")'), " then ",
+          tags$code('write.csv(haven::zap_labels(d), "adnca.csv", row.names = FALSE, na = "")'),
+          ", and upload the CSV.")))
+      }
       info <- adnca_info()
       if (!info$is_adnca) {
         return(card(card_body(class = "alert alert-warning mb-0",
