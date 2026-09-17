@@ -2,7 +2,7 @@
 
 **Audience:** the owner (decision) and a future session or maintainer (implementation).
 **Written:** 17 September 2026, against app v1.4.0 (`main` at `cbbd4c6`).
-**Status:** proposal. Nothing is built. Section 5 lists the decisions needed before work starts.
+**Status:** decisions made (2026-09-18, owner). Nothing is built yet. Section 5 lists the decisions and their resolutions.
 
 Review team: statistician, clinical pharmacologist, R/Shiny engineer.
 
@@ -199,21 +199,23 @@ The paper reviews six long-acting injectables: buprenorphine, naltrexone, octreo
 
 ---
 
-## 5. Decisions needed from the owner
+## 5. Decisions
 
-| # | Decision | Proposal |
+Decided by the owner on 2026-09-18.
+
+| # | Decision | Resolution |
 |---|---|---|
-| D1 | End time beyond the last sample | Not reported, with a note (no extrapolation) |
-| D2 | Partial AUC of zero in a Bioequivalence comparison | No verdict for that metric; count and message |
-| D3 | EMA "split at τ/2" helper for single-dose modified-release studies | Offer, clearly labelled as a default to be checked against the protocol; or leave out |
-| D4 | CDISC code AUCINT | Add after verifying the pinned release |
-| D5 | Shading intervals in Visualize Data | Optional, last phase |
-| D6 | Paths that get partial AUCs | All Subjects, One Subject at a Time, Bioequivalence (not Plan a Study) |
-| D7 | Data-driven cutoff selection (Periyasamy 2026) | Do not offer (Tsakiridou 2025 supports this, section 4.6 #8) |
-| D8 | Per-subject Reference-Tmax cutoffs (Health Canada) | Not in the first release; design the interval fields so it can be added |
-| D9 | "Cmax in interval" per interval (EMA exenatide, octreotide) | Offer as an optional column, observed value only |
-| D10 | Expanded EMA limits for highly variable partial AUCs (information only) | Only after verifying the EMA modified-release guideline |
-| D11 | Warning when an interval depends mainly on BLQ-derived values | Offer; keep the BLQ flag through the pipeline |
+| D1 | End time beyond the last sample | **Not reported**, with a note naming the affected profiles (no extrapolation) |
+| D2 | Partial AUC of zero in a Bioequivalence comparison | **No verdict** for that metric when any profile has a zero; report the count per treatment, with a message |
+| D3 | EMA "split at τ/2" helper for single-dose modified-release studies | **Leave out.** Users enter intervals from the protocol/PSG only; a default-filling helper is one step from "the app chose my cutoff" (the risk D7 exists to avoid) |
+| D4 | CDISC code AUCINT | **Add**, after verifying it is in the pinned CT release |
+| D5 | Shading intervals in Visualize Data | **Include**, phase 5 (last, after the core feature is stable) |
+| D6 | Paths that get partial AUCs | **All Subjects, One Subject at a Time, Bioequivalence** (not Plan a Study, which only needs a CV) |
+| D7 | Data-driven cutoff selection (Periyasamy 2026) | **Do not offer** (Tsakiridou 2025 supports this, section 4.6 #8) |
+| D8 | Per-subject Reference-Tmax cutoffs (Health Canada) | **Not in the first release**; design the interval fields so it can be added later without a redesign |
+| D9 | "Cmax in interval" per interval (EMA exenatide, octreotide) | **Include**, as an optional column: observed maximum in the interval and its time, no interpolation, compared in Bioequivalence like other metrics. This is a second per-interval metric, not just pAUC — plan for it in Phase 1 (calculation) and Phase 3 (BE comparison), not as a bolt-on |
+| D10 | Expanded EMA limits for highly variable partial AUCs (information only) | **Defer.** Show CVwR without implied widened limits in v1; revisit only once someone verifies the EMA modified-release guideline wording (section 9). Do not block Phase 1 on this research |
+| D11 | Warning when an interval depends mainly on BLQ-derived values | **Include.** Remove the `data$.is_blq <- NULL` line in `apply_blq_rules()` so the BLQ flag survives through the pipeline. This touches shared code used by every analysis path, not just pAUC — treat it as its own small, tested change within Phase 1 |
 
 ---
 
@@ -226,35 +228,41 @@ Each phase follows the project's working method:
 4. check the change in the running app;
 5. commit.
 
-**Phase 1: engine (2–3 days; includes D9 and D11 if chosen)**
+**Phase 1: engine (3–4 days; includes D9 and D11)**
 - Validate an interval specification in `R/pipeline.R` (`validate_partial_aucs()`).
 - Calculate fixed-end intervals with `iAUC` and "t" intervals as AUClast − AUC0–Start.
 - Apply the D1 rule beyond Tlast; make sure a rejected λz is never used.
 - Enforce the steady-state 0–τ check.
 - Wire the same logic into `run_single_nca()`.
 - Emit warnings for off-grid cutoffs and zeros.
+- **D9:** calculate the observed Cmax and its time within each interval (no interpolation).
+- **D11:** remove the `data$.is_blq <- NULL` line in `apply_blq_rules()` so the flag survives; count BLQ-derived concentrations per interval/profile and warn when an interval depends mainly on them.
 - **Tests:**
   - hand-calculated trapezoids (linear and log-down);
   - interpolated cutoffs against NonCompart;
   - "t" intervals, including Tlast < Start;
   - end beyond Tlast;
   - intervals across steady state;
-  - identical results in batch and single paths.
+  - identical results in batch and single paths;
+  - Cmax-in-interval against a hand check;
+  - BLQ flag survives `apply_blq_rules()` and the dependency warning fires on a constructed plateau.
 
 **Phase 2: records and reproduction (1 day)**
 - Record the intervals in the settings JSON and in `record_nca_settings()`.
 - **Tests:** batch, single and Bioequivalence records with partial AUCs reproduce (MATCH); a changed interval is detected.
 
-**Phase 3: Bioequivalence (1–2 days)**
+**Phase 3: Bioequivalence (2 days; includes D9)**
 - Build the parameter choices from the defined intervals.
 - Give each metric its role: pivotal gets a verdict, supportive does not.
 - Apply the D2 zero handling.
 - Include partial AUCs in the variability table.
+- **D9:** compare Cmax-in-interval the same way as other metrics (log-transformed, 90% CI), following each interval's pivotal/supportive role.
 - **Tests:**
   - partial AUC CI equals `lm` on the log values;
   - supportive metrics get "no verdict";
   - zeros give no verdict, with a count;
-  - replicate design agrees with replicateBE on an interval (compute replicateBE's `PK` from the same partial AUCs).
+  - replicate design agrees with replicateBE on an interval (compute replicateBE's `PK` from the same partial AUCs);
+  - Cmax-in-interval comparison matches a hand-calculated CI.
 
 **Phase 4: user interface (2 days)**
 - Interval editor in the three paths, results columns, downloads, summary statistics.
@@ -270,7 +278,7 @@ Section 7 has the full list. Two rules:
 - Do this pass once, after phases 1–5 are merged and the validation run is green. Documents quote test counts and IDs, so writing them earlier means redoing them.
 - Use the humanizer skill on new prose, as for manual v1.5.
 
-**Total estimate: 9–13 working days** (the upper end with D9 and D11).
+**Total estimate: 11–13 working days** (D9 and D11 are in scope; the range reflects UI and documentation effort).
 
 ---
 
