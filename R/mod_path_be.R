@@ -16,7 +16,7 @@ path_be_ui <- function(id) {
             "Bioequivalence Testing"),
     tags$p(class = "text-muted mb-3",
            "Compare two formulations (Test vs. Reference). This path runs PK analysis ",
-           "on your crossover data, then computes the 90% confidence interval to determine ",
+           "on your crossover data, then computes the confidence interval (90% by default) to determine ",
            "if the formulations are bioequivalent."),
     
     uiOutput(ns("data_gate")),
@@ -189,7 +189,7 @@ path_be_ui <- function(id) {
               icon = icon("arrows-left-right"),
               tags$p(class = "text-muted small",
                      "The table shows the geometric mean ratio (Test ÷ Reference) ",
-                     "and its 90% confidence interval. If the CI falls entirely within ",
+                     "and its confidence interval (90% by default). If the CI falls entirely within ",
                      "the acceptance limits (usually 80–125%), the formulations are bioequivalent. ",
                      "With limits wider than 80–125%, the point estimate must also lie within ",
                      "80–125% unless that constraint is switched off. Tmax, and any parameter ",
@@ -202,7 +202,7 @@ path_be_ui <- function(id) {
                      "degrees of freedom) are included in the Excel and CSV downloads."),
               hr(),
               tags$p(class = "text-muted small",
-                     "Forest plot: dot = point estimate, bar = 90% CI, ",
+                     "Forest plot: dot = point estimate, bar = confidence interval, ",
                      "dashed lines = acceptance limits."),
               plotlyOutput(ns("forest_plot"), height = "350px"),
               uiOutput(ns("variability_panel"))
@@ -1062,6 +1062,8 @@ path_be_server <- function(id, shared) {
     observeEvent(shared$pk_data, {
       lz_state$overrides_log <- list()
       lz_state$override <- NULL
+      # Results of the previous file must not be shown or exported with the new one
+      be_result(NULL); be_nca_result(NULL); be_run_settings(NULL); balance_result(NULL)
     }, ignoreNULL = FALSE)
     
     # Update profile selector after NCA runs
@@ -1087,7 +1089,7 @@ path_be_server <- function(id, shared) {
     output$lz_status <- renderUI({
       sd <- lz_sub_data(); req(length(sd$time) >= 3)
       lz <- if (!is.null(lz_state$override)) lz_state$override
-            else estimate_lambda_z(sd$time, sd$conc, input$r2adj_be)
+            else estimate_lambda_z(sd$time, sd$conc, input$r2adj_be, route = input$admin_route)
       if (is.na(lz$lambda_z)) {
         badge <- tags$span(class = "badge bg-warning", "Not estimable")
         return(tags$div(tags$small("Half-life could not be estimated"), badge))
@@ -1106,7 +1108,7 @@ path_be_server <- function(id, shared) {
       sd <- lz_sub_data(); req(length(sd$time) >= 3)
       tryCatch({
         lz <- if (!is.null(lz_state$override)) lz_state$override
-              else estimate_lambda_z(sd$time, sd$conc, input$r2adj_be)
+              else estimate_lambda_z(sd$time, sd$conc, input$r2adj_be, route = input$admin_route)
         df <- data.frame(Time = sd$time,
                          ln_Conc = ifelse(sd$conc > 0, log(sd$conc), NA),
                          Conc = sd$conc, used = FALSE)
@@ -1153,7 +1155,7 @@ path_be_server <- function(id, shared) {
           paste0("t=", round(sd$time[term_idx], 2), "  C=", round(sd$conc[term_idx], 3))
         )
         lz <- if (!is.null(lz_state$override)) lz_state$override
-              else estimate_lambda_z(sd$time, sd$conc, input$r2adj_be)
+              else estimate_lambda_z(sd$time, sd$conc, input$r2adj_be, route = input$admin_route)
         sel <- if (length(lz$time_used) > 0) {
           as.character(term_idx[sd$time[term_idx] %in% lz$time_used])
         } else NULL
@@ -1186,7 +1188,7 @@ path_be_server <- function(id, shared) {
       t_sel   <- override$time_used
       
       # Get original λz for audit logging
-      orig_lz <- estimate_lambda_z(sd$time, sd$conc, input$r2adj_be)
+      orig_lz <- estimate_lambda_z(sd$time, sd$conc, input$r2adj_be, route = input$admin_route)
       
       lz_state$override <- override
       
@@ -1271,7 +1273,7 @@ path_be_server <- function(id, shared) {
         session$ns,
         intro = paste0(
           "Self-contained package with NCA results, the bioequivalence results ",
-          "(ANOVA tables and 90% confidence intervals), every setting, a standalone ",
+          "(ANOVA tables and confidence intervals), every setting, a standalone ",
           "R reproducibility script, a SHA-256 data-integrity hash, and an HTML summary."))
     })
 

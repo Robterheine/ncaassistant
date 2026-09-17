@@ -29,110 +29,49 @@ profile_parts <- function(result, label) {
 }
 
 
-#' Estimate lambda_z for a single subject's concentration-time profile
-#' 
-#' Uses the same adjusted R² criterion as WinNonlin and NonCompart.
-#' Returns the regression details for interactive review.
+#' Automatic lambda_z for one profile, as NonCompart computes it
 #'
-#' @param time Numeric vector of time points
-#' @param conc Numeric vector of concentrations
-#' @param r2adj_threshold Minimum adjusted R² to accept (default 0.7)
-#' @param exclude_indices Integer vector of indices to exclude (manual override)
-#' @return List with slope, intercept, r2adj, points_used, half_life, etc.
+#' Uses NonCompart::BestSlope(), the slope selection behind the results table
+#' (sNCA/tblNCA), so the half-life review shows exactly the fit that is used:
+#' the same points, tolerance and exclusion of Cmax for extravascular dosing.
+#' A fit below the adjusted R2 threshold is reported as not used, matching
+#' run_nca(), which sets the half-life-based parameters to missing.
+#'
+#' @param time,conc Numeric vectors of one profile
+#' @param r2adj_threshold Minimum adjusted R2 (default 0.7)
+#' @param exclude_indices Unused; kept for compatibility
+#' @param route "extravascular", "iv_bolus" or "iv_infusion"
+#' @return list(lambda_z, half_life, r2adj, intercept, n_points, time_used,
+#'   conc_used, all_time, all_conc, valid_mask, message)
 estimate_lambda_z <- function(time, conc, r2adj_threshold = 0.7,
-                              exclude_indices = NULL) {
-  
-  # Remove NAs and zero concentrations (can't log-transform)
+                              exclude_indices = NULL, route = "extravascular") {
+  time <- suppressWarnings(as.numeric(as.character(time)))
+  conc <- suppressWarnings(as.numeric(as.character(conc)))
   valid <- !is.na(conc) & conc > 0
-  t  <- time[valid]
-  cv <- conc[valid]  # renamed from c to avoid shadowing base::c()
-  
-  if (length(t) < 3) {
-    return(list(
-      lambda_z    = NA, half_life = NA, r2adj = NA,
-      intercept   = NA, n_points  = 0,
-      time_used   = numeric(0), conc_used = numeric(0),
-      all_time    = time, all_conc = conc,
-      valid_mask  = valid,
-      message     = "Fewer than 3 non-zero points available"
-    ))
-  }
-  
-  # Find Cmax index (in the valid subset)
-  cmax_idx <- which.max(cv)
-  
-  # Only use points after Cmax
-  terminal_mask <- seq_along(t) > cmax_idx
-  if (!is.null(exclude_indices)) {
-    # Map exclude_indices from original data to valid subset
-    terminal_mask[exclude_indices] <- FALSE
-  }
-  
-  t_term <- t[terminal_mask]
-  cv_term <- cv[terminal_mask]
-  
-  if (length(t_term) < 3) {
-    return(list(
-      lambda_z    = NA, half_life = NA, r2adj = NA,
-      intercept   = NA, n_points  = 0,
-      time_used   = numeric(0), conc_used = numeric(0),
-      all_time    = time, all_conc = conc,
-      valid_mask  = valid,
-      message     = "Fewer than 3 points in terminal phase"
-    ))
-  }
-  
-  log_c_term <- log(cv_term)
-  
-  # Best fit method: try last 3, 4, 5, ... n points
-  # Pick regression with highest adjusted R²
-  best_r2adj  <- -Inf
-  best_result <- NULL
-  
-  n <- length(t_term)
-  for (np in 3:n) {
-    idx <- (n - np + 1):n
-    tt  <- t_term[idx]
-    lc  <- log_c_term[idx]
-    
-    fit <- lm(lc ~ tt)
-    ss  <- summary(fit)
-    
-    r2adj <- 1 - (1 - ss$r.squared) * (np - 1) / (np - 2)
-    
-    if (r2adj > best_r2adj) {
-      best_r2adj <- r2adj
-      best_result <- list(
-        lambda_z  = -coef(fit)[2],
-        intercept = coef(fit)[1],
-        r2adj     = r2adj,
-        n_points  = np,
-        time_used = tt,
-        conc_used = exp(lc),
-        fit       = fit
-      )
-    }
-  }
-  
-  if (is.null(best_result) || best_r2adj < r2adj_threshold) {
-    return(list(
-      lambda_z    = NA, half_life = NA, r2adj = best_r2adj,
-      intercept   = NA, n_points  = 0,
-      time_used   = numeric(0), conc_used = numeric(0),
-      all_time    = time, all_conc = conc,
-      valid_mask  = valid,
-      message     = paste0("Best adj R² = ", round(best_r2adj, 4),
-                           " < threshold ", r2adj_threshold)
-    ))
-  }
-  
-  best_result$half_life <- log(2) / best_result$lambda_z
-  best_result$all_time  <- time
-  best_result$all_conc  <- conc
-  best_result$valid_mask <- valid
-  best_result$message   <- "OK"
-  
-  best_result
+  empty <- function(msg, r2 = NA) list(
+    lambda_z = NA, half_life = NA, r2adj = r2, intercept = NA, n_points = 0,
+    time_used = numeric(0), conc_used = numeric(0),
+    all_time = time, all_conc = conc, valid_mask = valid, message = msg)
+
+  keep <- !is.na(time) & !is.na(conc)
+  x <- time[keep]; y <- conc[keep]
+  ord <- order(x); x <- x[ord]; y <- y[ord]
+  if (sum(y > 0) < 3) return(empty("Fewer than 3 non-zero points available"))
+
+  adm <- switch(route, "iv_bolus" = "Bolus", "iv_infusion" = "Infusion", "Extravascular")
+  bs <- tryCatch(NonCompart::BestSlope(x, y, adm = adm), error = function(e) NULL)
+  if (is.null(bs) || is.na(bs["LAMZ"]) || bs["LAMZ"] <= 0)
+    return(empty("No terminal phase could be fitted"))
+  used <- attr(bs, "UsedPoints")
+  r2adj <- unname(bs["R2ADJ"])
+  if (!is.null(r2adj_threshold) && !is.na(r2adj_threshold) && r2adj < r2adj_threshold)
+    return(empty(paste0("Best adj R\u00b2 = ", round(r2adj, 4), " < threshold ", r2adj_threshold,
+                        ": half-life and the parameters derived from it are not reported"), r2adj))
+
+  list(lambda_z = unname(bs["LAMZ"]), half_life = log(2) / unname(bs["LAMZ"]),
+       r2adj = r2adj, intercept = unname(bs["b0"]), n_points = length(used),
+       time_used = x[used], conc_used = y[used],
+       all_time = time, all_conc = conc, valid_mask = valid, message = "OK")
 }
 
 #' Add dose-normalized parameters to NCA results

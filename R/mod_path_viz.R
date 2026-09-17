@@ -59,7 +59,7 @@ path_viz_ui <- function(id) {
                 label    = NULL,
                 choices  = c(
                   "Individual Profiles (spaghetti plot)"      = "spaghetti",
-                  "Summary Plot (geometric mean \u00b1 gCV%)" = "summary",
+                  "Summary Plot (geometric mean \u00d7/\u00f7 geometric SD)" = "summary",
                   "Both plots"                                = "both"
                 ),
                 selected = "spaghetti"
@@ -112,7 +112,7 @@ path_viz_ui <- function(id) {
                     )
                   ),
                   choices = c(
-                    "Geometric mean \u00b1 Geometric CV%" = "geomean",
+                    "Geometric mean \u00d7/\u00f7 geometric SD" = "geomean",
                     "Arithmetic mean \u00b1 SD (not recommended for Cmax/AUC)" = "arithmean"
                   ),
                   selected = "geomean",
@@ -519,7 +519,7 @@ path_viz_server <- function(id, shared) {
       else ""
 
       stat_desc <- if (stat == "geomean")
-        paste0("geometric mean \u00b1 geometric CV% (n\u2009=\u2009", n_subj, ")")
+        paste0("geometric mean \u00d7/\u00f7 geometric SD (n\u2009=\u2009", n_subj, " subjects; at each time point only positive concentrations are included)")
       else
         paste0("arithmetic mean \u00b1 SD (n\u2009=\u2009", n_subj, ")")
 

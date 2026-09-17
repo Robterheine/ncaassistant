@@ -121,7 +121,7 @@ path_data_server <- function(id, shared) {
                          icon("arrows-left-right", class = "fa-2x text-danger")),
                 tags$h6("Bioequivalence"),
                 tags$p(class = "text-muted small",
-                       "Compare Test vs. Reference formulations with 90% CI."),
+                       "Compare Test vs. Reference formulations with a confidence interval."),
                 actionButton(ns("goto_be"), "Bioequivalence",
                              class = "btn-outline-danger btn-sm",
                              onclick = "Shiny.setInputValue('nav_path', 'be', {priority: 'event'});")

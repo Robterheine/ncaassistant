@@ -15,7 +15,7 @@ The app offers six self-contained workflow paths accessible from a central hub:
 
 **2. Upload & Check Data** — Import CSV or Excel files, auto-detect common column names (including WinNonlin export and European naming conventions); CDISC ADNCA datasets are read through the separate *CDISC ADNCA dataset* upload option, set BLQ handling rules (6 rules including LLOQ/2 for drugs with absorption lag), and run 20+ automated data quality checks.
 
-**3. Visualize Data** *(new in v1.2)* — Create publication-ready concentration-time plots directly from uploaded data. Individual profiles (spaghetti plot) with flexible colour grouping, and geometric mean ± geometric CV% summary curves with treatment overlays for crossover data. Export to PNG, PDF, or SVG at journal-submission resolution (up to 600 DPI). Includes an auto-generated figure legend ready to paste into a manuscript.
+**3. Visualize Data** *(new in v1.2)* — Create publication-ready concentration-time plots directly from uploaded data. Individual profiles (spaghetti plot) with flexible colour grouping, and geometric mean ×/÷ geometric SD summary curves with treatment overlays for crossover data. Export to PNG, PDF, or SVG at journal-submission resolution (up to 600 DPI). Includes an auto-generated figure legend ready to paste into a manuscript.
 
 **4. Analyze One Subject at a Time** — Step through individual profiles with Previous/Next navigation. Includes manual data entry, interactive half-life inspector with point-by-point adjustment, and per-subject dose auto-fill from data.
 

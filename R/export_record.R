@@ -1131,7 +1131,7 @@ y_label <- "Dose-normalized concentration (C/Dose)"
   plot_section <- if (plot_type == "summary") {
     grp <- if (has_treat) paste0('c(".time", ', deparse(col_map$treatment), ')') else 'c(".time")'
     stat_code <- if (summary_st == "geomean") {
-'# Geometric mean and geometric CV% (positive concentrations only)
+'# Geometric mean multiplied/divided by the geometric SD (positive concentrations only)
 summ <- d[!is.na(d$.conc) & d$.conc > 0, ]
 summ <- summ %>%
   dplyr::group_by(dplyr::across(dplyr::all_of(grp_cols))) %>%

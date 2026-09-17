@@ -457,6 +457,30 @@ override_use_points <- function(data, col_map, nca_key, final_keys, lz_overrides
   if (any_set) out else NULL
 }
 
+#' Parameters that depend on the terminal slope (lambda-z)
+#'
+#' Set to missing when the automatic fit is below the analyst's adjusted R2
+#' threshold. At steady state NonCompart computes CL from AUClast (AUC over
+#' the dosing interval), so CL is kept there.
+LAMZ_DEPENDENT <- c("LAMZ", "LAMZHL", "b0", "CLSTP", "AUCIFO", "AUCIFOD", "AUCIFP", "AUCIFPD",
+                    "AUCPEO", "AUCPEP", "AUCPBEO", "AUCPBEP", "AUMCIFO", "AUMCIFP", "AUMCPEO",
+                    "AUMCPEP", "MRTEVIFO", "MRTEVIFP", "MRTIVIFO", "MRTIVIFP", "VZFO", "VZFP",
+                    "VZO", "VZP", "CLFO", "CLFP", "CLO", "CLP", "VSSO", "VSSP")
+lamz_dependent_cols <- function(names_in, steady_state = FALSE) {
+  cols <- intersect(LAMZ_DEPENDENT, names_in)
+  if (isTRUE(steady_state)) cols <- setdiff(cols, c("CLFO", "CLO"))
+  cols
+}
+
+#' Is an automatic terminal-phase fit below the adjusted R2 threshold?
+#' @return logical per value; NA R2ADJ (no fit) is not flagged
+below_r2_threshold <- function(r2adj, threshold) {
+  thr <- suppressWarnings(as.numeric(threshold))
+  if (length(thr) != 1 || is.na(thr) || thr <= 0) return(rep(FALSE, length(r2adj)))
+  v <- suppressWarnings(as.numeric(r2adj))
+  !is.na(v) & v < thr
+}
+
 #' NCA for one profile given as vectors (single-subject analysis)
 #'
 #' Same NonCompart call and options as run_nca(), so a profile analysed on
@@ -478,12 +502,18 @@ run_single_nca <- function(time, conc, settings, time_used = NULL) {
     if (length(use) < 2) use <- NULL
   }
   num0 <- function(v) { v <- suppressWarnings(as.numeric(v)); if (length(v) == 0 || is.na(v)) 0 else v }
-  NonCompart::sNCA(t_num, c_num, dose = num0(settings$dose), adm = adm, down = down,
+  r <- NonCompart::sNCA(t_num, c_num, dose = num0(settings$dose), adm = adm, down = down,
                    dur = if (adm == "Infusion") num0(settings$infusion_duration) else 0,
                    doseUnit = settings$dose_unit, timeUnit = settings$time_unit,
                    concUnit = settings$conc_unit, SS = isTRUE(settings$is_steady_state),
                    # R2ADJ = 0 avoids NonCompart's interactive slope picker (see run_nca)
                    R2ADJ = 0, MW = num0(settings$mw), UsePoints = use)
+  # The analyst's R2 threshold applies to the automatic fit, not to points
+  # chosen by hand
+  if (is.null(use) && below_r2_threshold(r["R2ADJ"], settings$r2adj_threshold)) {
+    r[lamz_dependent_cols(names(r), settings$is_steady_state)] <- NA
+  }
+  r
 }
 
 #' Steady-state summary parameters added to a single-profile NCA result
@@ -690,6 +720,29 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
     NULL
   })
   
+  # Apply the analyst's adjusted R2 threshold. NonCompart is called with
+  # R2ADJ = 0 (see above), so it always reports the best automatic fit; a fit
+  # below the threshold is not reliable enough for half-life and everything
+  # derived from it. Profiles with a manual selection are exempt.
+  if (!is.null(result) && "R2ADJ" %in% names(result)) {
+    low <- below_r2_threshold(result$R2ADJ, settings$r2adj_threshold)
+    if (!is.null(use_points)) {
+      manual <- !vapply(use_points, is.null, logical(1))
+      low <- low & !manual[match(as.character(result[[1]]), as.character(final_keys))]
+    }
+    if (any(low)) {
+      for (cc in lamz_dependent_cols(names(result), settings$is_steady_state)) result[[cc]][low] <- NA
+      warning("Half-life not reported for ", sum(low), " profile(s) with adjusted R\u00b2 below ",
+              settings$r2adj_threshold, ": ",
+              paste(head(if (use_composite_key)
+                profile_labels(key_parts[match(as.character(result[[1]][low]), key_parts$.nca_key), pk$cols, drop = FALSE])
+                else as.character(result[[1]][low]), 5), collapse = ", "),
+              if (sum(low) > 5) " ..." else "",
+              ". Half-life, AUC to infinity, CL/F, Vz/F and MRT are missing for these profiles; ",
+              "review them in Half-Life Review.")
+    }
+  }
+
   # If a composite key was used, restore its parts (Subject, Treatment,
   # Period) by matching the key, never by splitting the string: a separator
   # inside a treatment name can then not corrupt the columns.

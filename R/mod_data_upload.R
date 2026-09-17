@@ -433,6 +433,12 @@ data_upload_server <- function(id, shared) {
         return()
       }
       
+      if (is.null(input$lloq) || is.na(input$lloq) || input$lloq < 0) {
+        showNotification("Enter an LLOQ value (0 if no BLQ handling is needed), then click Process Data again.",
+                         type = "error", duration = 8)
+        return()
+      }
+
       # Quality check
       is_adnca <- identical(input$data_type, "adnca")
       qc <- run_data_quality_check(raw_data(), col_map, lloq = input$lloq,
@@ -484,6 +490,11 @@ data_upload_server <- function(id, shared) {
       shared$pk_data    <- data
       shared$col_map    <- col_map
       shared$data_ready <- TRUE
+      # Results belong to the data they were computed from; Plan a Study must not
+      # offer a CV from the previous file
+      shared$nca_results  <- NULL
+      shared$nca_settings <- NULL
+      shared$be_results   <- NULL
       shared$study_info <- list(
         design    = design,
         lloq      = input$lloq,

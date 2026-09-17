@@ -127,8 +127,13 @@ methods_ui <- function() {
           "the terminal log-linear phase. ",
           "The regression was fitted to the last n data points after C", tags$sub("max"),
           " (where n \u2265 3), and the combination yielding the highest adjusted coefficient ",
-          "of determination (R\u00B2", tags$sub("adj"), ") was selected automatically. ",
-          "Only fits with R\u00B2", tags$sub("adj"), " \u2265 0.70 were accepted (configurable by the analyst). ",
+          "of determination (R\u00B2", tags$sub("adj"), ") was selected automatically, as implemented ",
+          "in NonCompart (for extravascular administration the C", tags$sub("max"), " point is excluded; ",
+          "fits within 0.0001 of the best R\u00B2", tags$sub("adj"), " prefer more points). ",
+          "When the selected fit had R\u00B2", tags$sub("adj"), " below the threshold (default 0.70, ",
+          "configurable by the analyst), \u03BB", tags$sub("z"), " and all parameters derived from it ",
+          "(t", tags$sub("\u00BD"), ", AUC", tags$sub("0\u2013\u221E"), ", CL/F, V", tags$sub("z"),
+          "/F, MRT) were not reported for that profile, unless the analyst selected the points manually. ",
           "The slope of the regression equals \u2212\u03BB", tags$sub("z"), ":"
         ),
         eq("\u03BB", tags$sub("z"), " = \u2212slope of the ln(C) vs. time regression"),
@@ -411,8 +416,10 @@ methods_ui <- function() {
         tags$div(
           class = "alert alert-warning py-2 small mt-2",
           tags$strong("Limitation: "),
-          "This application performs ", tags$strong("standard Average Bioequivalence (ABE)"),
-          " only, using fixed acceptance limits of 80.00\u2013125.00%. ",
+          "This application performs ", tags$strong("Average Bioequivalence (ABE)"),
+          " only, with acceptance limits of 80.00\u2013125.00% by default. Wider limits can be entered ",
+          "when they are pre-specified in the protocol; the app does not derive them from CV",
+          tags$sub("wR"), ", and by default then also requires the point estimate within 80.00\u2013125.00%. ",
           "It does ", tags$strong("not"), " perform reference-scaled analyses (ABEL, RSABE) ",
           "or narrow therapeutic index (NTID) analyses. For highly variable drug products ",
           "that require widened or scaled acceptance limits, the replicate design data should be ",
@@ -466,7 +473,8 @@ methods_ui <- function() {
                pkg_ver("nlme"), "; Pinheiro & Bates, 2000):"),
         tags$p(class = "small",
                "Sequence, Period, and Treatment were modelled as fixed effects. ",
-               "Subject nested within Sequence was modelled as a random effect:"),
+               "Subject was modelled as a random intercept (subject identifiers are unique across ",
+               "sequences, so this is equivalent to Subject nested within Sequence):"),
         eq("ln(PK) = (\u03B2", tags$sub("0"), " + \u03B2", tags$sub("Seq"),
            " + \u03B2", tags$sub("Per"), " + \u03B2", tags$sub("Trt"),
            ") + (b", tags$sub("Subj(Seq)"), ") + \u03B5"),
@@ -511,7 +519,10 @@ methods_ui <- function() {
         tags$p(
           "Bioequivalence was concluded if the 90% confidence interval for the geometric ",
           "mean ratio (Test/Reference) fell entirely within the pre-specified acceptance ",
-          "limits (default: 80.00\u2013125.00%), in accordance with EMA (2010) and FDA (2003) guidance."
+          "limits (default: 80.00\u2013125.00%), in accordance with EMA (2010) and FDA (2003) guidance. ",
+          "The confidence limits were rounded to two decimals before comparison with the acceptance ",
+          "limits (FDA, Statistical Approaches to Establishing Bioequivalence, 2026). The Reference ",
+          "treatment was chosen by the analyst."
         ),
         
         ref_box(
@@ -575,7 +586,9 @@ methods_ui <- function() {
                " of the reference > 30%), ",
                "the EMA allows widening of the acceptance limits based on the within-subject ",
                "variability of the reference product (Average Bioequivalence with Expanding ",
-               "Limits; ABEL). Power was estimated by simulation (default: 100,000 studies) ",
+               "Limits; ABEL). Power was estimated by simulation in PowerTOST (100,000 simulated studies ",
+               "for sample size, 10,000 for power and the power curve), using the within-subject CVs of ",
+               "both the Test and the Reference. ",
                "using the method implemented in PowerTOST. The acceptance limits were scaled as:"),
         eq("[exp(\u2212k \u00D7 s", tags$sub("wR"), "), exp(+k \u00D7 s", tags$sub("wR"),
            ")]  where s", tags$sub("wR"), " = sqrt(MSE", tags$sub("R"),

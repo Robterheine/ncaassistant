@@ -33,6 +33,16 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
     )
   }
   
+  # An empty or invalid LLOQ field is reported instead of stopping the check
+  lloq_num <- suppressWarnings(as.numeric(lloq))
+  if (length(lloq_num) != 1 || is.na(lloq_num) || lloq_num < 0) {
+    add("ERROR", "Concentration", "LLOQ value is empty or invalid",
+        paste0("LLOQ entered: ", if (length(lloq) == 0 || all(is.na(lloq))) "(empty)" else paste(lloq, collapse = " ")),
+        "Enter 0 if no BLQ handling is needed, otherwise the LLOQ, then click Process Data again.")
+    lloq_num <- 0
+  }
+  lloq <- lloq_num
+
   n_rows <- nrow(data)
   n_cols <- ncol(data)
   raw_data <- data

@@ -2644,6 +2644,110 @@ check("REV2-07", "Confidence interval column names follow the chosen level",
 end_section("REV2")
 
 # =============================================================================
+# SECTION REV3: Remaining findings of the second review
+# =============================================================================
+start_section("REV3")
+
+rev3_code <- function(f) { x <- readLines(f, warn = FALSE); x[!grepl("^\\s*#", x)] }
+rev3_noisy <- data.frame(ID = "1", T = c(0, 1, 2, 4, 6, 8, 12, 24), C = c(0, 10, 8, 3, 6, 2, 5, 1.5))
+rev3_cm <- list(subject = "ID", time = "T", conc = "C")
+rev3_st <- function(thr) list(admin_route = "extravascular", dose = 100, trap_method = "log",
+                              dose_unit = "mg", time_unit = "h", conc_unit = "ng/mL",
+                              is_steady_state = FALSE, mw = 0, r2adj_threshold = thr)
+
+check("REV3-01", "Results of a previous dataset are cleared when new data are processed",
+  tryCatch({
+    src <- paste(rev3_code("R/mod_data_upload.R"), collapse = "\n")
+    grepl("shared\\$be_results\\s*<-\\s*NULL", src) &&
+      grepl("shared\\$nca_results\\s*<-\\s*NULL", src)
+  }, error = function(e) FALSE),
+  "URS-PWR-01", critical = FALSE, method = "upload module clears shared BE and NCA results",
+  expected = "both cleared")
+
+check("REV3-02", "Bioequivalence texts do not state a fixed 90% level",
+  tryCatch(!any(grepl("90% (CI|confidence)", rev3_code("R/mod_path_be.R"))), error = function(e) FALSE),
+  "URS-BE-02", critical = FALSE, method = "search non-comment lines of mod_path_be.R", expected = "none")
+
+check("REV3-03", "Half-life-based parameters are missing when the fit is below the R2 threshold",
+  tryCatch({
+    lo <- suppressWarnings(run_nca(rev3_noisy, rev3_cm, rev3_st(0.7)))
+    hi <- suppressWarnings(run_nca(rev3_noisy, rev3_cm, rev3_st(0.3)))
+    w <- tryCatch({ run_nca(rev3_noisy, rev3_cm, rev3_st(0.7)); "" }, warning = function(w) conditionMessage(w))
+    s_lo <- run_single_nca(rev3_noisy$T, rev3_noisy$C, rev3_st(0.7))
+    all(is.na(as.numeric(unlist(lo[c("LAMZHL", "AUCIFO", "CLFO", "VZFO", "MRTEVIFO")])))) &&
+      !is.na(as.numeric(lo$CMAX)) && !is.na(as.numeric(lo$AUCLST)) && !is.na(as.numeric(lo$R2ADJ)) &&
+      !is.na(as.numeric(hi$LAMZHL)) && grepl("R", w) &&
+      is.na(s_lo["LAMZHL"]) && is.na(s_lo["AUCIFO"]) && !is.na(s_lo["AUCLST"])
+  }, error = function(e) FALSE),
+  "URS-NCA-03", critical = TRUE,
+  method = "noisy profile, best adj R2 0.33; threshold 0.7 vs 0.3; batch and single",
+  expected = "t1/2, AUCinf, CL/F, Vz/F, MRTinf missing at 0.7 with a warning; present at 0.3")
+
+check("REV3-04", "A manual half-life selection is kept whatever its R2",
+  tryCatch({
+    ov <- list(list(subject = "1", time_used = c(2, 4, 6, 8, 12, 24)))
+    r <- run_nca(rev3_noisy, rev3_cm, rev3_st(0.7), lz_overrides = ov)
+    s <- run_single_nca(rev3_noisy$T, rev3_noisy$C, rev3_st(0.7), time_used = c(2, 4, 6, 8, 12, 24))
+    !is.na(as.numeric(r$LAMZHL)) && !is.na(s["LAMZHL"])
+  }, error = function(e) FALSE),
+  "URS-NCA-04", critical = TRUE, method = "override on the noisy profile, threshold 0.7",
+  expected = "half-life reported")
+
+check("REV3-05", "The half-life review shows NonCompart's own automatic fit",
+  tryCatch({
+    th <- datasets::Theoph
+    ok <- vapply(split(th, th$Subject), function(d) {
+      a <- estimate_lambda_z(d$Time, d$conc, 0)
+      b <- NonCompart::sNCA(d$Time, d$conc, dose = 320, doseUnit = "mg", timeUnit = "h",
+                            concUnit = "mg/L", R2ADJ = 0)
+      isTRUE(all.equal(a$half_life, unname(b["LAMZHL"]))) && a$n_points == b["LAMZNPT"] &&
+        length(a$time_used) == b["LAMZNPT"]
+    }, logical(1))
+    all(ok)
+  }, error = function(e) FALSE),
+  "URS-NCA-04", critical = TRUE, method = "estimate_lambda_z vs sNCA on all 12 Theoph profiles",
+  expected = "same half-life and points (subject 6: 7.90 h, 7 points)")
+
+check("REV3-06", "Single-subject results are cleared when another profile is selected",
+  tryCatch({
+    src <- rev3_code("R/mod_path_single_nca.R")
+    i <- grep("observeEvent(input$sel_profile", src, fixed = TRUE)
+    any(vapply(i, function(k) any(grepl("nca_res(NULL)", src[k:min(k + 3, length(src))], fixed = TRUE)), logical(1)))
+  }, error = function(e) FALSE),
+  "URS-NCA-01", critical = TRUE, method = "sel_profile observer in mod_path_single_nca.R",
+  expected = "clears nca_res")
+
+check("REV3-07", "An empty LLOQ field is reported, not a crash",
+  tryCatch({
+    th <- datasets::Theoph; th$Subject <- as.character(th$Subject)
+    q <- run_data_quality_check(th, list(subject = "Subject", time = "Time", conc = "conc"), lloq = NA)
+    !q$pass && any(grepl("LLOQ", q$findings$Message))
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = FALSE, method = "run_data_quality_check(lloq = NA)", expected = "ERROR finding about the LLOQ")
+
+check("REV3-08", "Figure texts describe the error bars as geometric SD",
+  tryCatch(!any(grepl("geometric CV%", c(rev3_code("R/mod_path_viz.R"), rev3_code("R/export_record.R")),
+                      ignore.case = TRUE)), error = function(e) FALSE),
+  "URS-VIZ-03", critical = FALSE, method = "search figure module and record", expected = "no 'geometric CV%' label")
+
+check("REV3-09", "Help texts make no regulatory-submission claim",
+  tryCatch(!any(grepl("regulatory submission", rev3_code("R/help_system.R"), ignore.case = TRUE)),
+           error = function(e) FALSE),
+  "URS-GEN-01", critical = FALSE, method = "search help_system.R", expected = "none")
+
+check("REV3-10", "Methods page matches the implementation",
+  tryCatch({
+    m <- paste(rev3_code("R/mod_methods.R"), collapse = " ")
+    !grepl("using fixed acceptance limits of 80.00", m, fixed = TRUE) &&
+      grepl("rounded to two decimals", m, fixed = TRUE) &&
+      grepl("10,000", m, fixed = TRUE) &&
+      !grepl("Subject nested within Sequence was modelled as a random effect", m, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-GEN-01", critical = FALSE, method = "search mod_methods.R", expected = "limits, rounding, simulations, random effect described as implemented")
+
+end_section("REV3")
+
+# =============================================================================
 # Post-execution
 # =============================================================================
 cat("\n", paste(rep("=",72),collapse=""), "\n")

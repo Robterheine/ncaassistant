@@ -190,7 +190,15 @@ path_single_nca_server <- function(id, shared) {
                             lz_override = NULL)  # manual lambda_z from recalculate
     
     # Reset lambda_z override when profile changes or new NCA runs
-    observeEvent(input$sel_profile, { local$lz_override <- NULL }, ignoreInit = TRUE)
+    # A result belongs to the profile it was computed for: clear it when the
+    # profile or the data source changes, so results, CSV and Analysis Record
+    # can never pair one profile's parameters with another profile's data
+    observeEvent(input$sel_profile, {
+      nca_res(NULL)
+      local$lz_override <- NULL
+    }, ignoreInit = TRUE)
+    observeEvent(input$data_mode, { nca_res(NULL); local$lz_override <- NULL }, ignoreInit = TRUE)
+    observeEvent(shared$pk_data, { nca_res(NULL); local$lz_override <- NULL }, ignoreInit = TRUE)
     observeEvent(input$btn_use_manual, { local$lz_override <- NULL }, ignoreInit = TRUE)
     
     # Auto-fill dose from data when profile changes
@@ -403,7 +411,7 @@ path_single_nca_server <- function(id, shared) {
            infusion_duration = if (input$admin_route == "iv_infusion") input$inf_dur else 0,
            is_steady_state = isTRUE(input$is_ss),
            dose_unit = input$dose_unit, time_unit = input$time_unit, conc_unit = input$conc_unit,
-           trap_method = input$trap_method,
+           trap_method = input$trap_method, r2adj_threshold = input$r2adj,
            mw = if (is.null(input$mw) || is.na(input$mw)) 0 else input$mw)
     }
     observeEvent(input$run_nca, {
@@ -435,6 +443,12 @@ path_single_nca_server <- function(id, shared) {
       
       # For steady-state: derive tau-based parameters (use coerced numerics)
       if (!is.null(r) && isTRUE(input$is_ss)) r <- add_steady_state_parameters(r, t_num, c_num)
+      if (!is.null(r) && below_r2_threshold(r["R2ADJ"], input$r2adj)) {
+        showNotification(paste0("Adjusted R\u00b2 of the terminal fit (", signif(as.numeric(r["R2ADJ"]), 3),
+                                ") is below ", input$r2adj, ": half-life, AUC to infinity, CL/F, Vz/F ",
+                                "and MRT are not reported. Review the fit in Half-Life Review."),
+                         type = "warning", duration = 12)
+      }
       
       nca_res(r)
     })
@@ -516,7 +530,7 @@ path_single_nca_server <- function(id, shared) {
     output$lz_info <- renderUI({
       d <- tc(); req(length(d$time) >= 3)
       lz <- if (!is.null(local$lz_override)) local$lz_override
-            else estimate_lambda_z(d$time, d$conc, input$r2adj)
+            else estimate_lambda_z(d$time, d$conc, input$r2adj, route = input$admin_route)
       if (is.na(lz$lambda_z))
         tags$div(class="alert alert-warning py-2", tags$small(tags$strong("Not estimable. "), lz$message))
       else {
@@ -533,7 +547,7 @@ path_single_nca_server <- function(id, shared) {
       d <- tc(); req(length(d$time) >= 3)
       tryCatch({
       lz <- if (!is.null(local$lz_override)) local$lz_override
-            else estimate_lambda_z(d$time, d$conc, input$r2adj)
+            else estimate_lambda_z(d$time, d$conc, input$r2adj, route = input$admin_route)
       df <- data.frame(
         Time = d$time,
         ln_Conc = ifelse(d$conc > 0, log(d$conc), NA),
@@ -592,7 +606,7 @@ path_single_nca_server <- function(id, shared) {
         if (!is.null(local$lz_override)) {
           sel <- as.character(which(term)[d$time[term] %in% local$lz_override$time_used])
         } else {
-          lz <- estimate_lambda_z(d$time, d$conc, input$r2adj)
+          lz <- estimate_lambda_z(d$time, d$conc, input$r2adj, route = input$admin_route)
           sel <- if (length(lz$time_used) > 0)
             as.character(which(term)[d$time[term] %in% lz$time_used]) else NULL
         }
@@ -716,7 +730,7 @@ path_single_nca_server <- function(id, shared) {
           # the automatic fit at the current R-squared threshold).
           lz_override <- NULL
           if (!is.null(local$lz_override) && length(d$time) >= 3) {
-            auto <- tryCatch(estimate_lambda_z(d$time, d$conc, input$r2adj),
+            auto <- tryCatch(estimate_lambda_z(d$time, d$conc, input$r2adj, route = input$admin_route),
                              error = function(e) NULL)
             lz_override <- list(
               profile            = subject_label,

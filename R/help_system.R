@@ -342,14 +342,13 @@ help_mixed_effects <- info_btn("help_mixed_effects", "Fixed vs. Mixed effects?",
   "<b>Fixed effects</b>: Treats Subject as a fixed factor. Standard for balanced 
   crossover studies. Simpler.
   <br><br>
-  <b>Mixed effects</b> (recommended by FDA): Treats Subject as a <b>random</b> 
-  effect nested within Sequence. More appropriate when there are dropouts 
+  <b>Mixed effects</b>: Treats Subject as a <b>random</b> effect. Uses subjects 
+  with only one treatment as well, which can help when there are dropouts 
   or unbalanced data.
   <br><br>
   For a balanced 2×2 crossover with no dropouts, both give the same result.
   <br><br>
-  <em>Use mixed effects if you have missing data or your regulatory submission 
-  targets the FDA.</em>")
+  <em>Use the model your protocol or statistical analysis plan specifies.</em>")
 
 # --- POWER & SAMPLE SIZE ---------------------------------------------------
 
@@ -410,8 +409,7 @@ help_theta0 <- info_btn("help_theta0", "What is the expected T/R ratio?",
   <li>Type <b>95</b> as a standard assumption.</li>
   <li>Type <b>105</b> if you expect the Test to be slightly higher than Reference.</li>
   </ul>
-  <b>When in doubt, use 95.</b> This is the conventional assumption
-  used in most regulatory submissions.")
+  <b>When in doubt, use 95.</b> This is the conventional planning assumption.")
 
 # --- LAMBDA Z INSPECTOR ----------------------------------------------------
 
@@ -485,8 +483,9 @@ help_analysis_record <- info_btn("help_analysis_record",
   <li><b>HTML summary</b> — a human-readable record of methods and environment</li>
   <li><b>A copy of your original data</b> — so the package stands on its own</li>
   </ul>
-  <b>When to use it:</b> regulatory submissions, publication supplements, and audit
-  trails — any time someone needs to verify how the result was produced.")
+  <b>When to use it:</b> archiving, audit trails, publication supplements, and 
+  a sponsor's study documentation — any time someone needs to verify how the 
+  result was produced.")
 
 # ============================================================================
 # SHARED UI — Analysis Record panel (used by every analysis tab)
@@ -511,7 +510,7 @@ analysis_record_ui <- function(ns, intro = NULL,
   default_intro <- paste0(
     "Download a self-contained package — results, settings, a standalone R ",
     "script that reproduces this analysis, a SHA-256 data-integrity hash, and an ",
-    "HTML summary. For regulatory submissions, publication supplements, and audit trails.")
+    "HTML summary. For archiving, audit trails, publication supplements, and study documentation.")
 
   card(
     class = "mt-3 border-secondary-subtle",
