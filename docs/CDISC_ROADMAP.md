@@ -1,13 +1,24 @@
-# CDISC compatibility — roadmap and handoff (Phases 1–5)
+# NCA Assistant — roadmap and handoff
 
-**Status:** Phase 0 complete and released as v1.3.0 (commit `58d6f5b`).
 **Audience:** a fresh session, or a future maintainer, picking this up cold.
-**Written:** September 2026, against app v1.3.0.
+**Written:** September 2026, against app v1.3.0. Last updated 2026-09-17.
 
-This document is the design record for making NCA Assistant interoperate with
-CDISC-structured pharmacokinetic data. It exists so that the reasoning behind
-the scope decisions is not lost, because several of those decisions are
-deliberate refusals that look like omissions.
+This document is the design record for two separate workstreams, both arising
+from peer review of the manuscript. It exists so that the reasoning behind the
+scope decisions is not lost, because several of those decisions are deliberate
+refusals that look like omissions.
+
+| Part | Workstream | Status |
+|---|---|---|
+| **A** (§1–9) | CDISC / SDTM interoperability | Phase 0 shipped in v1.3.0 (`58d6f5b`). Phases 1–5 pending. |
+| **B** (§10–15) | Bioequivalence design coverage — replicate designs | Reviewed, decided, not yet built. **This is the next version.** |
+
+The two interact: Part B's implementation is cheaper and cleaner if Part A's
+Phase 1 (extract `R/pipeline.R`) is done first. See §14.
+
+---
+
+# PART A — CDISC interoperability
 
 ---
 
@@ -508,7 +519,7 @@ Do not write these from memory.
 
 ---
 
-## 9. Suggested order
+## 9. Suggested order within Part A
 
 1. **Phase 1** — extract the pipeline. Highest leverage; makes everything else
    testable and turns "reproducible" into a verified property.
@@ -518,3 +529,543 @@ Do not write these from memory.
 4. **The standalone `adnca_to_flat.R` converter** (§7). Two days, and it
    generates the evidence for the next decision.
 5. **Then decide** on Phase 3 based on whether anyone used the converter.
+
+This order is now subordinate to Part B, which is the next version. See the
+combined order at the end of §15.
+
+---
+
+# PART B — Bioequivalence design coverage (replicate designs)
+
+**Decision: this is the next version.** Reviewed September 2026 by a senior
+biostatistician, a senior clinical pharmacologist and an R/Shiny engineer.
+Nothing below has been built yet.
+
+---
+
+## 10. Why this work started, and what the review actually found
+
+A peer reviewer observed that the analysis module does not cover every design the
+planning module can plan for:
+
+| | Designs offered |
+|---|---|
+| **Plan a Study** (`R/mod_path_power.R` ~216) | ABE: `2x2`, `2x2x3`, `2x3x3`, `2x2x4`, `parallel`; ABEL/RSABE: `2x2x3`, `2x3x3`, `2x2x4`; NTID: `2x2x4` |
+| **BE Testing** (`R/mod_path_be.R` ~86) | `crossover_2x2`, `crossover_fixed_order`, `crossover_3period`, `parallel`, `replicate_2x2x4` |
+
+**The reviewer's premise about the statistical model is wrong, and the real
+problem is worse than the one they identified.**
+
+### 10.1 The model is already correct
+
+The statistician verified that the app's fixed-effects model reproduces
+`replicateBE::method.A` — the EMA reference implementation — **exactly** (point
+estimate, confidence interval and degrees of freedom to three decimal places) on
+14 of the EMA reference datasets, including unbalanced ones with real dropouts.
+
+Residual degrees of freedom match PowerTOST's formula for every planner design,
+in both the `lme` and `lm` variants, balanced and unbalanced:
+
+| Design | Sequences used | PowerTOST df | App df |
+|---|---|---|---|
+| `parallel` | 2 groups | n−2 = 22 | 22 |
+| `2x2` | TR \| RT | n−2 = 22 | 22 |
+| `2x2x3` | TRT \| RTR (and TRR \| RTT) | 2n−3 = 45 | 45 |
+| `2x3x3` | TRR \| RTR \| RRT | 2n−3 = 45 | 45 |
+| `2x2x4` | TRTR \| RTRT (and TRRT \| RTTR) | 3n−4 = 68 | 68 |
+
+So there is **no model gap to close**, and no degrees-of-freedom problem. The
+generic "3-period crossover" option is statistically correct for both `2x2x3`
+and `2x3x3` in the EMA Method A sense. This is worth stating in the manuscript:
+the app's BE analysis *is* EMA Method A, demonstrably.
+
+### 10.2 But a shipping design is silently broken
+
+Two independent defects, both reproduced directly against the app's own code.
+
+**D1 — Replicate profiles are merged before NCA.**
+`run_nca()` (`R/nca_helpers.R` ~307) keys profiles as `paste(subject, treatment, sep="||")`.
+Period is not in the key. In any replicate design a subject receives the same
+treatment more than once, so **both administrations collapse into one key** and
+are analysed as a single interleaved profile.
+
+Measured on a 2×2×4 (TRTR \| RTRT), 6 subjects × 4 periods:
+
+```
+expected NCA profiles: 24        returned: 12   (2 per subject)
+```
+
+One subject, true per-period values vs what the app reports:
+
+```
+truth  period 1 (T): CMAX 63.748   AUCLST 295.564
+       period 2 (R): CMAX 73.975   AUCLST 313.341
+       period 3 (T): CMAX 71.863   AUCLST 311.744
+       period 4 (R): CMAX 65.703   AUCLST 296.164
+
+app    T: CMAX 71.863  AUCLST 304.300     <- max across both T administrations
+       R: CMAX 73.975  AUCLST 303.786     <- max across both R administrations
+```
+
+Cmax becomes the **maximum across both administrations** (systematic upward
+bias); AUC is a trapezoid computed over an interleaved zig-zag.
+
+The failure is data-dependent and mostly silent:
+
+| Time column | Behaviour |
+|---|---|
+| Nominal times repeated each period | `data_quality.R:421` raises a duplicate-time ERROR and blocks the upload — but its remediation text tells the user to map Treatment and Period, which they already did. Dead end. |
+| Actual/elapsed times (no exact ties) | **24 → 12 profiles, silently.** Warning count is dataset-dependent; on one run there were none at all. |
+| An internal tie in the interleaved profile | `run_nca()` returns NULL, "the condition has length > 1" → generic "NCA failed." |
+
+Where warnings do appear they are cryptic R internals ("numerical expression has
+2 elements: only the first used"), which `mod_path_be.R` catches and renders as a
+bland `"Note:"`. **Do not rely on warnings as the detection mechanism.**
+
+In a partial replicate (`2x3x3`, only R replicated) the bias is one-sided: the
+clinical pharmacologist simulated a true 100 % ratio reading out at **84.4 % Cmax
+at CV 45 %** — precisely the CV range where a partial replicate would be run.
+
+This same keying is *why* `mod_path_be.R:507` hard-refuses more than two treatment
+levels. That restriction is forced by the architecture, not a scope decision.
+
+**D2 — The design merge then duplicates every row.**
+`mod_path_be.R` ~476 builds `design_df` with
+`select(Subject, Treatment, Period, Sequence) %>% distinct()`, which in a
+replicate yields **two rows per (Subject, Treatment)**, then merges on
+`Subject` + `Treatment` only. Each NCA value is entered twice.
+
+```
+6 subjects, 2x2x4:   NCA 12 rows  ->  design_df 24 rows  ->  be_data 24 rows
+                     each NCA value entered 2x
+                     CI table reports N_Test = 12 for a 6-subject study
+```
+
+Measured harm on a clean 12-subject dataset (duplication alone, no NCA collapse):
+
+```
+honest (12 subjects)   rows 24 | PE 94.51% | 90% CI 86.73 - 102.99 | width 16.27 | df 10
+as the app fits it     rows 48 | PE 94.51% | 90% CI 90.36 -  98.85 | width  8.49 | df 32
+
+app CI width is 52% of honest -> too narrow, i.e. biased toward declaring BE
+```
+
+Point estimate unchanged; confidence interval systematically too narrow and
+degrees of freedom inflated. **This is the false-PASS direction.**
+
+**D1 and D2 must be fixed together.** Verified: making the key period-aware while
+leaving the merge on Subject + Treatment takes 24 NCA rows to **48** `be_data`
+rows and makes the interval worse still. Nobody should touch `R/nca_helpers.R`
+before the replicate fixture test exists and fails for the right reason.
+
+### 10.3 Four smaller defects found in passing
+
+| ID | Defect | Location |
+|---|---|---|
+| **D3** | **No point-estimate constraint.** Acceptance is `be_pass <- ci_lo >= be_lower & ci_hi <= be_upper`, and the limits are free numeric inputs. A user who plans ABEL, reads off 69.84/143.19 and types them in gets "Bioequivalent: YES" with a point estimate of 135 % — which is not an ABEL verdict, since ABEL also requires the PE inside 80–125. | `mod_path_be.R:715` |
+| **D4** | **`random = ~1\|Sequence/Subject` is the wrong nesting.** Subject IDs are already unique, so this puts a random intercept on Sequence while Sequence is also a fixed effect. Produces `DF = 0` / `F = NaN` for the Sequence row in the ANOVA table and the `pt(...): NaNs produced` warnings on every mixed-model run. Treatment inference is unaffected. Fix: drop `Sequence/`. | `mod_path_be.R:631` |
+| **D5** | **The "no ABEL/RSABE" warning is on the wrong design.** It sits inside `conditionalPanel(be_design == 'replicate_2x2x4')`, but the planner offers scaled methods on `2x2x3` and `2x3x3` too — which map to `crossover_3period`, which shows nothing. Two of the three designs that need the warning do not get it. | `mod_path_be.R:110` |
+| **D6** | **`crossover_fixed_order` is numerically identical to a paired t-test** (verified: same estimate, SE, df = n−1) — i.e. PowerTOST's `paired`. Period and treatment are fully confounded, so it cannot support a BE conclusion, yet the results pane still prints a BE verdict against 80–125 %. The warning and the output contradict each other, and the output wins. | `mod_path_be.R:618` |
+
+### 10.4 Three more places with the same period-blind grain assumption
+
+These must move in lockstep with D1 or the fix is only half done:
+
+- `nca_helpers.R:36-40` — `apply_blq_rules()` uses the identical period-blind
+  profile key. Positional BLQ rules (1, 5, 6) therefore run "first quantifiable"
+  and "post-Cmax" across both administrations at once. This is the same class of
+  bug the v1.3.0 `REG-BLQ-01/02` fix addressed; it was fixed one level short.
+- `data_quality.R:385-400` — the duplicate-time check branches on `has_trt`
+  *before* `has_per`, so with both mapped it groups by Treatment, not
+  Treatment × Period.
+- `mod_path_be.R:1172-1178` and `mod_path_multi_nca.R:779-781` — the half-life
+  override does `which(Subject == x & Treatment == y)` then
+  `if (length(row_idx) == 1)`. With replicates that is length 2 → **silent
+  no-op**: the user adjusts a terminal slope, sees the "Recalculated"
+  notification, and nothing is written back.
+
+---
+
+## 11. Decisions taken
+
+These were argued out with the three specialists. If you reverse one, record why.
+
+### 11.1 Build full replicate support — Option B
+
+The alternative considered was to detect repeated (Subject, Treatment) pairs,
+refuse the file, and remove the `replicate_2x2x4` option since it cannot pass its
+own check (~1 day). **Rejected** in favour of building it properly, because the
+planning module can size these designs and the modules should agree.
+
+### 11.2 Report CVwR as a diagnostic, but issue no scaled verdict
+
+Both specialists independently argued that correct *unscaled* ABE on a replicate
+design is a door returning a number users should not rely on — nobody runs a
+replicate design to get 80–125 % limits. The agreed middle path:
+
+Compute and display, on any design where the reference is replicated:
+
+- **s_wR and CVwR**, from the **period-adjusted reference-only model**
+- **CVwT and the s_wT : s_wR ratio** where estimable (full replicates only; the
+  partial replicate `2x3x3` administers T once, so CVwT is **not estimable** —
+  say so explicitly rather than showing a blank)
+- the **ABEL limits those CVwR values would imply**, with the 50 % cap applied,
+  clearly marked informational
+- the **point estimate against the 80–125 % constraint**
+- the conventional ABE result, as now
+
+and then state plainly: *"These are the inputs to a scaled assessment. This app
+does not issue a scaled bioequivalence verdict. For a regulatory decision use
+`replicateBE` or validated commercial software."*
+
+This closes the perceived gap at low regulatory exposure, and the CVwR estimate
+feeds back into the planning module — closing the loop between the two modules in
+the direction that actually matters.
+
+> **Trap, verified by the statistician.** The CVwR model **must include a period
+> term**. A naive `lm(log(PK) ~ subject)` on reference-only data disagreed with
+> `replicateBE` on all ten datasets tested. On one it gave CVwR 312 % vs the
+> correct 222 %. On another it **flipped the regulatory decision**:
+> ```
+> rds17  naive  swR 0.2847  CVwR 29.05%  -> RSABE applies = FALSE
+>        adj    swR 0.2972  CVwR 30.39%  -> RSABE applies = TRUE
+> ```
+> The correct model is `lm(log(PK) ~ sequence + subject + period)` restricted to
+> subjects with ≥ 2 reference observations, with every term added **conditionally
+> on still having ≥ 2 levels after filtering** — a `2x2x3` TRT\|RTR design loses a
+> whole sequence at that filter and `lm` otherwise errors.
+
+### 11.3 Do NOT implement ABEL, RSABE or NTID verdicts
+
+Unanimous across all three specialists. The mathematics is roughly 200 lines and
+the statistician wrote a working prototype in an hour — that is not the problem.
+The problem is that **every failure mode in this domain is silent and produces a
+plausible number**, and the bias is asymmetric in the dangerous direction: scaled
+methods widen the acceptance region, so a bug that widens further, or that drops
+the point-estimate constraint, causes false BE claims.
+
+The statistician's own prototype disagreed with the reference implementation on
+all ten datasets at first attempt, and flipped a regulatory decision on one.
+
+Named traps, all silent: the period term in the CVwR model (§11.2); degenerate
+subsets after reference-only filtering; the chi-square tail direction in the
+Hyslop bound (`qchisq(0.05, df)`, not `0.95` — reverse it and *every* study
+passes); reference-outlier handling; and the point-estimate constraint and 50 %
+cap, both trivial to code and trivial to forget.
+
+`replicateBE` (Helmut Schütz) is peer-reviewed, actively maintained, and
+qualified against the EMA reference datasets with published expected values.
+Point at it.
+
+**If this is ever revisited**, the non-negotiable minimum is: (i) a regression
+suite running all 30 `replicateBE` datasets with tolerances, in CI, failing the
+build on drift; (ii) the point-estimate constraint implemented *before* any
+scaled limit is offered anywhere; (iii) a validation report in `validation/`.
+
+### 11.4 Keep `fixed_order`, but reframe it
+
+It is not a BE design — period and treatment are fully confounded — but it is
+probably used more by this app's actual audience than any replicate design: DDI
+studies (you cannot un-induce CYP3A4), hospital PK before and after a switch,
+teaching datasets, food-effect and dose-proportionality pilots.
+
+- Rename to **"Paired comparison (single sequence — not a bioequivalence design)"**.
+- **Suppress the BE verdict entirely** for this design. Report point estimate and
+  CI, and state that period and treatment are confounded.
+- Detect it (one sequence level) rather than relying on the user to select it;
+  the detection logic already exists at `mod_path_be.R:538`.
+- **Do not** add `paired` to the planning module as a peer of `2x2`. If it goes in
+  at all, it goes in a visually separated non-regulatory group.
+
+### 11.5 Do not add designs with more than two treatments
+
+`3x3`, `3x6x3`, `4x4`, `2x4x4`, `2x4x2` (Balaam's), `2x2x2r` (Liu's) — the
+planning module does not offer them either, so this is **not** a sync gap.
+
+Noted for the future: the clinical pharmacologist ranked multi-treatment support
+(3 formulations, or test/reference/food-effect in one study) as a **bigger real
+gap for this app's academic and hospital audience than reference scaling will
+ever be** — and it shares the same root fix, period-aware keying. Worth
+revisiting after Part B, not during.
+
+### 11.6 Do not "fix" the type I error inflation
+
+The statistician's simulations found α inflated above nominal in two situations:
+a subject-by-formulation interaction on replicate designs (α ≈ 0.089 at
+CVd = 0.30), and heteroscedasticity on the partial replicate `2x3x3`
+(α ≈ 0.078 at CVwT 40 % / CVwR 25 %, because r_T = 1 while r_R = 2 makes the
+pooled variance asymmetric).
+
+**This is a known property of the regulatory method, not a defect to fix.** EMA
+Method A *is* the pooled all-fixed ANOVA. Switching to a heteroscedastic or
+subject-by-formulation model would diverge from Method A and break the exact
+agreement demonstrated in §10.1. **Document the limitation; do not change the
+model.** Surface a note on `2x3x3` that CVwT is not estimable and the pooled-
+variance interval assumes CVwT ≈ CVwR.
+
+---
+
+## 12. Implementation plan
+
+### Tier 0 — Safety fixes, ship first and independently (~1 day)
+
+None of these depend on the replicate work, and D3 is a live false-pass risk.
+
+1. **D3 — point-estimate constraint** (`mod_path_be.R:715`). ~1 h.
+2. **D4 — `~1|Sequence/Subject` → `~1|Subject`** (`:631`). ~30 min. Removes the
+   `NaN` warnings and the `DF = 0` ANOVA row; treatment inference unaffected.
+3. **D5 — relocate the ABEL/RSABE warning** so it shows on `crossover_3period`
+   as well as `replicate_2x2x4`.
+4. **D6 — reframe `fixed_order`** and suppress its BE verdict (§11.4). ~2 h.
+5. **Fix the misdirecting duplicate-time remediation text** (`data_quality.R:428`),
+   which currently tells users to map columns they already mapped.
+
+### Phase B1 — Period-aware profile key (0.5 d)
+
+Add one helper to `R/nca_helpers.R`:
+
+```r
+profile_key <- function(data, col_map)
+  # -> list(key = <chr>, parts = data.frame(Subject, Treatment, Period))
+```
+
+Build from Subject + Treatment + Period when Period is mapped. **Split back by
+`match()` against `parts`, not `strsplit()`** — this also retires the
+"separator appears in a treatment name" hazard permanently.
+
+Apply it **unconditionally**, not only when a repeat is detected: a key shape
+that changes silently with the data is exactly the invisible behaviour this app
+is otherwise good at avoiding, and it would make the generated reproduction
+script data-dependent too.
+
+`apply_blq_rules()` must use the same helper, or BLQ and NCA disagree about what
+a profile is.
+
+**Dose matching is unaffected.** The v1.3.0 named-dose lookup
+(`match(final_keys, data[[nca_key]])`) is key-shape-agnostic. Verified.
+
+### Phase B2 — The merge (1.5 d) — the hard one
+
+`mod_path_be.R:476-490` must merge on `c("Subject","Treatment","Period")`.
+
+> **Type-coercion trap.** `nca_res$Period` arrives as character from the key
+> split; the uploaded Period column is usually integer. The merge will not match,
+> Period becomes all-NA, and `lm` drops every row. Coerce both — exactly as the
+> existing Subject coercion at `:480-483` already does, which exists because this
+> class of bug was hit once before.
+
+Also in this phase: `n1`/`n2` at `:702-703` count **rows**, and the results table
+labels them "N (Test)". With replicates that reports 2n where every reader will
+read subjects. Same in the design summary at `:773-820`. Fix the labelling to
+distinguish subjects from administrations.
+
+### Phase B3 — Downstream grain assumptions (2 d)
+
+- **Half-life override across three modules** (`mod_path_be.R:1172`,
+  `mod_path_multi_nca.R:779`, and the `lz_sub_data` subset at `mod_path_be.R:~1155`):
+  profile labels become `Subject | Treatment | Period`, which makes the
+  `length == 1` guard work again. Three near-copies — a candidate for sharing.
+- **Summary statistics** (`utils.R:305-319` via `mod_path_multi_nca.R:549`):
+  `summarize_pk_params()` pools both administrations into one geometric mean and
+  labels the result "Geometric CV (%)", which readers take as between-subject CV.
+  Decide and document what that column means for replicates.
+- **NCA results table** gains a Period column (`mod_path_be.R:891-896`).
+- **Forest plot is unaffected** — it works off `ci_table`, one row per parameter.
+- **Exports are mostly free** — they write the result frame wholesale and pick up
+  Period automatically.
+- **Viz module is unaffected.** It works off `shared$pk_data` directly and never
+  touches NCA results. One soft spot: the geometric-mean curve groups by
+  `(.time, .treatment)` (`mod_path_viz.R:576`), averaging both administrations at
+  each timepoint — defensible for a mean plot, worth a footnote.
+
+### Phase B4 — CVwR diagnostic (1 d)
+
+Per §11.2. Period-adjusted reference-only model, conditional term inclusion,
+CVwT and the ratio where estimable, implied ABEL limits with the cap, marked
+informational, no verdict. Validate against `replicateBE` on the EMA reference
+datasets — the statistician confirmed the period-adjusted model matches exactly
+on 10/10.
+
+### Phase B5 — Design menu and shared registry (1 d)
+
+Split the analysis menu to mirror the planner's vocabulary, with the design code
+visible: `2x2` standard crossover; `2x2x3` 2-sequence 3-period full replicate;
+`2x3x3` 3-sequence partial replicate; `2x2x4` 4-period full replicate;
+`parallel`; `paired (fixed order — not a BE design)`.
+
+`2x2x3` and `2x3x3` map to the **same fitted model** — correct, per §10.1 — but
+get separate entries, separate help text, and the design code goes into the
+export record.
+
+Then a small shared registry, `R/designs.R`, ~40 lines, a plain data frame:
+
+```r
+BE_DESIGNS <- data.frame(
+  code           = c("parallel","2x2x2","2x2x3","2x3x3","2x2x4","fixed_order"),
+  label          = c(...),
+  powertost_code = c("parallel","2x2","2x2x3","2x3x3","2x2x4","paired"),
+  n_periods      = c(1,2,3,3,4,2),
+  n_sequences    = c(NA,2,2,3,2,1),
+  replicated     = c(FALSE,FALSE,TRUE,TRUE,TRUE,FALSE),
+  plan_abe = ..., plan_scaled = ..., analyse_abe = ..., analyse_scaled = FALSE,
+  analysis_note  = c(...),
+  stringsAsFactors = FALSE)
+```
+
+The value is **not** DRY — two hardcoded lists is not a maintenance burden at
+this size. The value is that **the registry is the scope table, and it is
+executable, so the table cannot drift from the code**. Both module UIs consume it
+via `subset()`; the About page and README render it with `kable()`. That is what
+makes the reviewer's complaint structurally unable to recur.
+
+Best payoff: `detect_study_design()` (`utils.R:253-286`) already emits an
+`n_treatments × n_sequences × n_periods` code. Add `normalize_design_code()` and
+the app can finally check **what the data is** against **what the user selected**
+— roughly 10 lines once the vocabulary is shared.
+
+### Phase B6 — Validation (1.5 d)
+
+- **Fixtures** (`validation/fixtures/`, *not* `data/`): 2×2×4 TRTR\|RTRT,
+  2×2×3 TRT\|RTR, 2×3×3 TRR\|RTR\|RRT, plus a 2×2 control. Generate them from a
+  known PK model so expected values are analytic; commit both the generator and
+  the generated CSVs.
+- **Numeric agreement against `replicateBE::method.A`** on an EMA reference
+  dataset. This is the single most persuasive artefact the project can produce
+  and it is worth more than any number of extra dropdown entries.
+- **Profile-count tests**: a 2×2×4 with n subjects must yield 4n NCA profiles and
+  4n `be_data` rows — the test that would have caught both D1 and D2.
+- **Regression tests for D3–D6.**
+- Four join keys in `validation.R` use `paste(Subject, Treatment, sep="||")`
+  (`:907, 921, 936, 1063`) and need updating.
+
+> **Note on the existing suite.** `validation.R` cannot source the Shiny modules,
+> so it text-extracts functions with brace counting (`:40`), and several checks
+> are `grepl()` over source text — they assert a string exists, not that
+> behaviour is correct. That is precisely how D1 survived 191 tests. This is the
+> strongest argument for doing Part A Phase 1 first (§14).
+
+---
+
+## 13. Backward compatibility
+
+**Verified: non-replicate results do not change.** A standard 2×2 with 12
+subjects gives 24 unique keys under both the old `Subject||Treatment` and the new
+`Subject||Treatment||Period` — same partition, same membership. Every derived
+number is bit-identical.
+
+What does move:
+
+- **A new `Period` column** in the NCA results table and every export, for
+  everyone. Emit it always rather than conditionally: a results table that states
+  its own grain is worth the column.
+- **Row order** can change in one corner case. The sort is lexicographic on the
+  key, so treatments named `"A"` and `"AB"` reorder (`'B'` = 0x42 sorts before
+  `'|'` = 0x7C). No reordering occurs with Test/Reference labels. Row order
+  changes the bytes of `results.xlsx` and therefore its SHA-256.
+- **Existing analysis records are not retroactively invalidated.** The manifest
+  hashes the frozen source data, settings and results, and `generate_nca_script()`
+  writes a self-contained copy of the keying logic at export time, so an old
+  record reproduces itself forever. What changes is the cross-version claim.
+- **Bump `RECORD_SCHEMA_VERSION`** (currently `"1.2.2"`, `export_record.R:9`) and
+  — more valuable — **add `nca_profile_key: ["Subject","Treatment","Period"]` to
+  `analysis_settings.json`** so every record states its own grain. That single
+  line is what makes this change auditable years later.
+
+---
+
+## 14. Sequencing against Part A
+
+The engineer's advice, recorded because it is easy to get wrong:
+
+**Part A Phase 1 (extract `R/pipeline.R`) should come before Phase B1.**
+`export_record.R` contains three separate string-built copies of the
+composite-key and split-back logic (`:223-241`, `:356-360`). Phase 1 deletes all
+three by shipping the pipeline into the record zip. Doing B first means writing
+the keying fix three times and later deleting two — roughly one wasted focused
+day, plus three chances to introduce a divergence.
+
+Part A Phase 2 also already lists "stacked-file detection (duplicate times within
+subject × treatment)" as an interlock, which is closely related to the
+period-blind grain problem.
+
+**Decision taken: build Part B now, but write the profile-key logic once** as a
+helper in `nca_helpers.R` and have the script generators call it rather than
+string-building their own copies. This captures most of Phase 1's benefit for
+this specific change without doing all of Phase 1 first, and gets replicate
+support out months sooner. Phase 1 can then collapse the remainder.
+
+---
+
+## 15. Effort, risk, and facts to verify
+
+### Effort
+
+| Phase | Work | Focused days |
+|---|---|---|
+| Tier 0 | Safety fixes (D3–D6) — **independently shippable** | 1 |
+| B1 | Period-aware profile key | 0.5 |
+| B2 | Merge + type coercion + n-vs-rows labelling | 1.5 |
+| B3 | Half-life review, summary stats, table columns | 2 |
+| B4 | CVwR diagnostic | 1 |
+| B5 | Design menu split + shared registry | 1 |
+| B6 | Fixtures, replicateBE agreement, regression tests | 1.5 |
+| — | Contingency (merge and half-life both have silent failure modes) | +2 |
+| | **Total** | **~10.5** |
+
+At 4–6 h/week that is roughly **4–6 calendar months**. Tier 0 alone is one day
+and should not wait.
+
+### Risks
+
+- **Shipping B1 without B2.** Verified to make the confidence interval *worse*
+  (24 → 48 rows). Write the profile-count fixture test first and watch it fail
+  for the right reason.
+- **Period type coercion in the merge** silently producing NA Periods that `lm`
+  drops.
+- **The half-life override** silently no-opping — it already does today, and the
+  fix touches three near-identical copies.
+- **Scope creep toward scaled verdicts.** The first user with a 2×2×4 will ask.
+  §11.3 is the answer; write it into the URS rather than into a reply.
+
+### Facts to verify before any of this reaches the manuscript
+
+The statistical results in §10 are reproducible from the app's own code and need
+no further verification. The regulatory claims do:
+
+| Claim | Confidence | Action |
+|---|---|---|
+| EMA BE guideline specifies ANOVA with sequence, subject-within-sequence, period, formulation, all fixed | high on substance, medium on the section number | verify and cite the section |
+| EMA Q&A defines Method A (preferred) and Method B | high — reproduced to 3 dp on 14 datasets | pin the Q&A revision number |
+| **ICH M13A** (adopted 2024) and its treatment of the statistical model; M13B/M13C in development | medium — recent and moving | **verify the current text; this is the claim most likely to be out of date** |
+| ABEL mechanics: CVwR > 30 % trigger, 50 % cap, PE constraint 80–125 %, Cmax-only scope | medium-high on mechanics, medium on the scope restriction | verify against the current guideline |
+| FDA RSABE: linearised criterion, θ = (ln 1.25 / 0.25)², no upper cap | high on mechanics, medium on draft status | verify current HVD guidance version |
+| FDA NTID: full replicate + s_wT/s_wR ≤ 2.5 + unscaled criterion | medium-high | verify the bound and the CI method |
+| Fixed-order unacceptable for regulatory BE | high (structural) | cite the randomised-sequence requirement rather than asserting |
+| Tmax non-parametric requirement — the app's current warning (`mod_path_be.R:592`) is slightly stronger than the guidance, which ties it to a clinically relevant rapid-onset claim | moderate | soften the wording or cite precisely |
+| `replicateBE` is the de facto reference implementation | moderate-high | verify CRAN status and maintenance before depending on it |
+
+
+---
+
+## 16. Combined order across both workstreams
+
+Reconciling Part A and Part B. Part B is the next version; Part A resumes after.
+
+1. **Tier 0 safety fixes** (§12). One day, independently shippable, and D3 (the
+   missing point-estimate constraint) is a live false-pass risk that should not
+   wait for anything else.
+2. **The documentation overclaims** (§6) — the unsupported ALCOA+ claim, the
+   `ncar` "CDISC SDTM compatible" attribution, `README.md:24`'s replicate claim,
+   and the circular `URS-GEN-06` / `EXP-CD-01` pair. Cheap, and some are live in
+   a manuscript under review.
+3. **Part B, Phases B1–B6** (§12) — replicate design support with the CVwR
+   diagnostic. ~10 focused days. Write the profile-key helper once (§14).
+4. **Part A Phase 1** — extract `R/pipeline.R`. It collapses whatever key-building
+   duplication Part B leaves behind, and it is the fix for the fact that
+   `validation.R` cannot source the modules (§12, Phase B6 note).
+5. **Part A Phase 2** — interlocks, folding in the stacked-file detection that
+   overlaps Part B's grain checks.
+6. **The standalone `adnca_to_flat.R` converter** (§7), then decide on Phase 3.
+7. **Revisit multi-treatment designs** (§11.5) — ranked by the clinical
+   pharmacologist as a bigger real gap for this audience than reference scaling,
+   and it shares Part B's period-aware keying as its root fix.
