@@ -504,6 +504,14 @@ path_viz_server <- function(id, shared) {
         paste0(" ", blq_excl,
                " observation(s) with concentration \u2264 0 were excluded from the geometric mean.")
       else ""
+      # Replicate designs: a subject received a treatment in more than one
+      # period, so each summary point pools all administrations.
+      has_per <- !is.null(cm$period) && cm$period %in% names(d)
+      replicate_sent <- if (has_trt && has_per &&
+                            anyDuplicated(unique(d[, c(cm$subject, cm$treatment, cm$period)])[, 1:2]))
+        paste0(" In this replicate design, subjects received each repeated treatment in more ",
+               "than one period; each summary point pools all administrations of that treatment.")
+      else ""
       trt_sent <- if (length(trt_lvls) >= 2)
         paste0(" Treatment groups (",
                paste(trt_lvls, collapse = " vs "),
@@ -533,7 +541,7 @@ path_viz_server <- function(id, shared) {
         "Figure. ", tools::toTitleCase(y_desc), "-time profile showing ",
         stat_desc, ". Error bars represent the geometric standard deviation ",
         "(geometric mean \u00d7\u00f7 geometric SD on the log scale).",
-        trt_sent, blq_sent,
+        trt_sent, replicate_sent, blq_sent,
         " The Y-axis uses a ", scale_desc, " scale."
       )
 
