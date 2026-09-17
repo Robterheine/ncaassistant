@@ -262,7 +262,10 @@ help_be_limits <- info_btn("help_be_limits", "What are the BE limits?",
   use tighter limits: <b>90% to 111%</b>.
   <br><br>
   <b>Highly variable drugs</b> (CV > 30%) may use wider limits under 
-  scaled approaches (ABEL, RSABE).
+  scaled approaches (ABEL, RSABE). Those approaches also require the
+  <b>point estimate</b> to lie within 80–125%. When you enter limits wider
+  than 80–125%, the app applies that constraint by default. This app does not
+  calculate scaled limits; they must come from your protocol.
   <br><br>
   <em>Use 80–125% unless your regulatory guidance says otherwise.</em>")
 
