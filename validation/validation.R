@@ -1565,6 +1565,67 @@ check("REP-HL-03", "Half-life review code no longer parses profile labels",
   method = "source inspection of the three analysis modules",
   expected = "no strsplit() on profile labels (lookups go through profile helpers)")
 
+# B4: within-subject variability diagnostic, against replicateBE::method.A
+rep_ref <- read.csv(file.path("validation", "fixtures", "replicateBE_reference.csv"), stringsAsFactors = FALSE)
+rep_cv_for <- function(fixture) {
+  d <- rep_fix(paste0(fixture, ".csv"))
+  b <- build_be_data(rep_nca(d), d, rep_cm)
+  list(b = b, cv = be_variability_diagnostic(b$data, "CMAX", trt_col = b$trt_col, subj_col = b$subj_col,
+                                             per_col = b$per_col, seq_col = b$seq_col))
+}
+rep_close <- function(a, b, tol = 1e-6) isTRUE(abs(a - b) < tol)
+check("REP-CV-01", "CVwR and CVwT match replicateBE on full replicates (2x2x4, 2x2x3, HVD)",
+  tryCatch({
+    ok <- TRUE
+    for (f in c("be_2x2x4_full_replicate", "be_2x2x3_full_replicate", "be_2x2x4_highly_variable")) {
+      x <- rep_cv_for(f)$cv; r <- rep_ref[rep_ref$fixture == f, ]
+      ok <- ok && rep_close(x$swR, r$swR) && rep_close(x$CVwR, r$CVwR) &&
+        rep_close(x$swT, r$swT) && rep_close(x$CVwT, r$CVwT)
+    }
+    ok
+  }, error = function(e) FALSE),
+  "URS-BE-09", critical = TRUE,
+  method = "be_variability_diagnostic vs committed replicateBE 1.1.3 method.A values",
+  expected = "swR, CVwR, swT, CVwT equal within 1e-6")
+check("REP-CV-02", "Partial replicate: CVwR matches, CVwT reported as not estimable",
+  tryCatch({
+    x <- rep_cv_for("be_2x3x3_partial_replicate")$cv; r <- rep_ref[rep_ref$fixture == "be_2x3x3_partial_replicate", ]
+    rep_close(x$CVwR, r$CVwR) && is.na(x$CVwT) && grepl("once", x$CVwT_note)
+  }, error = function(e) FALSE),
+  "URS-BE-09", critical = TRUE,
+  method = "TRR/RTR/RRT fixture", expected = "CVwR equal; CVwT NA with an explanation")
+check("REP-CV-03", "Implied ABEL limits match replicateBE and PowerTOST, including the cap",
+  tryCatch({
+    x <- rep_cv_for("be_2x2x4_highly_variable")$cv; r <- rep_ref[rep_ref$fixture == "be_2x2x4_highly_variable", ]
+    lim_ok <- rep_close(x$ABEL_lower, r$L, 1e-6) && rep_close(x$ABEL_upper, r$U, 1e-6)
+    cvs <- c(0.20, 0.30, 0.35, 0.45, 0.50, 0.65)
+    pt <- sapply(cvs, function(cv) PowerTOST::scABEL(CV = cv, regulator = "EMA") * 100)
+    mine <- sapply(cvs, function(cv) abel_limits(cv * 100))
+    lim_ok && max(abs(pt - mine)) < 1e-8
+  }, error = function(e) FALSE),
+  "URS-BE-09", critical = TRUE,
+  method = "HVD fixture vs replicateBE L/U; abel_limits() vs PowerTOST::scABEL at CV 20-65%",
+  expected = "equal; 80-125 at CV <= 30%; capped at CV 50%")
+check("REP-CV-04", "Non-replicated design: diagnostic says not applicable",
+  tryCatch({
+    d <- rep_222; b <- build_be_data(rep_nca(d), d, rep_cm)
+    x <- be_variability_diagnostic(b$data, "CMAX", trt_col = b$trt_col, subj_col = b$subj_col,
+                                   per_col = b$per_col, seq_col = b$seq_col)
+    is.null(x)
+  }, error = function(e) FALSE),
+  "URS-BE-09", critical = FALSE,
+  method = "2x2 fixture", expected = "NULL (reference not replicated)")
+check("REP-CV-05", "The CVwR model needs the period term (naive model differs)",
+  tryCatch({
+    x <- rep_cv_for("be_2x2x4_highly_variable"); b <- x$b
+    ref <- b$data[b$data$Treatment == "Reference", ]
+    naive <- summary(lm(log(CMAX) ~ Subject, data = ref))$sigma
+    abs(naive - x$cv$swR) > 1e-4
+  }, error = function(e) FALSE),
+  "URS-BE-09", critical = FALSE,
+  method = "compare with lm(log(CMAX) ~ Subject) on reference data",
+  expected = "differs: the fixture has period effects the naive model ignores")
+
 end_section("REP")
 
 # =============================================================================
@@ -1593,7 +1654,7 @@ if (nrow(cf)>0) {
 }
 
 all_urs <- c(paste0("URS-GEN-0",c(1,3:6)),paste0("URS-DAT-0",1:7),paste0("URS-NCA-",sprintf("%02d",1:12)),
-             paste0("URS-BE-0",1:8),paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:7),paste0("URS-UI-0",1:4),
+             paste0("URS-BE-0",1:9),paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:7),paste0("URS-UI-0",1:4),
              paste0("URS-VIZ-0",1:8))
 covered <- unique(unlist(strsplit(results_df$URS_Ref,",\\s*")))
 cat(sprintf("\nURS: %d/%d covered\n",length(intersect(all_urs,covered)),length(all_urs)))

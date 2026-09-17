@@ -46,7 +46,9 @@ fixtures <- list(
   "be_2x2x2_crossover.csv"      = make_design(c("TR", "RT"),         6, seed = 1),
   "be_2x2x4_full_replicate.csv" = make_design(c("TRTR", "RTRT"),     6, seed = 2),
   "be_2x2x3_full_replicate.csv" = make_design(c("TRT", "RTR"),       6, seed = 3),
-  "be_2x3x3_partial_replicate.csv" = make_design(c("TRR", "RTR", "RRT"), 4, seed = 4)
+  "be_2x3x3_partial_replicate.csv" = make_design(c("TRR", "RTR", "RRT"), 4, seed = 4),
+  # Within-subject CV around 45%, so reference scaling would widen the limits
+  "be_2x2x4_highly_variable.csv" = make_design(c("TRTR", "RTRT"), 12, cv_w = 0.45, seed = 5)
 )
 for (nm in names(fixtures)) {
   write.csv(fixtures[[nm]], file.path(out_dir, nm), row.names = FALSE)

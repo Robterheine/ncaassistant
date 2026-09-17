@@ -945,6 +945,10 @@ create_analysis_record <- function(output_path, results, settings, col_map,
     if (!is.null(be_results)) {
       openxlsx::addWorksheet(wb, "BE_Confidence_Intervals")
       openxlsx::writeData(wb, "BE_Confidence_Intervals", rename_be_columns(be_results$ci_table))
+      if (!is.null(be_results$cv_table)) {
+        openxlsx::addWorksheet(wb, "Within_Subject_Variability")
+        openxlsx::writeData(wb, "Within_Subject_Variability", be_results$cv_table)
+      }
       for (p in names(be_results$anova)) {
         sn <- substr(paste0("ANOVA_", friendly_name(p)), 1, 31)
         openxlsx::addWorksheet(wb, sn)

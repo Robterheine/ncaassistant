@@ -333,3 +333,85 @@ resolve_be_design <- function(design, be_data, subj_col, trt_col,
     list(design = design, note = NULL)
   }
 }
+
+
+#' Within-subject SD and CV of one treatment in a replicate design
+#'
+#' Fits log(PK) ~ Sequence + Subject + Period to that treatment's data,
+#' restricted to subjects who received it at least twice. The period term is
+#' essential: without it period effects inflate the residual, and on real data
+#' the naive subject-only model can move CVwR across the 30% threshold. Each
+#' term is included only if it still has at least two levels after filtering
+#' (a TRT/RTR design keeps a single sequence for the test treatment, for
+#' example). This is the model used by replicateBE (EMA Method A data sets).
+#'
+#' @return list(sw, cv (percent), df, n_subjects) or NULL if not estimable
+within_subject_variability <- function(be_data, param, level, trt_col, subj_col,
+                                       per_col = NULL, seq_col = NULL) {
+  d <- be_data[as.character(be_data[[trt_col]]) == level, , drop = FALSE]
+  d$.y <- suppressWarnings(log(as.numeric(d[[param]])))
+  d <- d[is.finite(d$.y), , drop = FALSE]
+  subj <- as.character(d[[subj_col]])
+  keep <- subj %in% names(which(table(subj) >= 2))
+  d <- d[keep, , drop = FALSE]
+  if (nrow(d) == 0) return(NULL)
+
+  terms <- character(0)
+  for (col in c(seq_col, subj_col, per_col)) {
+    if (is.null(col) || !col %in% names(d)) next
+    d[[col]] <- factor(as.character(d[[col]]))
+    if (nlevels(d[[col]]) >= 2) terms <- c(terms, col)
+  }
+  if (!subj_col %in% terms) return(NULL)
+  fit <- tryCatch(lm(as.formula(paste(".y ~", paste(terms, collapse = " + "))), data = d),
+                  error = function(e) NULL)
+  if (is.null(fit) || fit$df.residual < 1) return(NULL)
+  s2 <- sum(residuals(fit)^2) / fit$df.residual
+  list(sw = sqrt(s2), cv = 100 * sqrt(exp(s2) - 1), df = fit$df.residual,
+       n_subjects = length(unique(as.character(d[[subj_col]]))))
+}
+
+#' EMA average bioequivalence with expanding limits (ABEL) for a given CVwR
+#'
+#' 80.00-125.00% up to CVwR 30%; exp(+/-0.76 * swR) above that; capped at
+#' CVwR 50% (69.84-143.19%).
+#' @param cv_pct Within-subject CV of the reference, in percent
+#' @return c(lower, upper) in percent
+abel_limits <- function(cv_pct) {
+  if (is.na(cv_pct)) return(c(NA_real_, NA_real_))
+  if (cv_pct <= 30) return(c(80, 125))
+  sw <- sqrt(log((min(cv_pct, 50) / 100)^2 + 1))
+  100 * exp(c(-1, 1) * 0.76 * sw)
+}
+
+#' Variability diagnostic for a replicate design (informational only)
+#'
+#' Reports the reference's within-subject variability (swR, CVwR), the test's
+#' where the test was also replicated, their ratio, and the ABEL limits those
+#' values would imply. It does not issue a scaled bioequivalence verdict.
+#'
+#' @return one-row data frame, or NULL when the reference is not replicated
+be_variability_diagnostic <- function(be_data, param, trt_col, subj_col,
+                                      per_col = NULL, seq_col = NULL) {
+  lv <- levels(factor(be_data[[trt_col]]))
+  if (length(lv) != 2) return(NULL)
+  ref_level <- lv[1]; test_level <- lv[2]
+  r <- within_subject_variability(be_data, param, ref_level, trt_col, subj_col, per_col, seq_col)
+  if (is.null(r)) return(NULL)
+  t <- within_subject_variability(be_data, param, test_level, trt_col, subj_col, per_col, seq_col)
+  t_replicated <- any(table(as.character(be_data[[subj_col]][
+    as.character(be_data[[trt_col]]) == test_level])) >= 2)
+  lim <- abel_limits(r$cv)
+  data.frame(
+    Parameter = param,
+    swR = r$sw, CVwR = r$cv, df_R = r$df, n_R = r$n_subjects,
+    swT = if (is.null(t)) NA_real_ else t$sw,
+    CVwT = if (is.null(t)) NA_real_ else t$cv,
+    CVwT_note = if (!is.null(t)) "" else if (!t_replicated)
+      "not estimable: the test treatment was given only once per subject" else
+      "not estimable from these data",
+    sw_ratio = if (is.null(t)) NA_real_ else t$sw / r$sw,
+    ABEL_lower = lim[1], ABEL_upper = lim[2],
+    ABEL_widened = r$cv > 30,
+    stringsAsFactors = FALSE)
+}

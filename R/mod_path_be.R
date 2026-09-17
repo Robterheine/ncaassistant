@@ -115,8 +115,10 @@ path_be_ui <- function(id) {
                   tags$strong("Note: "),
                   "This app performs standard ABE (fixed 80\u2013125% limits) for all designs. ",
                   "It does not perform reference-scaled analysis (ABEL/RSABE). ",
-                  "If your drug requires widened or scaled limits (CV", tags$sub("wR"),
-                  " > 30%), use dedicated software for the scaled analysis."
+                  "When the reference is replicated, the results show CV", tags$sub("wR"),
+                  " and the limits it would imply, for information. If your drug requires ",
+                  "widened or scaled limits (CV", tags$sub("wR"), " > 30%), use dedicated ",
+                  "software for the scaled analysis."
                 )
               ),
               
@@ -204,7 +206,8 @@ path_be_ui <- function(id) {
               tags$p(class = "text-muted small",
                      "Forest plot: dot = point estimate, bar = 90% CI, ",
                      "dashed lines = acceptance limits."),
-              plotlyOutput(ns("forest_plot"), height = "350px")
+              plotlyOutput(ns("forest_plot"), height = "350px"),
+              uiOutput(ns("variability_panel"))
             ),
             
             nav_panel(
@@ -625,7 +628,27 @@ path_be_server <- function(id, shared) {
         }
         
         ci_df <- do.call(rbind, ci_results)
-        be_result(list(ci_table = ci_df, anova = anova_results))
+
+        # Within-subject variability (replicate designs only; informational).
+        # Only for log-transformed ratio parameters, never TMAX.
+        cv_rows <- list()
+        if (isTRUE(input$log_transform)) {
+          for (param in setdiff(params, "TMAX")) {
+            cv_rows[[param]] <- tryCatch(
+              be_variability_diagnostic(be_data, param, trt_col = trt_col_be,
+                                        subj_col = subj_col_be, per_col = per_col,
+                                        seq_col = seq_col),
+              error = function(e) NULL)
+          }
+        }
+        cv_df <- if (length(cv_rows) > 0) do.call(rbind, cv_rows) else NULL
+        if (!is.null(cv_df)) {
+          pe <- ci_df$Point_Est[match(cv_df$Parameter, ci_df$Parameter)]
+          cv_df$PE_within_80_125 <- ifelse(is.na(pe), NA,
+                                           ifelse(pe >= 80 & pe <= 125, "YES", "NO"))
+        }
+
+        be_result(list(ci_table = ci_df, anova = anova_results, cv_table = cv_df))
         be_run_settings(list(
           nca = settings,
           be  = list(
@@ -776,6 +799,54 @@ path_be_server <- function(id, shared) {
       dt
     })
     
+    # Within-subject variability: inputs to a scaled assessment, no verdict
+    output$variability_panel <- renderUI({
+      req(be_result())
+      cv <- be_result()$cv_table
+      if (is.null(cv) || nrow(cv) == 0) return(NULL)
+      fmt <- function(x, d = 2) ifelse(is.na(x), "\u2014", formatC(x, format = "f", digits = d))
+      rows <- lapply(seq_len(nrow(cv)), function(i) {
+        x <- cv[i, ]
+        tags$tr(
+          tags$td(friendly_name(x$Parameter)),
+          tags$td(paste0(fmt(x$CVwR, 1), "%")),
+          tags$td(fmt(x$swR, 4)),
+          tags$td(if (is.na(x$CVwT)) tags$span(class = "text-muted", x$CVwT_note)
+                  else paste0(fmt(x$CVwT, 1), "%")),
+          tags$td(fmt(x$sw_ratio, 3)),
+          tags$td(paste0(fmt(x$ABEL_lower), "\u2013", fmt(x$ABEL_upper), "%",
+                         if (isTRUE(x$ABEL_widened)) "" else " (not widened)")),
+          tags$td(ifelse(is.na(x$PE_within_80_125), "\u2014", x$PE_within_80_125)))
+      })
+      tags$div(
+        class = "mt-3",
+        tags$h6(class = "fw-bold", "Within-subject variability (replicate design)"),
+        tags$table(
+          class = "table table-sm table-striped small",
+          tags$thead(tags$tr(
+            tags$th("PK Parameter"), tags$th(HTML("CV<sub>wR</sub>")), tags$th(HTML("s<sub>wR</sub>")),
+            tags$th(HTML("CV<sub>wT</sub>")), tags$th(HTML("s<sub>wT</sub> / s<sub>wR</sub>")),
+            tags$th("Implied ABEL limits (EMA)"), tags$th("PE within 80\u2013125%"))),
+          tags$tbody(rows)),
+        if (any(is.na(cv$CVwT) & grepl("only once", cv$CVwT_note))) tags$div(
+          class = "alert alert-warning py-2 small",
+          icon("triangle-exclamation", class = "me-1"),
+          tags$strong("Partial replicate: "),
+          "the test treatment was given once, so its within-subject variability cannot be ",
+          "estimated. The confidence interval above uses a pooled residual variance and ",
+          "assumes CV", tags$sub("wT"), " \u2248 CV", tags$sub("wR"), "; if the test ",
+          "formulation is more variable, the interval can be too narrow."),
+        tags$div(
+          class = "alert alert-secondary py-2 small",
+          icon("circle-info", class = "me-1"),
+          "These are the inputs to a reference-scaled assessment, estimated with the ",
+          "period-adjusted reference-only model (as in the replicateBE package). The ",
+          "implied limits are informational. ",
+          tags$strong("This app does not issue a scaled bioequivalence verdict."),
+          " For a regulatory decision use replicateBE or validated commercial software.")
+      )
+    })
+
     # Forest plot
     output$forest_plot <- renderPlotly({
       req(be_result())
@@ -1121,6 +1192,10 @@ path_be_server <- function(id, shared) {
         if (!is.null(be_nca_result())) {
           addWorksheet(wb, "NCA_Parameters")
           writeData(wb, 2, rename_nca_columns(be_nca_result()))
+        }
+        if (!is.null(be_result()$cv_table)) {
+          addWorksheet(wb, "Within_Subject_Variability")
+          writeData(wb, "Within_Subject_Variability", be_result()$cv_table)
         }
         for (p in names(be_result()$anova)) {
           sn <- substr(paste0("ANOVA_", friendly_name(p)), 1, 31)
