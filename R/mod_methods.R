@@ -133,7 +133,8 @@ methods_ui <- function() {
                "AUC", tags$sub("0\u2013t"), " minus the AUC from 0 to the start of the interval. Partial AUCs were ",
                "not extrapolated: when an interval ended, or started, after the last measurable concentration, no ",
                "value was reported. Optionally, the highest observed concentration within an interval and its time ",
-               "were reported, without interpolation."),
+               "were reported, without interpolation. An interval resting on fewer than three measurable ",
+               "concentrations was flagged as imprecise."),
 
         tags$h6(class = "fw-semibold mt-3", "Terminal Elimination Rate Constant (\u03BB", tags$sub("z"), ")"),
         tags$p(
@@ -263,8 +264,11 @@ methods_ui <- function() {
                "fit was rejected by the R\u00B2 rule). A pre-dose sample at time 0 is needed. ",
                "C", tags$sub("min"), " was the lowest observed concentration between 0 and \u03C4, and ",
                "CL/F and V", tags$sub("z"), "/F were calculated from AUC", tags$sub("\u03C4"), ". ",
-               "Partial AUCs at steady state had to lie within 0\u2013\u03C4. Unlike AUC", tags$sub("\u03C4"),
-               ", they were not extrapolated when the last sample preceded the end of the interval."),
+               "Partial AUCs at steady state had to lie within 0\u2013\u03C4. AUC", tags$sub("\u03C4"),
+               " is completed to \u03C4 with \u03BB", tags$sub("z"),
+               "; user-defined partial AUCs are observed only, so a 0\u2013\u03C4 interval and AUC",
+               tags$sub("\u03C4"), " differ for a profile whose sampling stops before \u03C4, where the ",
+               "interval is not reported."),
         
         tags$h6(class = "fw-semibold mt-3", "Average Concentration"),
         eq("C", tags$sub("avg"), " = AUC", tags$sub("\u03C4"), " / \u03C4"),

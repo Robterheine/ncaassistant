@@ -892,6 +892,13 @@ path_be_server <- function(id, shared) {
       key_cols <- intersect(c("PK Parameter", "Comparison", "Scale", "Estimate", paste0(ci_lab, "Lower"),
                               paste0(ci_lab, "Upper"), "PE within 80\u2013125%", "Bioequivalent?"),
                             names(display_ci))
+      # Profiles that could not enter a comparison are part of the result
+      for (cc in c("Profiles missing (Test)", "Profiles missing (Reference)",
+                   "Zero values (Test)", "Zero values (Reference)")) {
+        v <- suppressWarnings(as.numeric(display_ci[[cc]]))
+        if (!is.null(v) && any(v > 0, na.rm = TRUE))
+          key_cols <- append(key_cols, cc, after = match("Bioequivalent?", key_cols) - 1)
+      }
       display_ci <- display_ci[, key_cols, drop = FALSE]
       
       # Fixed 2 decimal places for ratio and CI columns (regulatory standard)
@@ -963,12 +970,20 @@ path_be_server <- function(id, shared) {
       # Only ratios belong on this axis; differences (TMAX, untransformed
       # parameters) are in their own units. Ratios without a verdict
       # (half-life, paired comparisons) are drawn in grey.
-      ci <- ci[!is.na(ci$Point_Est) & grepl("^Ratio", ci$Scale), ]
+      ci <- ci[grepl("^Ratio", ci$Scale), ]
       if (nrow(ci) == 0) return(plotly_empty())
       ci$Label <- sapply(ci$Parameter, friendly_name)
       ci$Label <- factor(ci$Label, levels = rev(ci$Label))
       ci$Bioequivalent[!ci$Bioequivalent %in% c("YES", "NO")] <- "no verdict"
       lims <- ci[!is.na(ci$BE_Lower), c("BE_Lower", "BE_Upper")]
+      # A metric without an estimate (zero values) keeps its row and says why,
+      # instead of disappearing from the figure
+      none <- ci[is.na(ci$Point_Est), , drop = FALSE]
+      if (nrow(none) > 0) {
+        nz <- rowSums(cbind(none$Zeros_Test, none$Zeros_Ref), na.rm = TRUE)
+        none$note <- ifelse(nz > 0, paste0("no estimate: ", nz, " zero value(s)"), "no estimate")
+      }
+      ci <- ci[!is.na(ci$Point_Est), , drop = FALSE]
 
       p <- ggplot(ci, aes(x = Point_Est, y = Label)) +
         geom_vline(xintercept = 100, color = "grey50") +
@@ -979,6 +994,9 @@ path_be_server <- function(id, shared) {
                       orientation = "y") +
         geom_point(aes(color = Bioequivalent), size = 4) +
         scale_color_manual(values = c("YES" = "#18BC9C", "NO" = "#E74C3C", "no verdict" = "#95A5A6")) +
+        scale_y_discrete(drop = FALSE) +
+        { if (nrow(none) > 0) geom_text(data = none, aes(x = 100, y = Label, label = note),
+                                        inherit.aes = FALSE, size = 3.2, colour = "#7f8c8d") } +
         labs(x = paste0("Geometric Mean Ratio (%) with ", run_ci_level(), "% CI"),
              y = NULL, color = NULL) +
         theme_minimal(base_size = 12) +

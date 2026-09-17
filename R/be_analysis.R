@@ -158,6 +158,10 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   # Every row carries the same columns, so rows for parameters that could not
   # be estimated bind with the rest instead of breaking rbind().
   model_label <- NA_character_
+  # Counts of profiles that cannot enter this metric's comparison, so a reader
+  # sees how much of the design is left (a subject missing one period drops out)
+  n_zero_t <- NA_integer_; n_zero_r <- NA_integer_
+  n_miss_t <- NA_integer_; n_miss_r <- NA_integer_
   make_row <- function(pe = NA, lo = NA, hi = NA, n_t = NA, n_r = NA, o_t = NA, o_r = NA,
                        pe_status = NA, verdict = NA, mse = NA, dfe = NA) {
     data.frame(
@@ -168,6 +172,8 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
       BE_Lower = if (has_limits) be_lower else NA,
       BE_Upper = if (has_limits) be_upper else NA,
       PE_Constraint = pe_status, Bioequivalent = verdict,
+      Missing_Test = n_miss_t, Missing_Ref = n_miss_r,
+      Zeros_Test = n_zero_t, Zeros_Ref = n_zero_r,
       MSE = mse, DF = dfe, Model = model_label, stringsAsFactors = FALSE)
   }
 
@@ -182,21 +188,40 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   }
 
   vals <- as.numeric(be_data[[param]])
+  trt <- as.character(be_data[[trt_col]])
+  # A profile label: subject, and the period when the design has one
+  prof_label <- function(i) paste0(as.character(be_data[[subj_col]][i]),
+    if (!is.null(per_col) && per_col %in% names(be_data))
+      paste0(" period ", as.character(be_data[[per_col]][i])) else "")
+  missing <- is.na(vals)
+  n_miss_t <- sum(missing & trt == trt_levels[2]); n_miss_r <- sum(missing & trt == trt_levels[1])
   if (is_ratio) {
     # A zero (e.g. an early partial AUC with only BLQ samples) has no
-    # logarithm. Dropping those profiles would bias the ratio, so no estimate
-    # and no verdict are given.
+    # logarithm. The profiles that would drop out are the low-exposure ones, so
+    # the remaining ratio would be biased: no estimate and no verdict.
     zero <- !is.na(vals) & vals == 0
+    n_zero_t <- sum(zero & trt == trt_levels[2]); n_zero_r <- sum(zero & trt == trt_levels[1])
     if (any(zero)) {
-      trt <- as.character(be_data[[trt_col]])
-      out$reason <- paste0("no verdict: ", sum(zero), " zero value(s) (", trt_levels[2], " ",
-                           sum(zero & trt == trt_levels[2]), ", ", trt_levels[1], " ",
-                           sum(zero & trt == trt_levels[1]), "). A zero cannot be log-transformed ",
-                           "and leaving it out would bias the ratio. Check the BLQ rule and the interval.")
+      who <- vapply(which(zero), prof_label, character(1))
+      out$reason <- paste0("no verdict: ", sum(zero), " zero value(s) (", trt_levels[2], " ", n_zero_t,
+                           ", ", trt_levels[1], " ", n_zero_r, "): ",
+                           paste(head(who, 5), collapse = "; "),
+                           if (length(who) > 5) paste0(" and ", length(who) - 5, " more") else "",
+                           ". A zero cannot be log-transformed, and the profiles that would drop out ",
+                           "are the low-exposure ones, so the remaining ratio would be biased. The ",
+                           "interval and the BLQ rule belong in the protocol.")
       out$row <- make_row(verdict = out$reason)
       return(out)
     }
     vals <- log(vals); vals[!is.finite(vals)] <- NA
+  } else {
+    n_zero_t <- 0L; n_zero_r <- 0L
+  }
+  if (all(is.na(vals))) {
+    out$reason <- paste0("no verdict: no profile has a value for this metric (", n_miss_t, " ",
+                         trt_levels[2], " and ", n_miss_r, " ", trt_levels[1], " profiles missing)")
+    out$row <- make_row(verdict = out$reason)
+    return(out)
   }
   be_data$.response <- vals
 
@@ -253,7 +278,11 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   model_label <- if (inherits(fit, "lme")) "mixed effects" else
     if (use_mixed) paste0("fixed effects (mixed model failed to fit: ", mixed_error, ")") else "fixed effects"
   if (is.null(fit)) {
-    out$row <- make_row()
+    out$reason <- paste0("no verdict: the model could not be fitted",
+                         if (n_miss_t + n_miss_r > 0)
+                           paste0("; ", n_miss_t + n_miss_r, " profile(s) have no value for this metric")
+                         else "", ".")
+    out$row <- make_row(verdict = out$reason)
     return(out)
   }
 
@@ -328,6 +357,8 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
     } else {
       "The statistical model could not estimate the treatment effect. Check that the study design selection matches your data."
     }
+    if (n_miss_t + n_miss_r > 0)
+      reason <- paste0(reason, " ", n_miss_t + n_miss_r, " profile(s) have no value for this metric.")
     out$reason <- reason
     out$row <- make_row(verdict = reason)
     return(out)

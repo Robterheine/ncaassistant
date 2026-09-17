@@ -265,7 +265,13 @@ help_partial_auc <- info_btn("help_partial_auc", "What is a partial AUC?",
   <br><br>
   <b>Pivotal or supportive:</b> in bioequivalence, a pivotal partial AUC gets a
   verdict against the acceptance limits; a supportive one is shown with its ratio and
-  confidence interval only.")
+  confidence interval only.
+  <br><br>
+  <b>Cmax and Tmax in an interval:</b> both are reported in the results table, and Cmax
+  can be compared in bioequivalence (the EMA asks for it for some long-acting products).
+  Tmax within an interval is not offered there, because a window holds only a few
+  sampling times, so a confidence interval on it would not mean much. Tmax over the whole
+  profile can be compared, with the warning that it needs a non-parametric analysis.")
 
 help_dose_norm <- info_btn("help_dose_norm", "What is dose normalization?",
   "Dose normalization divides PK parameters (like Cmax and AUC) by the dose.

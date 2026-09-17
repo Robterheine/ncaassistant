@@ -541,10 +541,11 @@ run_single_nca <- function(time, conc, settings, time_used = NULL, is_blq = NULL
   if (low) r[lamz_dependent_cols(names(r), settings$is_steady_state)] <- NA
   if (ss) r <- steady_state_parameters(r, t_num, c_num, tau, lamz_rejected = low)
   if (!is.null(pauc)) {
-    p <- partial_auc_profile(r, pauc, t_num, c_num, is_blq)
+    p <- partial_auc_profile(r, pauc, t_num, c_num, is_blq, partial_auc_blq_fraction(settings))
     r <- r[!grepl("^\\.PAUC", names(r))]
     r[names(p$values)] <- p$values
-    for (msg in partial_auc_notes(pauc, list(p), "this profile", settings$trap_method)) warning(msg)
+    for (msg in partial_auc_notes(pauc, list(p), "this profile", settings$trap_method,
+                                  partial_auc_blq_fraction(settings))) warning(msg)
   }
   r
 }
@@ -620,6 +621,15 @@ partial_auc_spec <- function(x) {
              stringsAsFactors = FALSE)
 }
 
+#' Share of BLQ-derived samples above which an interval is flagged
+PARTIAL_AUC_BLQ_FRACTION <- 0.5
+
+#' The share in force for an analysis; recorded so a rerun keeps it
+partial_auc_blq_fraction <- function(settings) {
+  v <- suppressWarnings(as.numeric(settings$partial_auc_blq_fraction))
+  if (length(v) != 1 || is.na(v) || v <= 0 || v >= 1) PARTIAL_AUC_BLQ_FRACTION else v
+}
+
 #' A number as it appears in a partial AUC column name
 .pauc_num <- function(v) vapply(v, function(z) format(z, scientific = FALSE, trim = TRUE, digits = 15), character(1),
                                 USE.NAMES = FALSE)
@@ -638,10 +648,10 @@ validate_partial_aucs <- function(spec, is_steady_state = FALSE, tau = NA) {
       return(paste0(lab, "the role must be pivotal or supportive."))
     if (isTRUE(is_steady_state)) {
       if (e == "t")
-        return(paste0(lab, "at steady state the interval must lie within 0 to τ; enter an end time ",
+        return(paste0(lab, "at steady state the interval must lie within 0 to \u03C4; enter an end time ",
                       "instead of the last measurable concentration."))
       if (!is.na(tau) && as.numeric(e) > tau + 1e-9 * max(1, tau))
-        return(paste0(lab, "at steady state the interval must lie within 0 to τ (", tau, ")."))
+        return(paste0(lab, "at steady state the interval must lie within 0 to \u03C4 (", tau, ")."))
     }
   }
   if (anyDuplicated(paste(spec$start, spec$end)))
@@ -688,10 +698,15 @@ partial_auc_iauc <- function(spec) {
 #'   as a list) including the .PAUC columns from partial_auc_iauc()
 #' @param time,conc The profile's samples
 #' @param is_blq Optional flag per sample: value set by the BLQ rule
-#' @return list(values = named numeric, and one logical per interval for:
-#'   beyond (not reported: past Tlast), zero, offgrid (a cutoff is not a
-#'   sampling time), blq (more than half of the samples used are BLQ-derived))
-partial_auc_profile <- function(r, spec, time, conc, is_blq = NULL) {
+#' @param blq_fraction An interval is flagged when more than this fraction of
+#'   the samples in it were set by the BLQ rule
+#' @return list(values = named numeric, tlast = the profile's last measurable
+#'   time, and one logical per interval for: beyond (not reported: past Tlast),
+#'   zero, offgrid (a cutoff is not a sampling time), blq (more than
+#'   blq_fraction of the samples used were set by the BLQ rule), sparse (fewer
+#'   than three measurable concentrations in the interval))
+partial_auc_profile <- function(r, spec, time, conc, is_blq = NULL,
+                                blq_fraction = PARTIAL_AUC_BLQ_FRACTION) {
   get <- function(n) if (n %in% names(r)) suppressWarnings(as.numeric(r[[n]])) else NA_real_
   tl <- get("TLST"); auclst <- get("AUCLST")
   ok <- !is.na(time) & !is.na(conc)
@@ -700,7 +715,9 @@ partial_auc_profile <- function(r, spec, time, conc, is_blq = NULL) {
   tol <- function(v) 1e-9 * max(1, abs(v))
   nm <- partial_auc_names(spec)
   n <- nrow(spec)
-  values <- c(); flags <- list(beyond = logical(n), zero = logical(n), offgrid = logical(n), blq = logical(n))
+  values <- c()
+  flags <- list(beyond = logical(n), zero = logical(n), offgrid = logical(n),
+                blq = logical(n), sparse = logical(n))
   for (i in seq_len(n)) {
     s <- spec$start[i]
     e <- if (spec$end[i] == "t") tl else as.numeric(spec$end[i])
@@ -725,9 +742,11 @@ partial_auc_profile <- function(r, spec, time, conc, is_blq = NULL) {
     flags$zero[i] <- isTRUE(auc == 0)
     on_grid <- function(v) any(abs(x - v) <= tol(v))
     flags$offgrid[i] <- covered && ((s > 0 && !on_grid(s)) || (spec$end[i] != "t" && !on_grid(e)))
-    flags$blq[i] <- covered && !is.null(blq) && any(in_win) && sum(blq[in_win]) > sum(in_win) / 2
+    flags$blq[i] <- covered && !is.null(blq) && any(in_win) && sum(blq[in_win]) > sum(in_win) * blq_fraction
+    measurable <- in_win & y > 0 & (if (is.null(blq)) TRUE else !blq)
+    flags$sparse[i] <- covered && sum(measurable) < 3
   }
-  c(list(values = values), flags)
+  c(list(values = values, tlast = tl), flags)
 }
 
 #' Time ranges of partial AUC intervals, for shading a mean profile figure
@@ -748,32 +767,48 @@ partial_auc_shading <- function(spec, t_max, y, log = FALSE) {
 #' @param flags list per profile of partial_auc_profile() results
 #' @param labels Profile label per element of flags
 #' @return character vector of messages (empty when nothing to report)
-partial_auc_notes <- function(spec, flags, labels, trap_method = "linear") {
+partial_auc_notes <- function(spec, flags, labels, trap_method = "linear",
+                              blq_fraction = PARTIAL_AUC_BLQ_FRACTION) {
   if (is.null(spec) || length(flags) == 0) return(character(0))
-  who <- function(f, i) {
-    hit <- labels[vapply(flags, function(p) isTRUE(p[[f]][i]), logical(1))]
-    if (length(hit) == 0) return(NULL)
-    if (length(flags) == 1) return("this profile")
-    paste0(length(hit), " profile(s): ", paste(head(hit, 5), collapse = ", "),
-           if (length(hit) > 5) paste0(" and ", length(hit) - 5, " more") else "")
+  single <- length(flags) == 1
+  # Each profile ends at its own last measurable concentration, which is what
+  # surprises users: a later sample that came back below the limit of
+  # quantification does not extend the profile.
+  last_meas <- vapply(flags, function(p) {
+    if (is.null(p$tlast) || is.na(p$tlast)) "no measurable concentration at all" else
+      paste0("no measurable concentration after ", .pauc_num(p$tlast))
+  }, character(1))
+  who <- function(f, i, detail = NULL) {
+    h <- which(vapply(flags, function(p) isTRUE(p[[f]][i]), logical(1)))
+    if (length(h) == 0) return(NULL)
+    txt <- if (is.null(detail)) labels[h] else paste0(labels[h], ": ", detail[h])
+    if (single) return(if (is.null(detail)) "this profile" else paste0("this profile: ", detail[h]))
+    paste0(length(h), " profile(s): ", paste(head(txt, 5), collapse = "; "),
+           if (length(h) > 5) paste0(" and ", length(h) - 5, " more") else "")
   }
-  lab <- paste0("Partial AUC ", .pauc_num(spec$start), "–", spec$end)
+  lab <- paste0("Partial AUC ", .pauc_num(spec$start), "\u2013", spec$end)
   interp <- if (identical(trap_method, "log")) "linearly while concentrations rise and log-linearly while they fall" else "linearly"
+  share <- if (isTRUE(all.equal(blq_fraction, 0.5))) "half" else paste0(round(blq_fraction * 100), "%")
   out <- character(0)
   for (i in seq_len(nrow(spec))) {
-    w <- who("beyond", i)
+    w <- who("beyond", i, detail = last_meas)
     if (!is.null(w)) out <- c(out, paste0(lab[i], " is not reported for ", w,
-      ". The interval does not lie within the observed profile (it ends, or starts, after the last ",
-      "measurable concentration); partial AUCs are not extrapolated."))
+      ". Partial AUCs are not extrapolated, and the interval reaches past that profile's last ",
+      "measurable concentration. A later sample that came back below the limit of quantification ",
+      "does not extend the profile."))
     w <- who("offgrid", i)
     if (!is.null(w)) out <- c(out, paste0(lab[i], ": a cutoff is not a sampling time in ", w,
       ". The concentration at the cutoff was interpolated ", interp, "."))
     w <- who("zero", i)
     if (!is.null(w)) out <- c(out, paste0(lab[i], " is zero in ", w,
-      ". A zero cannot be log-transformed. Check the BLQ rule and the interval."))
+      ". A zero cannot be log-transformed, so bioequivalence reports no result for this interval. ",
+      "The interval and the BLQ rule are protocol choices."))
     w <- who("blq", i)
-    if (!is.null(w)) out <- c(out, paste0(lab[i], " rests mainly on concentrations set by the BLQ rule ",
-      "(more than half of the samples in the interval) in ", w, "."))
+    if (!is.null(w)) out <- c(out, paste0(lab[i], ": more than ", share,
+      " of the samples in this window were set by the BLQ rule, in ", w, "."))
+    w <- who("sparse", i)
+    if (!is.null(w)) out <- c(out, paste0(lab[i], " rests on fewer than three measurable concentrations in ",
+      w, ", so the value is imprecise."))
   }
   out
 }
@@ -1007,7 +1042,7 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
       rows <- data[[nca_key]] == result[[1]][i]
       flags[[i]] <- partial_auc_profile(as.list(result[i, , drop = FALSE]), pauc,
                                         data[[col_map$time]][rows], data[[col_map$conc]][rows],
-                                        data$.is_blq[rows])
+                                        data$.is_blq[rows], partial_auc_blq_fraction(settings))
       vals <- rbind(vals, flags[[i]]$values)
     }
     result <- result[, !grepl("^\\.PAUC", names(result)), drop = FALSE]
@@ -1015,7 +1050,8 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
     keys <- as.character(result[[1]])
     labels <- if (use_composite_key)
       profile_labels(key_parts[match(keys, key_parts$.nca_key), pk$cols, drop = FALSE]) else keys
-    for (msg in partial_auc_notes(pauc, flags, labels, settings$trap_method)) warning(msg)
+    for (msg in partial_auc_notes(pauc, flags, labels, settings$trap_method,
+                                  partial_auc_blq_fraction(settings))) warning(msg)
   }
 
   # If a composite key was used, restore its parts (Subject, Treatment,
@@ -1122,7 +1158,8 @@ record_nca_settings <- function(rec, data, col_map) {
        is_steady_state = isTRUE(rec$steady_state), tau = rec$tau,
        dose_unit = rec$dose_unit, time_unit = rec$time_unit, conc_unit = rec$conc_unit,
        trap_method = rec$trap_method, r2adj_threshold = rec$r2adj_threshold,
-       mw = if (is.null(rec$mw)) 0 else rec$mw, partial_aucs = partial_auc_spec(rec$partial_aucs))
+       mw = if (is.null(rec$mw)) 0 else rec$mw, partial_aucs = partial_auc_spec(rec$partial_aucs),
+       partial_auc_blq_fraction = rec$partial_auc_blq_fraction)
 }
 
 #' Compare reproduced results with the app's results shipped in the record

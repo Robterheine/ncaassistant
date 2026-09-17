@@ -2985,7 +2985,7 @@ check("PAUC-03", "End at the last measurable concentration (t): AUClast minus AU
   tryCatch({
     ok <- TRUE
     for (m in c("linear", "log")) {
-      r <- pa_run(pa_iv(c(0, 3, 12, 20), "t"), trap = m)
+      r <- pa_run(rbind(pa_iv(c(0, 3, 12, 20), "t"), pa_iv(c(3, 3), c("24", "12"))), trap = m)
       for (id in c("P", "Q")) {
         tl <- pa_num(r, id, "TLST"); cc <- pa_d$C[pa_d$ID == id]
         ok <- ok && abs(pa_num(r, id, "AUC_3_t") - pa_hand(pa_t, cc, 3, tl, m)) < 1e-9 &&
@@ -2993,12 +2993,18 @@ check("PAUC-03", "End at the last measurable concentration (t): AUClast minus AU
       }
       ok <- ok && pa_num(r, "P", "TLST") == 24 && pa_num(r, "Q", "TLST") == 12 &&
         pa_num(r, "Q", "AUC_12_t") == 0 && is.na(pa_num(r, "Q", "AUC_20_t")) &&
-        is.finite(pa_num(r, "P", "AUC_20_t"))
+        is.finite(pa_num(r, "P", "AUC_20_t")) &&
+        # the same boundary: an interval ending exactly at Tlast equals the t interval
+        isTRUE(all.equal(pa_num(r, "P", "AUC_3_24"), pa_num(r, "P", "AUC_3_t"))) &&
+        isTRUE(all.equal(pa_num(r, "Q", "AUC_3_12"), pa_num(r, "Q", "AUC_3_t"))) &&
+        is.na(pa_num(r, "Q", "AUC_3_24"))
     }
     ok
   }, error = function(e) FALSE),
-  "URS-NCA-13", critical = TRUE, method = "profiles with Tlast 24 h and 12 h; intervals 0-t, 3-t, 12-t, 20-t",
-  expected = "3-t equals hand trapezoids to each profile's Tlast; 0-t = AUClast; start = Tlast gives 0; start > Tlast is missing")
+  "URS-NCA-13", critical = TRUE,
+  method = "profiles with Tlast 24 h and 12 h; intervals 0-t, 3-t, 12-t, 20-t, 3-24 and 3-12",
+  expected = paste("3-t equals hand trapezoids to each profile's Tlast; 0-t = AUClast; start = Tlast gives 0;",
+                   "start > Tlast is missing; an interval ending exactly at Tlast equals the t interval"))
 
 check("PAUC-04", "No extrapolation: an interval past Tlast is not reported, whatever the half-life fit",
   tryCatch({
@@ -3008,11 +3014,14 @@ check("PAUC-04", "No extrapolation: an interval past Tlast is not reported, what
     is.finite(pa_num(r, "P", "LAMZ")) && is.na(pa_num(r, "P", "AUC_20_30")) &&
       is.na(pa_num(r, "Q", "AUC_0_18")) && is.finite(pa_num(r, "P", "AUC_0_18")) &&
       identical(pa_num(r, "P", "AUC_0_18"), pa_num(r_strict, "P", "AUC_0_18")) &&
-      any(grepl("Partial AUC 0\u201318 is not reported for 1 profile\\(s\\): Q", w, useBytes = TRUE)) &&
+      # ASCII-only patterns: an en dash in a pattern is locale-dependent
+      any(grepl("is not reported for 1 profile\\(s\\): Q: no measurable concentration after 12", w)) &&
+      any(grepl("below the limit of quantification does not extend the profile", w)) &&
       any(grepl("not extrapolated", w))
   }, error = function(e) FALSE),
   "URS-NCA-13", critical = TRUE, method = "0-18 h (Q ends at 12 h) and 20-30 h (beyond both); R2 threshold 0.7 and 0.999",
-  expected = "missing past Tlast with a note naming the profile; values inside Tlast unaffected by the lambda-z rule")
+  expected = paste("missing past Tlast with a note naming the profile and its last measurable time;",
+                   "values inside Tlast unaffected by the lambda-z rule"))
 
 check("PAUC-05", "Steady state: intervals must lie within 0 to tau",
   tryCatch({
@@ -3021,10 +3030,19 @@ check("PAUC-05", "Steady state: intervals must lie within 0 to tau",
     x1 <- run_ss(pa_iv(0, 24)); x2 <- run_ss(pa_iv(4, "t")); r3 <- run_ss(pa_iv(c(0, 0), c(4, 12)))$value
     is.null(x1$value) && any(grepl("within 0 to", x1$w)) && is.null(x2$value) && any(grepl("within 0 to", x2$w)) &&
       !is.null(r3) && isTRUE(all.equal(as.numeric(r3$AUC_0_12), as.numeric(r3$AUCTAU))) &&
-      abs(as.numeric(r3$AUC_0_4) - pa_hand(ss_d2$T, ss_d2$C, 0, 4)) < 1e-9
+      abs(as.numeric(r3$AUC_0_4) - pa_hand(ss_d2$T, ss_d2$C, 0, 4)) < 1e-9 &&
+      # sampling stops before tau: AUCtau is completed with lambda-z, the interval is not
+      local({
+        short <- ss_d2[ss_d2$T <= 8, ]
+        rs <- suppressWarnings(run_nca(short, pa_cm, pa_st(pa_iv(0, 12), ss = TRUE, tau = 12)))
+        is.finite(as.numeric(rs$AUCTAU)) && is.na(as.numeric(rs$AUC_0_12))
+      })
   }, error = function(e) FALSE),
-  "URS-NCA-14", critical = TRUE, method = "tau = 12 h; intervals 0-24, 4-t, 0-4 and 0-12",
-  expected = "0-24 and 4-t refused with a message; 0-12 equals AUCtau; 0-4 equals hand trapezoids")
+  "URS-NCA-14", critical = TRUE,
+  method = "tau = 12 h; intervals 0-24, 4-t, 0-4 and 0-12; and a profile sampled only to 8 h",
+  expected = paste("0-24 and 4-t refused with a message; 0-12 equals AUCtau when tau is within Tlast;",
+                   "0-4 equals hand trapezoids; when sampling stops before tau, AUCtau is extrapolated",
+                   "and the interval is not reported"))
 
 check("PAUC-06", "Batch and single-profile analyses give identical partial AUCs, also without a time-0 sample and after IV bolus",
   tryCatch({
@@ -3101,13 +3119,17 @@ check("PAUC-10", "Notes for interpolated cutoffs, zero partial AUCs and interval
     d0 <- pa_d; d0$C[d0$ID == "P" & d0$T == 0.25] <- 0
     w_zero <- pa_warn(run_nca(d0, pa_cm, pa_st(pa_iv(0, 0.25))))$w
     w_blq <- pa_warn(run_nca(pa_lai_ds$data, pa_cm, pa_st(pa_iv(c(14, 1), c("t", "3")))))$w
-    any(grepl("0.75.*not a sampling time in 2 profile\\(s\\).*log-linearly", w_off)) &&
-      any(grepl("0\u20130.25 is zero in 1 profile\\(s\\): P", w_zero, useBytes = TRUE)) &&
-      any(grepl("14\u2013t rests mainly on concentrations set by the BLQ rule.*1 profile\\(s\\): L2", w_blq, useBytes = TRUE)) &&
-      !any(grepl("1\u20133 rests mainly", w_blq, useBytes = TRUE))
+    any(grepl("a cutoff is not a sampling time in 2 profile\\(s\\).*log-linearly", w_off)) &&
+      any(grepl("0.25 is zero in 1 profile\\(s\\): P", w_zero)) &&
+      any(grepl("more than half of the samples in this window were set by the BLQ rule, in 1 profile\\(s\\): L2",
+                w_blq)) &&
+      sum(grepl("more than half of the samples", w_blq)) == 1 &&
+      any(grepl("rests on fewer than three measurable concentrations in 1 profile\\(s\\): L2", w_blq))
   }, error = function(e) FALSE),
-  "URS-NCA-13", critical = FALSE, method = "cutoff 0.75 h; a zero early interval; plateau 14 d-t with BLQ samples",
-  expected = "each note names the interval and the profiles; no BLQ note for a well-measured interval")
+  "URS-NCA-13", critical = FALSE,
+  method = "cutoff 0.75 h; a zero early interval; plateau 14 d-t with BLQ and few measurable samples",
+  expected = paste("each note names the interval and the profiles, states the BLQ criterion, and flags a",
+                   "window with fewer than three measurable concentrations"))
 
 check("PAUC-11", "The BLQ flag is kept through the pipeline and does not change results",
   tryCatch({
@@ -3161,6 +3183,53 @@ check("PAUC-13", "A zero partial AUC gives no estimate and no verdict, with coun
   "URS-BE-10", critical = TRUE, method = "two Test profiles with a zero AUC 0-0.5 h",
   expected = "no estimate; message counts 2 Test and 0 Reference zeros")
 
+check("PAUC-19", "A suppressed metric stays visible, with the profiles that dropped out",
+  tryCatch({
+    d <- pa_be; d$Conc[d$Subject == 1 & d$Treatment == "Test" & d$Period == 1 & d$Time == 0.5] <- 0
+    iv <- pa_iv(c(0, 0), c("0.5", "1.5"))
+    r <- suppressWarnings(run_nca(d, pa_be_cm, pa_st(iv, trap = "log")))
+    b <- build_be_data(r, d, pa_be_cm, reference = "Reference")
+    f <- function(param) fit_be_parameter(b$data, param, design = "2x2x2", trt_col = b$trt_col,
+                                          subj_col = b$subj_col, per_col = b$per_col, seq_col = b$seq_col)
+    zero <- f("AUC_0_0.5"); other <- f("AUC_0_1.5"); cm <- f("CMAX")
+    # a zero in one period of a crossover: the message names subject and period
+    grepl("1 period 1", zero$row$Bioequivalent, fixed = TRUE) &&
+      zero$row$Zeros_Test == 1 && zero$row$Zeros_Ref == 0 && is.na(zero$row$Point_Est) &&
+      # suppression is per metric, not per run
+      is.finite(other$row$Point_Est) && other$row$Bioequivalent %in% c("YES", "NO") &&
+      is.finite(cm$row$Point_Est) && cm$row$Zeros_Test == 0 &&
+      # descriptive statistics keep the zero
+      summarize_pk_params(r, "AUC_0_0.5", group_col = "Treatment")$N[1] == 12 &&
+      min(as.numeric(r$AUC_0_0.5)) == 0 &&
+      !grepl("switch", zero$row$Bioequivalent, ignore.case = TRUE) &&
+      grepl("belong in the protocol", zero$row$Bioequivalent, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-BE-10", critical = TRUE,
+  method = "2x2 crossover with one zero AUC 0-0.5 h in subject 1, period 1",
+  expected = paste("that metric alone has no estimate, names subject and period and counts the zeros;",
+                   "other metrics unaffected; summary statistics still count the zero"))
+
+check("PAUC-20", "Bioequivalence reports how many profiles are missing for a metric",
+  tryCatch({
+    iv <- pa_iv(c(0, 20), c("1.5", "t"))
+    # LLOQ 0.5 makes the tail BLQ, so Tlast differs per profile (rule 1)
+    d <- prepare_pk_dataset(pa_be, pa_be_cm, list(lloq = 0.5, blq_rule = "rule1"))$data
+    r <- suppressWarnings(run_nca(d, pa_be_cm, pa_st(iv, trap = "log")))
+    b <- build_be_data(r, d, pa_be_cm, reference = "Reference")
+    f <- function(param) fit_be_parameter(b$data, param, design = "2x2x2", trt_col = b$trt_col,
+                                          subj_col = b$subj_col, per_col = b$per_col, seq_col = b$seq_col)
+    late <- f("AUC_20_t"); early <- f("AUC_0_1.5")
+    n_na <- sum(is.na(as.numeric(r$AUC_20_t)))
+    nm <- names(rename_be_columns(late$row))
+    n_na > 0 && late$row$Missing_Test + late$row$Missing_Ref == n_na &&
+      grepl("profiles missing|profile\\(s\\) have no value", late$row$Bioequivalent) &&
+      early$row$Missing_Test == 0 && early$row$Missing_Ref == 0 &&
+      all(c("Profiles missing (Test)", "Profiles missing (Reference)", "Zero values (Test)") %in% nm)
+  }, error = function(e) FALSE),
+  "URS-BE-10", critical = TRUE,
+  method = "AUC 20 h-t, which lies past Tlast in part of the profiles",
+  expected = "Missing_Test + Missing_Ref equals the number of profiles without a value; labelled in exports")
+
 check("PAUC-14", "Replicate design: partial AUC CI and CVwR agree with replicateBE",
   tryCatch({
     iv <- pa_iv(0, "4")
@@ -3189,6 +3258,7 @@ check("PAUC-15", "Records store the intervals and reproduce the partial AUCs; a 
     rb <- rec_build(df = pa_be, cm = pa_be_cm, st = st, be = TRUE)
     js <- jsonlite::fromJSON(file.path(rb$ex, "analysis_settings.json"), simplifyDataFrame = FALSE)
     batch_ok <- identical(partial_auc_spec(js$partial_aucs), partial_auc_spec(iv)) &&
+      identical(as.numeric(js$partial_auc_blq_fraction), PARTIAL_AUC_BLQ_FRACTION) &&
       grepl("Result: MATCH", rec_check_text(rb$ex)) && "AUC_4_t" %in% names(rb$result)
     # Edit the recorded interval and run the shipped script again
     js$partial_aucs[[1]]$end <- "2"
