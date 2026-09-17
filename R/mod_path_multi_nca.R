@@ -489,7 +489,7 @@ path_multi_nca_server <- function(id, shared) {
       if (!isTRUE(input$show_all_params)) {
         if (isTRUE(input$is_ss)) {
           key_cols <- intersect(
-            c("Subject", "Treatment",
+            c("Subject", "Treatment", "Period",
               "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
               "AUC to Last Point",
               "Half-Life (h)", "Apparent Clearance (CL/F)",
@@ -498,7 +498,7 @@ path_multi_nca_server <- function(id, shared) {
         } else {
           # AUCPEO included so the >20% extrapolation flag is always visible
           key_cols <- intersect(
-            c("Subject", "Treatment",
+            c("Subject", "Treatment", "Period",
               "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
               "AUC to Last Point", "AUC to Infinity (observed)",
               "AUC % Extrapolated (observed)",

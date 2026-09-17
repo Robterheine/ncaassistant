@@ -428,33 +428,6 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
         })
   }
 
-  # Replicate designs (a subject receives the same treatment in more than one
-  # period, e.g. TRTR/RTRT, TRT/RTR, TRR/RTR/RRT). The NCA currently treats
-  # subject + treatment as one profile, so both administrations would be merged
-  # into a single interleaved profile and every parameter would be wrong.
-  # Refuse until period-aware profiles are supported (roadmap Part B).
-  if (has_trt && has_per) {
-    rep_subjects <- c()
-    for (s in subjects) {
-      s_idx <- data[[subj_col]] == s
-      per_by_trt <- tapply(as.character(data[[col_map$period]][s_idx]),
-                           as.character(data[[col_map$treatment]][s_idx]),
-                           function(p) length(unique(p)))
-      if (any(per_by_trt > 1)) rep_subjects <- c(rep_subjects, s)
-    }
-    if (length(rep_subjects) > 0) {
-      add("ERROR", "Design",
-          paste0("Replicate design detected: ", length(rep_subjects),
-                 " subject(s) received the same treatment in more than one period"),
-          paste0("Subjects: ", paste(head(rep_subjects, 5), collapse = ", "),
-                 if (length(rep_subjects) > 5) paste0(" (+ ", length(rep_subjects) - 5, " more)")),
-          paste0("Replicate designs (e.g. TRTR/RTRT, TRT/RTR, TRR/RTR/RRT) are not yet ",
-                 "supported: each administration must be analysed as a separate profile, ",
-                 "which this version does not do. Use dedicated software (e.g. the ",
-                 "replicateBE R package) for these studies. If this is not a replicate ",
-                 "design, check the Treatment and Period columns."))
-    }
-  }
   
   # ===========================================================================
   # 7. CROSSOVER DESIGN CHECKS (if treatment column mapped)

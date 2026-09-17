@@ -1344,18 +1344,6 @@ check("REG-QC-02", "Standard 2x2 with nominal times passes the duplicate check",
   }, error = function(e) FALSE),
   "URS-DAT-03", critical = TRUE,
   method = "2 subjects x 2 periods, repeated nominal times", expected = "no ERROR")
-check("REG-QC-03", "Replicate design (same treatment in two periods) is refused clearly",
-  tryCatch({
-    d <- do.call(rbind, list(reg_qc_prof("A", "T", 1), reg_qc_prof("A", "R", 2),
-                             reg_qc_prof("A", "T", 3), reg_qc_prof("A", "R", 4)))
-    qc <- run_data_quality_check(d, reg_qc_cm); f <- qc$findings
-    e <- f[f$Severity == "ERROR", ]
-    nrow(e) >= 1 && any(grepl("eplicate", e$Message)) &&
-      !any(grepl("map the Treatment and Period", e$Action, ignore.case = TRUE))
-  }, error = function(e) FALSE),
-  "URS-DAT-03", critical = TRUE,
-  method = "TRTR with Treatment and Period mapped",
-  expected = "ERROR naming a replicate design; no advice to map columns already mapped")
 check("REG-QC-04", "Duplicates within one treatment-period: advice fits what is mapped",
   tryCatch({
     d <- rbind(reg_qc_prof("A", "T", 1), reg_qc_prof("A", "T", 1), reg_qc_prof("A", "R", 2))
@@ -1373,6 +1361,181 @@ check("REG-QC-04", "Duplicates within one treatment-period: advice fits what is 
   expected = "first: no map-columns advice; second: advice to map Period")
 
 end_section("REG")
+
+# =============================================================================
+# SECTION REP: Replicate and crossover designs (roadmap Part B)
+# =============================================================================
+start_section("REP")
+
+rep_fix <- function(f) read.csv(file.path("validation", "fixtures", f), stringsAsFactors = FALSE)
+rep_cm <- list(subject = "Subject", time = "Time", conc = "Conc", treatment = "Treatment",
+               period = "Period", sequence = "Sequence")
+rep_settings <- list(admin_route = "extravascular", dose = 100, infusion_duration = 0,
+                     is_steady_state = FALSE, dose_unit = "mg", time_unit = "h",
+                     conc_unit = "ng/mL", trap_method = "log", r2adj_threshold = 0.7, mw = 0)
+rep_224 <- rep_fix("be_2x2x4_full_replicate.csv")
+rep_223 <- rep_fix("be_2x2x3_full_replicate.csv")
+rep_233 <- rep_fix("be_2x3x3_partial_replicate.csv")
+rep_222 <- rep_fix("be_2x2x2_crossover.csv")
+rep_nca <- function(d) suppressWarnings(run_nca(d, rep_cm, rep_settings))
+
+check("REP-PC-01", "2x2x4: one NCA profile per subject x period",
+  tryCatch({
+    r <- rep_nca(rep_224); n <- length(unique(rep_224$Subject))
+    nrow(r) == 4 * n && all(c("Subject", "Treatment", "Period") %in% names(r)) &&
+      !anyDuplicated(paste(r$Subject, r$Period))
+  }, error = function(e) FALSE),
+  "URS-NCA-06", critical = TRUE,
+  method = "run_nca on 12-subject TRTR/RTRT fixture", expected = "48 profiles with a Period column")
+check("REP-PC-02", "2x2x4: each profile's Cmax is that administration's own Cmax",
+  tryCatch({
+    r <- rep_nca(rep_224)
+    truth <- aggregate(Conc ~ Subject + Period, data = rep_224, FUN = max)
+    m <- merge(data.frame(Subject = r$Subject, Period = r$Period, CMAX = as.numeric(r$CMAX)),
+               transform(truth, Subject = as.character(Subject), Period = as.character(Period)))
+    nrow(m) == nrow(truth) && max(abs(m$CMAX - m$Conc)) < 1e-12
+  }, error = function(e) FALSE),
+  "URS-NCA-01", critical = TRUE,
+  method = "compare CMAX with max(Conc) per subject x period", expected = "identical for all 48")
+check("REP-PC-03", "2x2x4: BE data has one row per administration",
+  tryCatch({
+    r <- rep_nca(rep_224); b <- build_be_data(r, rep_224, rep_cm)
+    n <- length(unique(rep_224$Subject))
+    nrow(b$data) == 4 * n && !anyDuplicated(paste(b$data$Subject, b$data[[b$per_col]])) &&
+      !anyNA(b$data[[b$per_col]]) && !anyNA(b$data[[b$seq_col]])
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = TRUE,
+  method = "build_be_data on the 2x2x4 NCA result", expected = "48 rows, no duplicates, no NA Period/Sequence")
+check("REP-PC-04", "2x2x3 and 2x3x3: 3n profiles and 3n BE rows",
+  tryCatch({
+    ok <- TRUE
+    for (d in list(rep_223, rep_233)) {
+      n <- length(unique(d$Subject)); r <- rep_nca(d); b <- build_be_data(r, d, rep_cm)
+      ok <- ok && nrow(r) == 3 * n && nrow(b$data) == 3 * n
+    }
+    ok
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = TRUE,
+  method = "TRT/RTR and TRR/RTR/RRT fixtures", expected = "36 profiles and 36 rows each")
+check("REP-PC-05", "2x2: results unchanged by the period-aware key",
+  tryCatch({
+    r <- rep_nca(rep_222)
+    d <- rep_222; d$.k <- paste(d$Subject, d$Treatment, sep = "||")
+    d <- d[order(d$.k, d$Time), ]
+    ref <- tblNCA(d, key = ".k", colTime = "Time", colConc = "Conc", dose = 100,
+                  adm = "Extravascular", dur = 0, doseUnit = "mg", timeUnit = "h",
+                  concUnit = "ng/mL", down = "Log", R2ADJ = 0, MW = 0, SS = FALSE, iAUC = "")
+    parts <- strsplit(ref[[1]], "||", fixed = TRUE)
+    ref_k <- paste(sapply(parts, `[`, 1), sapply(parts, `[`, 2))
+    idx <- match(ref_k, paste(r$Subject, r$Treatment))
+    num <- setdiff(names(ref)[-1], character(0))
+    !anyNA(idx) && nrow(r) == nrow(ref) &&
+      all(sapply(num, function(cc) identical(as.numeric(ref[[cc]]), as.numeric(r[[cc]][idx]))))
+  }, error = function(e) FALSE),
+  "URS-NCA-06", critical = TRUE,
+  method = "compare with tblNCA keyed on Subject||Treatment", expected = "every parameter bit-identical")
+check("REP-BLQ-01", "BLQ rules act on each administration separately",
+  tryCatch({
+    ok <- TRUE
+    for (rule in c("rule1", "rule5", "rule6")) {
+      whole <- apply_blq_rules(rep_224, rep_cm, rule = rule, lloq = 0.5)
+      split_d <- split(rep_224, list(rep_224$Subject, rep_224$Period), drop = TRUE)
+      each <- do.call(rbind, lapply(split_d, apply_blq_rules, col_map = rep_cm, rule = rule, lloq = 0.5))
+      kw <- paste(whole$Subject, whole$Period, whole$Time); ke <- paste(each$Subject, each$Period, each$Time)
+      ok <- ok && identical(whole$Conc, each$Conc[match(kw, ke)])
+    }
+    ok
+  }, error = function(e) FALSE),
+  "URS-DAT-04", critical = TRUE,
+  method = "apply rules 1/5/6 to the whole 2x2x4 file vs per subject x period", expected = "identical")
+check("REP-QC-01", "Replicate fixture passes the data quality check",
+  tryCatch({
+    qc <- run_data_quality_check(rep_224, rep_cm, lloq = 0.5)
+    !any(qc$findings$Severity == "ERROR")
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE,
+  method = "run_data_quality_check on 2x2x4 fixture", expected = "no ERROR")
+check("REP-AN-01", "2x2x4 end to end: EMA Method A model and degrees of freedom",
+  tryCatch({
+    r <- rep_nca(rep_224); b <- build_be_data(r, rep_224, rep_cm)
+    f <- fit_be_parameter(b$data, "CMAX", design = "replicate_2x2x4", trt_col = b$trt_col,
+                          subj_col = b$subj_col, per_col = b$per_col, seq_col = b$seq_col)
+    truth <- aggregate(Conc ~ Subject + Period + Treatment + Sequence, data = rep_224, FUN = max)
+    truth$Treatment <- relevel(factor(truth$Treatment), ref = "Reference")
+    ref <- lm(log(Conc) ~ Sequence + factor(Subject) + factor(Period) + Treatment, data = truth)
+    s <- summary(ref)$coefficients["TreatmentTest", ]; tc <- qt(0.95, ref$df.residual)
+    n <- length(unique(rep_224$Subject))
+    f$estimate$dfe == 3 * n - 4 && abs(f$estimate$ci_lo - exp(s[[1]] - tc * s[[2]]) * 100) < 1e-8 &&
+      abs(f$estimate$ci_hi - exp(s[[1]] + tc * s[[2]]) * 100) < 1e-8 &&
+      f$row$N_Test == n && f$row$N_Ref == n
+  }, error = function(e) FALSE),
+  "URS-BE-03", critical = TRUE,
+  method = "fixture -> run_nca -> build_be_data -> fit_be_parameter vs lm on true per-period Cmax",
+  expected = "df = 3n-4 = 32, identical CI, N counts subjects")
+check("REP-DOSE-01", "Per-subject doses follow the subject in a replicate design",
+  tryCatch({
+    d <- rep_224; d$Dose <- d$Subject * 10
+    st <- rep_settings; dv <- tapply(d$Dose, as.character(d$Subject), max); st$dose <- dv
+    r <- suppressWarnings(run_nca(d, rep_cm, st))
+    # CL/F is reported in L/h for mg and ng/mL.h, hence the factor 1000
+    expect <- as.numeric(dv[r$Subject]) * 1000
+    got <- as.numeric(r$CLFO) * as.numeric(r$AUCIFO)
+    ok <- !is.na(got)
+    sum(ok) > 40 && max(abs(got[ok] - expect[ok]) / expect[ok]) < 1e-6
+  }, error = function(e) FALSE),
+  "URS-NCA-05", critical = TRUE,
+  method = "named dose vector (Subject x 10) on 2x2x4", expected = "CL/F x AUCinf = 1000 x dose (unit factor) for every profile")
+
+rep_record_run <- function(d, cm, overrides = NULL, apply_to_app = NULL) {
+  wd <- file.path(tempdir(), paste0("reprec", as.integer(runif(1, 1, 1e6))))
+  dir.create(wd, recursive = TRUE, showWarnings = FALSE)
+  csv <- file.path(wd, "rep.csv"); write.csv(d, csv, row.names = FALSE)
+  dd <- read.csv(csv, stringsAsFactors = FALSE)
+  dd <- dd[order(dd$Subject, dd$Time), ]
+  dd <- apply_blq_rules(dd, cm, rule = "rule1", lloq = 0.5)
+  st <- rep_settings; st$n_obs <- nrow(dd)
+  app <- suppressWarnings(run_nca(dd, cm, st))
+  if (!is.null(apply_to_app)) app <- apply_to_app(app)
+  zp <- file.path(wd, "rec.zip")
+  invisible(suppressWarnings(create_analysis_record(zp, app, st, cm, csv, "rep.csv",
+    blq_rule = "rule1", lloq = 0.5, analyst = "QA", study_name = "REP", lz_overrides = overrides)))
+  ex <- file.path(wd, "ex"); unzip(zp, exdir = ex)
+  js <- jsonlite::fromJSON(list.files(ex, "analysis_settings.json", recursive = TRUE, full.names = TRUE)[1])
+  scr <- list.files(ex, "reproduce_analysis.R", recursive = TRUE, full.names = TRUE)[1]
+  owd <- setwd(dirname(scr))
+  out <- tryCatch(system2("Rscript", "reproduce_analysis.R", stdout = TRUE, stderr = TRUE),
+                  error = function(e) character(0))
+  setwd(owd)
+  list(json = js, out = out, app = app)
+}
+check("REP-REP-01", "Replicate record: script reproduces 48 profiles and states the profile key",
+  tryCatch({
+    rr <- rep_record_run(rep_224, rep_cm)
+    identical(rr$json$nca_profile_key, c("Subject", "Treatment", "Period")) &&
+      any(grepl("48 rows", rr$out)) && any(grepl("-> MATCH", rr$out)) && !any(grepl("DIFFERENT", rr$out))
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = TRUE,
+  method = "record for 2x2x4 fixture with LLOQ 0.5, rule 1; run reproduce_analysis.R",
+  expected = "nca_profile_key Subject/Treatment/Period; 48 rows; MATCH")
+check("REP-REP-02", "Replicate record: a half-life override is replayed on the right administration",
+  tryCatch({
+    ov <- list("1 | Test | P3" = list(profile = "1 | Test | P3", subject = "1", treatment = "Test",
+               period = "3", original_lambda_z = 0.15, adjusted_lambda_z = 0.2,
+               original_r2adj = 0.99, adjusted_r2adj = 0.99, points_used = 3))
+    set_ov <- function(app) {
+      i <- which(app$Subject == "1" & app$Treatment == "Test" & app$Period == "3")
+      app$LAMZ[i] <- 0.2; app$LAMZHL[i] <- log(2) / 0.2
+      app$AUCIFO[i] <- as.numeric(app$AUCLST[i]) + as.numeric(app$CLST[i]) / 0.2
+      app
+    }
+    rr <- rep_record_run(rep_224, rep_cm, overrides = ov, apply_to_app = set_ov)
+    any(grepl("-> MATCH", rr$out)) && !any(grepl("DIFFERENT", rr$out))
+  }, error = function(e) FALSE),
+  "URS-EXP-07", critical = TRUE,
+  method = "override on subject 1, Test, period 3 only; run reproduce_analysis.R",
+  expected = "MATCH (override applied to exactly that profile)")
+
+end_section("REP")
 
 # =============================================================================
 # Post-execution

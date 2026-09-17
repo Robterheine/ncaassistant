@@ -6,7 +6,7 @@
 
 # Schema version for analysis_settings.json / figure_settings.json. Increment
 # when the settings structure changes so downstream tooling can branch on it.
-RECORD_SCHEMA_VERSION <- "1.2.2"
+RECORD_SCHEMA_VERSION <- "1.3.0"
 
 #' Zip the contents of a directory into output_path without changing the global
 #' working directory (session-safe in multi-session Shiny deployments).
@@ -145,6 +145,16 @@ ref_file <- "app_results_reference.csv"
 if (file.exists(ref_file)) {
   app_ref <- read.csv(ref_file, stringsAsFactors = FALSE, check.names = FALSE)
   shared_cols <- intersect(names(result), names(app_ref))
+  # Align rows on the profile key (Subject, Treatment, Period) rather than
+  # trusting both tables to be in the same order.
+  key_cols <- intersect(c("Subject", "Treatment", "Period"), shared_cols)
+  if (length(key_cols) > 0 && nrow(result) == nrow(app_ref)) {
+    k_res <- do.call(paste, c(lapply(result[key_cols], as.character), sep = "||"))
+    k_app <- do.call(paste, c(lapply(app_ref[key_cols], as.character), sep = "||"))
+    ord <- match(k_res, k_app)
+    if (!anyNA(ord) && !anyDuplicated(ord)) app_ref <- app_ref[ord, , drop = FALSE]
+    shared_cols <- setdiff(shared_cols, key_cols)
+  }
   if (nrow(result) == nrow(app_ref) && length(shared_cols) > 0) {
     max_rel <- 0; n_cmp <- 0; n_par <- 0
     for (cn in shared_cols) {
@@ -221,27 +231,36 @@ generate_nca_script <- function(settings, col_map, file_name, blq_rule, lloq,
     paste("Unknown rule:", blq_rule)
   )
   
-  composite_key_code <- if (!is.null(col_map$treatment)) {
-    paste0(
-      '\n# Create composite key for crossover data (Subject||Treatment)\n',
-      'data$.nca_key <- paste(data[[', deparse(col_map$subject), ']],\n',
-      '                       data[[', deparse(col_map$treatment), ']], sep = "||")\n',
-      'nca_key <- ".nca_key"\n'
-    )
-  } else {
-    paste0('\nnca_key <- ', deparse(col_map$subject), '\n')
-  }
-  
-  split_code <- if (!is.null(col_map$treatment)) {
-    paste0(
-      '\n# Split composite key back into Subject and Treatment\n',
-      'parts <- strsplit(as.character(result[[1]]), "\\\\|\\\\|")\n',
-      'result$Subject   <- sapply(parts, `[`, 1)\n',
-      'result$Treatment <- sapply(parts, `[`, 2)\n',
-      'result[[1]] <- NULL  # Remove composite key column\n'
-    )
-  } else ""
-  
+  # The profile key is the app's own profile_key() function, written into the
+  # script verbatim, so the app and the script cannot disagree about what a
+  # profile is (subject x treatment x period).
+  profile_key_code <- paste0(
+    "\n# A profile is one subject under one treatment in one period. This is the\n",
+    "# app's profile_key() function, copied verbatim.\n",
+    "profile_key <- ", paste(deparse(profile_key), collapse = "\n"), "\n")
+
+  composite_key_code <- paste0(
+    '\n# Profile key: one NCA profile per subject x treatment x period (as mapped)\n',
+    'pk <- profile_key(data, col_map)\n',
+    'if (length(pk$cols) > 1) {\n',
+    '  data$.nca_key <- pk$key\n',
+    '  key_parts <- unique(cbind(.nca_key = pk$key, pk$parts))\n',
+    '  nca_key <- ".nca_key"\n',
+    '} else {\n',
+    '  nca_key <- subject_col\n',
+    '}\n'
+  )
+
+  split_code <- paste0(
+    '\n# Restore Subject / Treatment / Period by matching the key (not by splitting it)\n',
+    'if (nca_key == ".nca_key") {\n',
+    '  idx <- match(as.character(result[[1]]), key_parts$.nca_key)\n',
+    '  result[[1]] <- NULL\n',
+    '  for (cc in pk$cols) result[[cc]] <- key_parts[[cc]][idx]\n',
+    '  result <- result[, c(pk$cols, setdiff(names(result), pk$cols))]\n',
+    '}\n'
+  )
+
   script <- paste0(
 '# ============================================================================
 # NCA Analysis Reproducibility Script
@@ -323,6 +342,10 @@ if (requireNamespace("digest", quietly = TRUE)) {
 subject_col <- ', deparse(col_map$subject), '
 time_col    <- ', deparse(col_map$time), '
 conc_col    <- ', deparse(col_map$conc), '
+col_map <- list(subject = subject_col, time = time_col, conc = conc_col,
+                treatment = ', deparse(col_map$treatment), ',
+                period    = ', deparse(col_map$period), ')
+', profile_key_code, '
 cat("Subject column:", subject_col, "\\n")
 cat("Time column:   ", time_col, "\\n")
 cat("Conc column:   ", conc_col, "\\n")
@@ -352,13 +375,8 @@ if (lloq_setting > 0) {
 data <- data[!is.na(data[[time_col]]), ]
 data <- data[order(data[[subject_col]], data[[time_col]]), ]
 
-# A profile is one subject under one treatment. Grouping by subject alone would
-# run the positional rules across both periods of a crossover subject at once.
-prof_key <- ', if (!is.null(col_map$treatment)) {
-  paste0('paste(data[[', deparse(col_map$subject), ']], data[[', deparse(col_map$treatment), ']], sep = "||")')
-} else {
-  'as.character(data[[subject_col]])'
-}, '
+# Positional BLQ rules act on one profile at a time (subject x treatment x period).
+prof_key <- profile_key(data, col_map)$key
 ',
 if (lloq > 0) {
   paste0(
@@ -450,7 +468,15 @@ result <- NonCompart::tblNCA(
     paste0(
       '# Override: ', profile, ' (original \u03bbz = ', signif(as.numeric(orig_val), 5),
       ' -> adjusted \u03bbz = ', signif(lz_val, 5), ', ', ov$points_used, ' points)\n',
-      if (grepl(" \\| ", profile)) {
+      if (!is.null(ov$subject)) {
+        # Match on the profile's own parts, including Period for replicates
+        conds <- c(paste0('as.character(result$Subject) == ', deparse(as.character(ov$subject))),
+                   if (!is.null(ov$treatment))
+                     paste0('as.character(result$Treatment) == ', deparse(as.character(ov$treatment))),
+                   if (!is.null(ov$period))
+                     paste0('as.character(result$Period) == ', deparse(as.character(ov$period))))
+        paste0('idx <- which(', paste(conds, collapse = ' & '), ')')
+      } else if (grepl(" \\| ", profile)) {
         parts <- strsplit(profile, " \\| ")[[1]]
         paste0('idx <- which(result$Subject == "', trimws(parts[1]),
                '" & result$Treatment == "', trimws(parts[2]), '")')
@@ -475,7 +501,7 @@ result <- NonCompart::tblNCA(
 
 write.csv(result, "reproduced_results.csv", row.names = FALSE)
 cat("\\nResults saved to: reproduced_results.csv\\n")
-cat("Subjects analyzed:", nrow(result), "\\n")
+cat("Profiles analyzed:", nrow(result), "\\n")
 
 # --- Step 10: Compare reproduced results with the app -----------------------',
 .comparison_block("table"), '
@@ -949,6 +975,9 @@ create_analysis_record <- function(output_path, results, settings, col_map,
       analysis_type   = analysis_type,
       input_file      = original_file_name,
       column_mapping  = col_map,
+      nca_profile_key = c("Subject",
+                          if (!is.null(col_map$treatment)) "Treatment",
+                          if (!is.null(col_map$period)) "Period"),
       admin_route     = settings$admin_route,
       dose            = settings$dose,
       dose_source     = if (length(settings$dose) > 1) "per_subject" else "single",

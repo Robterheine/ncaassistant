@@ -3,8 +3,61 @@
 # ============================================================================
 # Shiny-free, so the BE statistics can be tested directly by
 # validation/validation.R instead of through a hand-maintained copy.
-# mod_path_be.R prepares be_data (one row per NCA profile, merged with the
-# design columns) and calls fit_be_parameter() once per PK parameter.
+# mod_path_be.R builds be_data with build_be_data() (one row per NCA profile,
+# merged with the design columns) and calls fit_be_parameter() once per PK
+# parameter.
+
+#' Attach design columns to the NCA result, one row per profile
+#'
+#' The NCA result has one row per profile, identified by Subject, Treatment
+#' and (when mapped) Period. The merge uses exactly those keys, so a replicate
+#' design keeps one row per administration: merging on Subject + Treatment
+#' alone would pair each administration with every period of that treatment
+#' and enter every NCA value more than once.
+#'
+#' @param nca_res NCA result from run_nca() (Subject, Treatment[, Period])
+#' @param pk_data The uploaded data used for the NCA
+#' @param col_map Column mapping
+#' @return list(data, trt_col, subj_col, per_col, seq_col); Treatment is a
+#'   factor with "Reference" first when that level exists.
+build_be_data <- function(nca_res, pk_data, col_map) {
+  keys <- intersect(c("Subject", "Treatment", "Period"), names(nca_res))
+  if (!all(c("Subject", "Treatment") %in% keys))
+    stop("The NCA result has no Subject/Treatment columns; map the Treatment column.")
+  src <- c(Subject = col_map$subject, Treatment = col_map$treatment,
+           Period = if ("Period" %in% keys) col_map$period)
+
+  design <- data.frame(lapply(src[keys], function(cc) as.character(pk_data[[cc]])),
+                       stringsAsFactors = FALSE)
+  names(design) <- keys
+  seq_col <- NULL
+  if (!is.null(col_map$sequence) && col_map$sequence %in% names(pk_data)) {
+    seq_col <- if (col_map$sequence %in% c(keys, names(nca_res))) ".Sequence" else col_map$sequence
+    design[[seq_col]] <- pk_data[[col_map$sequence]]
+  }
+  design <- unique(design)
+
+  if (anyDuplicated(design[keys])) {
+    stop("The Sequence column is not constant within a profile (",
+         paste(keys, collapse = " x "), "). Check the Sequence column.")
+  }
+
+  # Key columns are character on both sides: NCA keys are always character,
+  # while uploaded Subject/Period columns are usually integer. A type mismatch
+  # would leave Period all-NA after the merge and lm() would drop every row.
+  nca_res[keys] <- lapply(nca_res[keys], as.character)
+  be <- merge(nca_res, design, by = keys, all.x = TRUE, sort = FALSE)
+  if (nrow(be) != nrow(nca_res))
+    stop("Design merge changed the number of profiles (", nrow(nca_res), " -> ",
+         nrow(be), "). Check the Treatment, Period and Sequence columns.")
+
+  be$Treatment <- factor(be$Treatment)
+  if ("Reference" %in% levels(be$Treatment))
+    be$Treatment <- relevel(be$Treatment, ref = "Reference")
+
+  list(data = be, trt_col = "Treatment", subj_col = "Subject",
+       per_col = if ("Period" %in% keys) "Period" else NULL, seq_col = seq_col)
+}
 
 #' Fit the BE model for one PK parameter and derive the CI and verdict
 #'
@@ -53,12 +106,12 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
 
   # Every row carries the same columns, so rows for parameters that could not
   # be estimated bind with the rest instead of breaking rbind().
-  make_row <- function(pe = NA, lo = NA, hi = NA, n_t = NA, n_r = NA,
+  make_row <- function(pe = NA, lo = NA, hi = NA, n_t = NA, n_r = NA, o_t = NA, o_r = NA,
                        pe_status = NA, verdict = NA, mse = NA, dfe = NA) {
     data.frame(
       Parameter = param, Test = as.character(trt_levels[2]),
       Reference = as.character(trt_levels[1]),
-      N_Test = n_t, N_Ref = n_r, Scale = scale_label,
+      N_Test = n_t, N_Ref = n_r, Obs_Test = o_t, Obs_Ref = o_r, Scale = scale_label,
       Point_Est = pe, CI_Lower = lo, CI_Upper = hi,
       BE_Lower = if (has_limits) be_lower else NA,
       BE_Upper = if (has_limits) be_upper else NA,
@@ -166,8 +219,12 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   is_lme <- inherits(fit, "lme")
   trt_coef_name <- paste0(trt_col, trt_levels[2])
 
-  n1 <- sum(be_data[[trt_col]] == trt_levels[1] & !is.na(be_data$.response))
-  n2 <- sum(be_data[[trt_col]] == trt_levels[2] & !is.na(be_data$.response))
+  # N counts subjects; Obs counts profiles (administrations). They differ in
+  # replicate designs, where a subject receives a treatment more than once.
+  has_ref <- be_data[[trt_col]] == trt_levels[1] & !is.na(be_data$.response)
+  has_tst <- be_data[[trt_col]] == trt_levels[2] & !is.na(be_data$.response)
+  n1 <- length(unique(be_data[[subj_col]][has_ref])); o1 <- sum(has_ref)
+  n2 <- length(unique(be_data[[subj_col]][has_tst])); o2 <- sum(has_tst)
 
   coef_result <- tryCatch({
     if (is_lme) {
@@ -233,7 +290,8 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   out$estimate <- list(pe = pe, ci_lo = ci_lo_p, ci_hi = ci_hi_p,
                        dfe = unname(dfe), mse = unname(mse))
   out$row <- make_row(pe = round(pe, 2), lo = round(ci_lo_p, 2), hi = round(ci_hi_p, 2),
-                      n_t = n2, n_r = n1, pe_status = pe_status, verdict = verdict,
+                      n_t = n2, n_r = n1, o_t = o2, o_r = o1,
+                      pe_status = pe_status, verdict = verdict,
                       mse = round(mse, 6), dfe = unname(dfe))
   out
 }

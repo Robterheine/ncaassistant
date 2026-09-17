@@ -3,6 +3,42 @@
 # ============================================================================
 # BLQ handling, lambda_z management, dose normalization
 
+#' Identify the concentration-time profile each row belongs to
+#'
+#' A profile is one subject, under one treatment, in one period. Treatment
+#' and Period are included whenever they are mapped, so a replicate design
+#' (the same treatment given in two periods) yields one profile per
+#' administration instead of merging them. The same key is used by the BLQ
+#' rules, the NCA and the generated reproduction script, so all three agree on
+#' what a profile is. The key is applied unconditionally: its shape depends on
+#' the mapping, never on the data.
+#'
+#' @param data Data frame
+#' @param col_map Column mapping (subject, and optionally treatment/period)
+#' @return list(key   = character profile key per row,
+#'              parts = data.frame per row with Subject and, when mapped,
+#'                      Treatment and Period (all character),
+#'              cols  = names(parts))
+profile_key <- function(data, col_map) {
+  parts <- data.frame(Subject = as.character(data[[col_map$subject]]),
+                      stringsAsFactors = FALSE)
+  if (!is.null(col_map$treatment) && col_map$treatment %in% names(data))
+    parts$Treatment <- as.character(data[[col_map$treatment]])
+  if (!is.null(col_map$period) && col_map$period %in% names(data))
+    parts$Period <- as.character(data[[col_map$period]])
+  key <- if (ncol(parts) == 1) parts$Subject else do.call(paste, c(parts, sep = "||"))
+  list(key = key, parts = parts, cols = names(parts))
+}
+
+#' Human-readable label for each profile, e.g. "12 | Test | P3"
+#' @param parts data.frame with Subject and optionally Treatment, Period
+profile_labels <- function(parts) {
+  lab <- as.character(parts$Subject)
+  if ("Treatment" %in% names(parts)) lab <- paste(lab, "|", parts$Treatment)
+  if ("Period" %in% names(parts))    lab <- paste0(lab, " | P", parts$Period)
+  lab
+}
+
 #' Apply BLQ (Below Limit of Quantification) handling rules
 #' 
 #' Implements WinNonlin-compatible BLQ rules:
@@ -27,17 +63,12 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
 
   # Rules 1, 5 and 6 are positional: they depend on which samples come first
   # and last within ONE concentration-time profile. A profile is one subject
-  # under one treatment, so in a crossover the grouping must include the
-  # treatment. Grouping by subject alone concatenates a subject's Test and
-  # Reference periods and then applies "first/last quantifiable" (rules 1, 6)
-  # and "Cmax" (rule 5) across both periods at once, which imputes the two
-  # formulations differently and biases the ratio the BE analysis reports.
-  has_trt <- !is.null(col_map$treatment) && col_map$treatment %in% names(data)
-  prof_key <- if (has_trt) {
-    paste(data[[subj_col]], data[[col_map$treatment]], sep = "||")
-  } else {
-    as.character(data[[subj_col]])
-  }
+  # under one treatment in one period (profile_key()). Grouping more coarsely
+  # concatenates profiles (Test and Reference periods, or both administrations
+  # of a replicate) and then applies "first/last quantifiable" (rules 1, 6)
+  # and "Cmax" (rule 5) across them at once, which imputes the wrong samples
+  # and biases the ratio the BE analysis reports.
+  prof_key <- profile_key(data, col_map)$key
 
   # These rules are also order-dependent, so each profile is visited in time
   # order regardless of how the rows happen to be arranged in the file.
@@ -299,17 +330,17 @@ run_nca <- function(data, col_map, settings) {
                         "log"     = "Log",
                         "Linear")
   
-  # CRITICAL: For crossover studies (treatment column mapped), each subject
-  # has multiple profiles. NonCompart::tblNCA groups by `key` — if we use
-  # Subject alone, it sees non-monotonic time. Solution: create a composite
-  # key (Subject + Treatment) so each profile is analyzed separately.
-  
-  use_composite_key <- !is.null(col_map$treatment) &&
-    col_map$treatment %in% names(data)
-  
+  # CRITICAL: in crossover and replicate studies each subject has several
+  # profiles. NonCompart::tblNCA groups by `key`, so the key must identify one
+  # profile: subject + treatment + period (profile_key()). Without Period a
+  # replicate design's two administrations of a treatment are merged into one
+  # interleaved profile.
+  pk <- profile_key(data, col_map)
+  use_composite_key <- length(pk$cols) > 1
+
   if (use_composite_key) {
-    data$.nca_key <- paste(data[[col_map$subject]],
-                           data[[col_map$treatment]], sep = "||")
+    data$.nca_key <- pk$key
+    key_parts <- unique(cbind(.nca_key = pk$key, pk$parts))
     nca_key <- ".nca_key"
   } else {
     nca_key <- col_map$subject
@@ -437,17 +468,15 @@ run_nca <- function(data, col_map, settings) {
     NULL
   })
   
-  # If composite key was used, split it back into Subject and Treatment columns
+  # If a composite key was used, restore its parts (Subject, Treatment,
+  # Period) by matching the key, never by splitting the string: a separator
+  # inside a treatment name can then not corrupt the columns.
   if (!is.null(result) && use_composite_key) {
-    key_parts <- strsplit(result[[1]], "||", fixed = TRUE)
-    result$Subject   <- sapply(key_parts, `[`, 1)
-    result$Treatment <- sapply(key_parts, `[`, 2)
-    
-    # Move Subject and Treatment to front, drop the composite key
+    idx <- match(as.character(result[[1]]), key_parts$.nca_key)
     first_col <- names(result)[1]
     result[[first_col]] <- NULL
-    result <- result[, c("Subject", "Treatment",
-                          setdiff(names(result), c("Subject", "Treatment")))]
+    for (cc in pk$cols) result[[cc]] <- key_parts[[cc]][idx]
+    result <- result[, c(pk$cols, setdiff(names(result), pk$cols))]
   }
   
   result

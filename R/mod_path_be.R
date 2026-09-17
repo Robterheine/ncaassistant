@@ -487,43 +487,20 @@ path_be_server <- function(id, shared) {
         
         setProgress(0.5, message = "Step 2: Running BE analysis...")
         
-        # Merge with design info
-        trt_col <- if ("Treatment" %in% names(nca_res)) "Treatment" else cm$treatment
-        subj_col <- if ("Subject" %in% names(nca_res)) "Subject" else names(nca_res)[1]
-        
-        merge_cols <- c(cm$subject)
-        if (!is.null(cm$treatment)) merge_cols <- c(merge_cols, cm$treatment)
-        extra <- c()
-        if (!is.null(cm$period)) extra <- c(extra, cm$period)
-        if (!is.null(cm$sequence)) extra <- c(extra, cm$sequence)
-        
-        if (length(extra) > 0) {
-          design_df <- shared$pk_data %>%
-            select(all_of(c(merge_cols, extra))) %>% distinct()
-          
-          # Coerce subject ID column to character so the merge matches
-          # nca_res$Subject (always character after composite key splitting)
-          # regardless of the original column type (e.g., integer Subject ID).
-          design_df[[cm$subject]] <- as.character(design_df[[cm$subject]])
-          
-          if ("Subject" %in% names(nca_res) && "Treatment" %in% names(nca_res)) {
-            be_data <- merge(nca_res, design_df,
-                             by.x = c("Subject","Treatment"),
-                             by.y = c(cm$subject, cm$treatment), all.x = TRUE)
-          } else {
-            be_data <- merge(nca_res, design_df,
-                             by.x = names(nca_res)[1], by.y = cm$subject, all.x = TRUE)
-          }
-        } else { be_data <- nca_res }
-        
-        # BE analysis
-        trt_col_be <- if ("Treatment" %in% names(be_data)) "Treatment" else cm$treatment
-        subj_col_be <- if ("Subject" %in% names(be_data)) "Subject" else cm$subject
-        per_col <- if (!is.null(cm$period) && cm$period %in% names(be_data)) cm$period else NULL
-        seq_col <- if (!is.null(cm$sequence) && cm$sequence %in% names(be_data)) cm$sequence else NULL
-        
-        be_data[[trt_col_be]] <- factor(be_data[[trt_col_be]])
-        trt_levels <- levels(be_data[[trt_col_be]])
+        # Merge with design info: one row per NCA profile (subject x treatment
+        # x period), with the Sequence column attached. See build_be_data().
+        bd <- tryCatch(build_be_data(nca_res, shared$pk_data, cm),
+                       error = function(e) {
+                         showNotification(conditionMessage(e), type = "error", duration = NULL)
+                         NULL
+                       })
+        if (is.null(bd)) return()
+        be_data     <- bd$data
+        trt_col_be  <- bd$trt_col
+        subj_col_be <- bd$subj_col
+        per_col     <- bd$per_col
+        seq_col     <- bd$seq_col
+        trt_levels  <- levels(be_data[[trt_col_be]])
         
         if (length(trt_levels) != 2) {
           showNotification(
@@ -536,9 +513,6 @@ path_be_server <- function(id, shared) {
           return()
         }
         
-        if ("Reference" %in% trt_levels)
-          be_data[[trt_col_be]] <- relevel(be_data[[trt_col_be]], ref = "Reference")
-        trt_levels <- levels(be_data[[trt_col_be]])
         
         params <- input$be_params
         if (is.null(params) || length(params) == 0)
@@ -718,9 +692,14 @@ path_be_server <- function(id, shared) {
       
       # Subjects per treatment from the result table
       subj_col    <- if ("Subject" %in% names(r)) "Subject" else names(r)[1]
+      # Subjects and profiles differ in replicate designs, where a subject
+      # receives the same treatment in more than one period.
       per_trt     <- if (n_trt > 0 && trt_col %in% names(r)) {
         sapply(treatments, function(t)
-          sum(r[[trt_col]] == t, na.rm = TRUE))
+          length(unique(r[[subj_col]][r[[trt_col]] == t])))
+      } else integer(0)
+      prof_trt    <- if (n_trt > 0 && trt_col %in% names(r)) {
+        sapply(treatments, function(t) sum(r[[trt_col]] == t, na.rm = TRUE))
       } else integer(0)
       
       # Design info from shared study_info (set at upload time)
@@ -741,8 +720,8 @@ path_be_server <- function(id, shared) {
                   paste0(n_profiles, " profile(s)")),
         if (n_trt > 0) {
           trt_str <- paste(
-            mapply(function(t, n) paste0(t, " (n=", n, ")"),
-                   treatments, per_trt),
+            mapply(function(t, n, k) paste0(t, " (n=", n, if (k != n) paste0(", ", k, " profiles"), ")"),
+                   treatments, per_trt, prof_trt),
             collapse = ", ")
           tags$span(class = "text-muted ms-3",
                     paste0("Treatments: ", trt_str))
@@ -835,7 +814,7 @@ path_be_server <- function(id, shared) {
       if (!isTRUE(input$nca_show_all)) {
         # AUCPEO included so >20% extrapolation is visible in default view
         key_cols <- intersect(
-          c("Subject", "Treatment",
+          c("Subject", "Treatment", "Period",
             "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
             "AUC to Last Point", "AUC to Infinity (observed)",
             "AUC % Extrapolated (observed)",
