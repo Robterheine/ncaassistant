@@ -113,7 +113,7 @@ path_viz_ui <- function(id) {
                   ),
                   choices = c(
                     "Geometric mean \u00d7/\u00f7 geometric SD" = "geomean",
-                    "Arithmetic mean \u00b1 SD (not recommended for Cmax/AUC)" = "arithmean"
+                    "Arithmetic mean \u00b1 SD" = "arithmean"
                   ),
                   selected = "geomean",
                   # Attach dropdown to <body> so card overflow never clips it
@@ -472,9 +472,10 @@ path_viz_server <- function(id, shared) {
       tags$div(class = "alert alert-warning py-2 small mb-2",
                icon("triangle-exclamation", class = "me-1"),
                tags$strong("Note: "),
-               "Arithmetic mean \u00b1 SD is not recommended for log-normally ",
-               "distributed PK parameters (Cmax, AUC). ",
-               "Geometric mean is the appropriate default.")
+               "Concentrations at a time point are usually right-skewed, so mean \u00b1 SD can give ",
+               "error bars below zero and is pulled up by a few high values. The geometric mean is ",
+               "the usual default. Note that the geometric mean leaves out concentrations \u2264 0, which ",
+               "raises it at early and late times when many samples are zero.")
     })
 
     # ---- Auto-generated figure legend for manuscripts ----------------------

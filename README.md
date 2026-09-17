@@ -19,7 +19,7 @@ The app offers six self-contained workflow paths accessible from a central hub:
 
 **4. Analyze One Subject at a Time** — Step through individual profiles with Previous/Next navigation. Includes manual data entry, an interactive half-life inspector with point-by-point adjustment, and dose auto-fill from the data for each profile.
 
-**5. Analyze All Subjects (Batch)** — Run NCA on all profiles at once (one profile per subject, treatment and period, so replicate administrations stay separate). Summary statistics per treatment, individual profile grid, spaghetti and mean±SD plots, half-life review, and steady-state display with AUCτ as the primary parameter. When the automatic terminal fit is below the minimum adjusted R² (default 0.70), half-life and the parameters derived from it are not reported for that profile, unless you select the points yourself.
+**5. Analyze All Subjects (Batch)** — Run NCA on all profiles at once (one profile per subject, treatment and period, so replicate administrations stay separate). Summary statistics per treatment, individual profile grid, spaghetti and mean±SD plots, half-life review, and steady-state analysis with an entered dosing interval (AUCτ, average concentration, fluctuation and swing). When the automatic terminal fit is below the minimum adjusted R² (default 0.70), half-life and the parameters derived from it are not reported for that profile, unless you select the points yourself.
 
 **6. Bioequivalence Testing** — NCA → ANOVA (EMA Method A: Sequence, Subject, Period and Treatment as factors) → confidence interval (90% by default) → forest plot → bioequivalence conclusion. You choose the Reference treatment; the conclusion uses confidence limits rounded to two decimals and, for limits wider than 80–125%, also requires the point estimate within 80.00–125.00% by default. Designs: 2×2 crossover, 2×2×3 and 2×2×4 full replicate, 2×3×3 partial replicate, parallel groups, and paired comparison (all subjects in the same order; ratio without a verdict). For replicate designs the within-subject variability of Reference and Test and the EMA expanded limits they would imply are shown for information; the app performs average bioequivalence only, not reference-scaled (ABEL/RSABE) or NTID analyses. Results agree with the replicateBE package on its 30 reference data sets.
 
@@ -95,7 +95,7 @@ A consolidated validation package is available in [`validation/`](validation/), 
 Rscript validation/validation.R
 ```
 
-This executes 330 automated tests (plus 44 manual tests defined for a running app) and generates a results CSV with environment details, per-section results, and URS traceability.
+This executes 338 automated tests (plus 44 manual tests defined for a running app) and generates a results CSV with environment details, per-section results, and URS traceability.
 
 **Validation deliverables:**
 

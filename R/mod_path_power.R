@@ -110,7 +110,8 @@ path_power_ui <- function(id) {
                          value = 95, min = 50, max = 200, step = 1),
             tags$p(class = "text-muted small mt-n2 mb-2",
                    "95 means you expect the Test to be 95% of the Reference. ",
-                   "Use 95 if unsure \u2014 this is the conventional assumption."),
+                   "The default follows the method: 95 for standard bioequivalence, 90 for highly ",
+                   "variable drugs, 97.5 for narrow therapeutic index drugs (as in PowerTOST)."),
 
             # Main CV
             numericInput(ns("cv"),
@@ -422,11 +423,14 @@ path_power_server <- function(id, shared) {
       if (!is.na(cv_est)) updateNumericInput(session, "cv", value = round(cv_est, 1))
     })
 
-    # For scaled methods the first CV is the Test product's within-subject CV
+    # The first CV is the Test CV for scaled methods and the total CV for a
+    # parallel design (planner_cv_label in R/designs.R)
+    observe({
+      updateNumericInput(session, "cv", label = planner_cv_label(input$analysis_type, input$design))
+    })
+    # The expected ratio follows the method (PowerTOST defaults); the user can change it
     observeEvent(input$analysis_type, {
-      scaled <- (input$analysis_type %||% "abe") %in% c("abel", "rsabe", "ntid")
-      updateNumericInput(session, "cv", label = if (scaled)
-        "Within-subject CV of the Test product (CV %)" else "Within-subject variability (CV %)")
+      updateNumericInput(session, "theta0", value = planner_default_theta0(input$analysis_type))
     }, ignoreInit = TRUE)
 
     # ---- Input validation helper --------------------------------------------

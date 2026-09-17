@@ -557,7 +557,7 @@ check("NCA-DN-02", "Dose norm: all DN cols",
       "URS-NCA-08", method="Check DN columns", expected="All present", critical=TRUE)
 
 check("NCA-SS-01", "SS: changes clearance values",
-      { ss<-data.frame(Subject=rep("A",6),Time=c(0,1,2,4,8,12),Conc=c(5,15,12,8,5.5,5)); ss_f<-theoph_settings; ss_f$is_steady_state<-FALSE; ss_t<-theoph_settings; ss_t$is_steady_state<-TRUE; rf<-run_nca(ss,iv_cm,ss_f); rt<-run_nca(ss,iv_cm,ss_t); !is.null(rf)&&!is.null(rt)&&as.numeric(rt$CLFO[1])!=as.numeric(rf$CLFO[1]) },
+      { ss<-data.frame(Subject=rep("A",6),Time=c(0,1,2,4,8,12),Conc=c(5,15,12,8,5.5,5)); ss_f<-theoph_settings; ss_f$is_steady_state<-FALSE; ss_t<-theoph_settings; ss_t$is_steady_state<-TRUE; ss_t$tau<-12; rf<-run_nca(ss,iv_cm,ss_f); rt<-run_nca(ss,iv_cm,ss_t); !is.null(rf)&&!is.null(rt)&&as.numeric(rt$CLFO[1])!=as.numeric(rf$CLFO[1]) },
       "URS-NCA-07", method="SS=TRUE vs FALSE changes CL/F", expected="Different CL/F values", critical=TRUE)
 check("NCA-SS-02", "SS: AUCTAU absent when FALSE", !"AUCTAU"%in%names(theoph_result),
       "URS-NCA-07", method="SS=FALSE", expected="AUCTAU absent", critical=FALSE)
@@ -956,7 +956,7 @@ check("EXP-CD-03", "Every NonCompart output parameter has a code or an explicit 
                trap_method = "log", r2adj_threshold = 0.7, mw = 0)
     ok <- TRUE
     for (route in c("extravascular", "iv_bolus", "iv_infusion")) for (ss in c(FALSE, TRUE)) {
-      st$admin_route <- route; st$is_steady_state <- ss
+      st$admin_route <- route; st$is_steady_state <- ss; st$tau <- if (ss) 24 else NULL
       r <- suppressWarnings(run_nca(d, cm, st))
       params <- setdiff(names(r), c("Subject", "Treatment", "Period"))
       cc <- cdisc_pk_codes(params, route, ss)
@@ -2812,6 +2812,101 @@ check("REV3-14", "Half-life gets a ratio and 90% CI but no bioequivalence verdic
   expected = "half-life: ratio and CI, 'no verdict', no limits; Cmax keeps its verdict")
 
 end_section("REV3")
+
+# =============================================================================
+# SECTION REV4: External statistical audit
+# =============================================================================
+start_section("REV4")
+
+ss_st <- function(tau = 12) list(admin_route = "extravascular", dose = 100, trap_method = "linear",
+  dose_unit = "mg", time_unit = "h", conc_unit = "mg/L", is_steady_state = TRUE, tau = tau,
+  mw = 0, r2adj_threshold = 0.7, infusion_duration = 0)
+ss_cm <- list(subject = "ID", time = "T", conc = "C")
+ss_d <- data.frame(ID = c(rep("A", 7), rep("B", 6)),
+                   T = c(0, 0.5, 1, 2, 4, 8, 12, 0, 0.5, 1, 2, 4, 8),
+                   C = c(3.2, 28.1, 22.4, 15, 9.8, 6, 4.1, 3.0, 25, 20, 14, 9, 5.5))
+
+check("REV4-01", "Steady state needs the dosing interval",
+  tryCatch({
+    st <- ss_st(); st$tau <- NULL
+    w <- tryCatch({ run_nca(ss_d, ss_cm, st); "" }, warning = function(w) conditionMessage(w))
+    grepl("dosing interval", w, ignore.case = TRUE) && is.null(suppressWarnings(run_nca(ss_d, ss_cm, st)))
+  }, error = function(e) FALSE),
+  "URS-NCA-07", critical = TRUE, method = "run_nca with is_steady_state = TRUE and no tau",
+  expected = "no result, warning asking for the dosing interval")
+
+check("REV4-02", "AUCtau covers 0 to tau, also when C(tau) is missing; Cavg = AUCtau / tau",
+  tryCatch({
+    r <- run_nca(ss_d, ss_cm, ss_st(12)); a <- r[r$ID == "A", ]; b <- r[r$ID == "B", ]
+    x <- NonCompart::sNCA(ss_d$T[8:13], ss_d$C[8:13], dose = 100, doseUnit = "mg", timeUnit = "h",
+      concUnit = "mg/L", R2ADJ = 0, SS = TRUE, iAUC = data.frame(Name = "P", Start = 0, End = 12))
+    isTRUE(all.equal(as.numeric(a$AUCTAU), as.numeric(a$AUCLST))) &&
+      isTRUE(all.equal(as.numeric(b$AUCTAU), unname(x["P"]))) && as.numeric(b$AUCTAU) > as.numeric(b$AUCLST) &&
+      isTRUE(all.equal(as.numeric(b$CAVG), as.numeric(b$AUCTAU) / 12)) &&
+      all(as.numeric(r$TAU) == 12)
+  }, error = function(e) FALSE),
+  "URS-NCA-07", critical = TRUE,
+  method = "profile B ends at 8 h, tau = 12 h; compare with NonCompart partial AUC",
+  expected = "AUCtau = partial AUC 0-12 (extrapolated), Cavg = AUCtau/12, TAU = 12 for all")
+
+check("REV4-03", "Clearance and volume at steady state use AUCtau",
+  tryCatch({
+    r <- run_nca(ss_d, ss_cm, ss_st(12)); b <- r[r$ID == "B", ]; a <- r[r$ID == "A", ]
+    k_a <- as.numeric(a$CLFO) * as.numeric(a$AUCTAU); k_b <- as.numeric(b$CLFO) * as.numeric(b$AUCTAU)
+    isTRUE(all.equal(k_a, k_b)) &&
+      isTRUE(all.equal(as.numeric(b$VZFO) * as.numeric(b$LAMZ) * as.numeric(b$AUCTAU), k_b))
+  }, error = function(e) FALSE),
+  "URS-NCA-07", critical = TRUE, method = "CL/F x AUCtau and Vz/F x lambda-z x AUCtau for both profiles",
+  expected = "equal to dose x unit factor for both profiles")
+
+check("REV4-04", "Steady-state summary parameters in every path, with the entered tau",
+  tryCatch({
+    r <- run_nca(ss_d, ss_cm, ss_st(12))
+    s <- run_single_nca(ss_d$T[2:7], ss_d$C[2:7], ss_st(12))
+    all(c("TAU", "AUCTAU", "CAVG", "CMIN_SS", "FLUCTP", "SWING") %in% names(r)) &&
+      unname(s["TAU"]) == 12 && is.finite(unname(s["CAVG"])) &&
+      isTRUE(all.equal(as.numeric(r$FLUCTP[1]),
+        (as.numeric(r$CMAX[1]) - as.numeric(r$CMIN_SS[1])) / as.numeric(r$CAVG[1]) * 100))
+  }, error = function(e) FALSE),
+  "URS-NCA-07", critical = TRUE, method = "batch run_nca and single run_single_nca (no pre-dose sample)",
+  expected = "all columns present; tau = 12 without a pre-dose sample; fluctuation formula")
+
+check("REV4-05", "Steady-state records reproduce with the recorded tau",
+  tryCatch({
+    rb <- rec_build(df = ss_d, cm = ss_cm, st = ss_st(12))
+    js <- jsonlite::fromJSON(file.path(rb$ex, "analysis_settings.json"))
+    zp <- file.path(tempdir(), "rev405.zip")
+    res <- run_single_nca(ss_d$T[1:7], ss_d$C[1:7], ss_st(12))
+    create_single_analysis_record(zp, res, ss_st(12), ss_d$T[1:7], ss_d$C[1:7], subject_label = "Manual Entry")
+    identical(as.numeric(js$tau), 12) && grepl("Result: MATCH", rec_check_text(rb$ex)) &&
+      grepl("Result: MATCH", rec_check_text(rec_unzip(zp)))
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = TRUE, method = "batch and single records with tau = 12", expected = "tau recorded; MATCH")
+
+check("REV4-06", "Planner defaults follow the method; parallel designs ask for the total CV",
+  tryCatch({
+    planner_default_theta0("abe") == 95 && planner_default_theta0("abel") == 90 &&
+      planner_default_theta0("rsabe") == 90 && planner_default_theta0("ntid") == 97.5 &&
+      grepl("total", planner_cv_label("abe", "parallel"), ignore.case = TRUE) &&
+      !grepl("total", planner_cv_label("abe", "2x2"), ignore.case = TRUE)
+  }, error = function(e) FALSE),
+  "URS-PWR-01", critical = FALSE, method = "planner_default_theta0(), planner_cv_label()",
+  expected = "95 / 90 / 90 / 97.5; 'total CV' for parallel")
+
+check("REV4-07", "Methods page describes the models and criteria as implemented",
+  tryCatch({
+    m <- paste(rev3_code("R/mod_methods.R"), collapse = " ")
+    all(vapply(c("95% upper confidence bound", "Method B", "Satterthwaite", "complete-case",
+                 "pooled over Test and Reference", "equal variances", "dosing interval (\\u03C4) entered"),
+               function(k) grepl(k, m, fixed = TRUE), logical(1)))
+  }, error = function(e) FALSE),
+  "URS-GEN-03", critical = FALSE, method = "search mod_methods.R", expected = "all statements present")
+
+check("REV4-08", "Figure summary labels do not refer to PK parameters",
+  tryCatch(!any(grepl("Cmax/AUC", rev3_code("R/mod_path_viz.R"), fixed = TRUE)), error = function(e) FALSE),
+  "URS-VIZ-03", critical = FALSE, method = "search mod_path_viz.R", expected = "no Cmax/AUC wording in concentration plot labels")
+
+end_section("REV4")
 
 # =============================================================================
 # Post-execution

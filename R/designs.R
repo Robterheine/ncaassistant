@@ -112,3 +112,22 @@ planner_cv <- function(analysis_type, cv_pct, cv_wr_pct = NULL) {
     cv_pct / 100
   }
 }
+
+#' Default expected Test/Reference ratio (%) for a planning method
+#'
+#' 95% for average bioequivalence; 90% for the scaled methods and 97.5% for
+#' NTID, the defaults of PowerTOST (highly variable products tend to deviate
+#' more from the reference; NTID products have tightened content limits).
+planner_default_theta0 <- function(analysis_type) {
+  switch(if (is.null(analysis_type)) "abe" else analysis_type, abel = 90, rsabe = 90, ntid = 97.5, 95)
+}
+
+#' Label of the first CV input in Plan a Study
+#'
+#' A parallel design needs the total CV (between- plus within-subject);
+#' scaled methods need the Test product's within-subject CV.
+planner_cv_label <- function(analysis_type, design) {
+  if (identical(design, "parallel")) return("Total CV, between + within subjects (CV %)")
+  if (!is.null(analysis_type) && analysis_type %in% c("abel", "rsabe", "ntid")) return("Within-subject CV of the Test product (CV %)")
+  "Within-subject variability (CV %)"
+}

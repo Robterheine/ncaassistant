@@ -238,8 +238,9 @@ help_steady_state <- info_btn("help_steady_state", "When is data 'steady-state'?
   leave this unchecked.
   <br><br>
   If the drug was given <b>multiple times</b> and you're looking at the profile 
-  after several days of dosing, check this box. The app will calculate 
-  steady-state-specific parameters like AUCtau (AUC over one dosing interval).")
+  after several days of dosing, check this box and enter the dosing interval (τ), 
+  for example 12 h for twice-daily dosing. The app then calculates AUCτ (AUC from 0 to τ), 
+  average concentration, fluctuation and swing, and clearance from AUCτ.")
 
 help_dose_norm <- info_btn("help_dose_norm", "What is dose normalization?",
   "Dose normalization divides PK parameters (like Cmax and AUC) by the dose.
@@ -352,7 +353,7 @@ help_what_is_power <- info_btn("help_what_is_power", "What is power & sample siz
   <br><br>
   The sample size depends on:
   <ul>
-  <li><b>CV</b> — variability of the drug (higher CV = more subjects needed)</li>
+  <li><b>CV</b> — variability of the drug (higher CV = more subjects needed); for a parallel design the total CV</li>
   <li><b>T/R ratio</b> — how similar you expect the formulations to be</li>
   <li><b>Study design</b> — crossover needs fewer subjects than parallel</li>
   </ul>")

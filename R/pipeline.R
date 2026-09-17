@@ -512,40 +512,61 @@ run_single_nca <- function(time, conc, settings, time_used = NULL) {
     if (length(use) < 2) use <- NULL
   }
   num0 <- function(v) { v <- suppressWarnings(as.numeric(v)); if (length(v) == 0 || is.na(v)) 0 else v }
+  ss <- isTRUE(settings$is_steady_state)
+  tau <- steady_state_tau(settings)
+  if (ss && is.na(tau)) {
+    warning("Steady state: enter the dosing interval (tau) in the analysis settings.")
+    return(NULL)
+  }
   r <- NonCompart::sNCA(t_num, c_num, dose = num0(settings$dose), adm = adm, down = down,
                    dur = if (adm == "Infusion") num0(settings$infusion_duration) else 0,
                    doseUnit = settings$dose_unit, timeUnit = settings$time_unit,
                    concUnit = settings$conc_unit, SS = isTRUE(settings$is_steady_state),
                    # R2ADJ = 0 avoids NonCompart's interactive slope picker (see run_nca)
-                   R2ADJ = 0, MW = num0(settings$mw), UsePoints = use)
+                   R2ADJ = 0, MW = num0(settings$mw), UsePoints = use,
+                   iAUC = if (ss) data.frame(Name = "AUCTAU", Start = 0, End = tau) else "")
   # The analyst's R2 threshold applies to the automatic fit, not to points
   # chosen by hand
-  if (is.null(use) && below_r2_threshold(r["R2ADJ"], settings$r2adj_threshold)) {
-    r[lamz_dependent_cols(names(r), settings$is_steady_state)] <- NA
-  }
+  low <- is.null(use) && below_r2_threshold(r["R2ADJ"], settings$r2adj_threshold)
+  if (low) r[lamz_dependent_cols(names(r), settings$is_steady_state)] <- NA
+  if (ss) r <- steady_state_parameters(r, t_num, c_num, tau, lamz_rejected = low)
   r
 }
 
-#' Steady-state summary parameters added to a single-profile NCA result
+#' The dosing interval entered for a steady-state analysis, or NA
+steady_state_tau <- function(settings) {
+  tau <- suppressWarnings(as.numeric(settings$tau))
+  if (length(tau) != 1 || is.na(tau) || tau <= 0) NA_real_ else tau
+}
+
+#' Steady-state parameters for one profile, from the entered dosing interval
 #'
-#' tau is taken as the sampled interval (last minus first time); CAVG =
-#' AUClast / tau; fluctuation and swing from Cmax and the minimum observed
-#' concentration.
-add_steady_state_parameters <- function(r, time, conc) {
-  tau    <- max(time, na.rm = TRUE) - min(time, na.rm = TRUE)
-  auclst <- as.numeric(r["AUCLST"])
-  cmax   <- as.numeric(r["CMAX"])
-  cmin   <- min(conc[!is.na(conc)], na.rm = TRUE)
-  cavg   <- if (tau > 0 && !is.na(auclst)) auclst / tau else NA
-  fluct  <- if (!is.na(cavg) && cavg > 0) (cmax - cmin) / cavg * 100 else NA
-  swing  <- if (!is.na(cmin) && cmin > 0) (cmax - cmin) / cmin else NA
-  c(r,
-    AUCTAU  = auclst,
-    TAU     = tau,
-    CAVG    = if (is.finite(cavg)) cavg else NA,
-    CMIN_SS = cmin,
-    FLUCTP  = if (is.finite(fluct)) fluct else NA,
-    SWING   = if (is.finite(swing)) swing else NA)
+#' AUCTAU is NonCompart's partial AUC from 0 to tau (interpolated within the
+#' samples, extrapolated with lambda-z beyond the last one). It is missing when
+#' that extrapolation would need a lambda-z fit rejected by the R2 rule.
+#' CAVG = AUCTAU / tau; CMIN_SS is the lowest observed concentration within
+#' 0-tau; fluctuation = (Cmax - Cmin) / Cavg x 100; swing = (Cmax - Cmin) / Cmin.
+#' NonCompart computes CL/F and Vz/F at steady state from AUClast; they are
+#' rescaled to AUCTAU, so they stay correct when sampling does not end at tau.
+#' @param r Named NCA result (sNCA output, or one row of tblNCA as a list)
+steady_state_parameters <- function(r, time, conc, tau, lamz_rejected = FALSE) {
+  get <- function(n) if (n %in% names(r)) suppressWarnings(as.numeric(r[[n]])) else NA_real_
+  auctau <- get("AUCTAU"); auclst <- get("AUCLST"); tlst <- get("TLST"); cmax <- get("CMAX")
+  if (isTRUE(lamz_rejected) && !is.na(tlst) && tau > tlst + 1e-9) auctau <- NA_real_
+  ok <- !is.na(time) & !is.na(conc) & time <= tau + 1e-9
+  cmin  <- if (any(ok)) min(conc[ok]) else NA_real_
+  cavg  <- if (!is.na(auctau)) auctau / tau else NA_real_
+  fluct <- if (!is.na(cavg) && cavg > 0 && !is.na(cmin)) (cmax - cmin) / cavg * 100 else NA_real_
+  swing <- if (!is.na(cmin) && cmin > 0) (cmax - cmin) / cmin else NA_real_
+  scale <- if (!is.na(auctau) && auctau > 0 && !is.na(auclst)) auclst / auctau else NA_real_
+  for (n in intersect(c("CLFO", "CLO", "VZFO", "VZO"), names(r))) r[[n]] <- get(n) * scale
+  r[["AUCTAU"]] <- auctau
+  r[["TAU"]] <- tau
+  r[["CAVG"]] <- cavg
+  r[["CMIN_SS"]] <- cmin
+  r[["FLUCTP"]] <- fluct
+  r[["SWING"]] <- swing
+  r
 }
 
 #' Run NCA for all subjects using NonCompart::tblNCA
@@ -567,6 +588,17 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
       End   = settings$partial_aucs$end,
       stringsAsFactors = FALSE
     )
+  }
+  # Steady state: AUC over the entered dosing interval
+  ss <- isTRUE(settings$is_steady_state)
+  tau <- steady_state_tau(settings)
+  if (ss && is.na(tau)) {
+    warning("Steady state: enter the dosing interval (tau) in the analysis settings.")
+    return(NULL)
+  }
+  if (ss) {
+    tau_row <- data.frame(Name = "AUCTAU", Start = 0, End = tau, stringsAsFactors = FALSE)
+    iAUC_df <- if (is.data.frame(iAUC_df)) rbind(iAUC_df, tau_row) else tau_row
   }
   
   # Determine administration mode
@@ -740,6 +772,17 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
       manual <- !vapply(use_points, is.null, logical(1))
       low <- low & !manual[match(as.character(result[[1]]), as.character(final_keys))]
     }
+    if (ss) {
+      # Steady-state parameters per profile, before any rows are blanked
+      for (n in c("TAU", "CAVG", "CMIN_SS", "FLUCTP", "SWING")) if (!n %in% names(result)) result[[n]] <- NA_real_
+      for (i in seq_len(nrow(result))) {
+        rows <- data[[nca_key]] == result[[1]][i]
+        rr <- steady_state_parameters(as.list(result[i, , drop = FALSE]),
+                                      data[[col_map$time]][rows], data[[col_map$conc]][rows], tau,
+                                      lamz_rejected = low[i])
+        for (n in names(rr)) result[[n]][i] <- rr[[n]]
+      }
+    }
     if (any(low)) {
       for (cc in lamz_dependent_cols(names(result), settings$is_steady_state)) result[[cc]][low] <- NA
       warning("Half-life not reported for ", sum(low), " profile(s) with adjusted R\u00b2 below ",
@@ -854,7 +897,7 @@ record_nca_settings <- function(rec, data, col_map) {
           if (identical(rec$dose_source, "per_subject")) dose_by_subject(data, col_map) else rec$dose
   list(admin_route = rec$admin_route, dose = dose,
        infusion_duration = if (is.null(rec$infusion_dur)) 0 else rec$infusion_dur,
-       is_steady_state = isTRUE(rec$steady_state),
+       is_steady_state = isTRUE(rec$steady_state), tau = rec$tau,
        dose_unit = rec$dose_unit, time_unit = rec$time_unit, conc_unit = rec$conc_unit,
        trap_method = rec$trap_method, r2adj_threshold = rec$r2adj_threshold,
        mw = if (is.null(rec$mw)) 0 else rec$mw, partial_aucs = NULL)

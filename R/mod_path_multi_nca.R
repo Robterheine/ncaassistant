@@ -60,7 +60,10 @@ path_multi_nca_ui <- function(id) {
                 numericInput(ns("inf_dur"), "Infusion duration", value = 0, min = 0)),
               checkboxInput(ns("is_ss"),
                             tagList("Steady-state (drug given repeatedly)", help_steady_state),
-                            value = FALSE)
+                            value = FALSE),
+              conditionalPanel(
+                condition = sprintf("input['%s'] == true", ns("is_ss")),
+                numericInput(ns("tau"), "Dosing interval \u03C4 (same unit as Time)", value = NA, min = 0))
             )
           ),
           
@@ -127,7 +130,7 @@ path_multi_nca_ui <- function(id) {
             
             # Parameter table
             nav_panel(
-              "All Parameters (per subject)",
+              "All Parameters (per profile)",
               icon = icon("table"),
               tags$p(class = "text-muted small",
                      "One row per profile (subject, and treatment and period when mapped). ",
@@ -317,12 +320,18 @@ path_multi_nca_server <- function(id, shared) {
         return()
       }
       
+      if (isTRUE(input$is_ss) && (is.null(input$tau) || is.na(input$tau) || input$tau <= 0)) {
+        showNotification("Steady state: enter the dosing interval \u03C4 (for example 12 or 24 h).",
+                         type = "error", duration = 8)
+        return()
+      }
       settings <- list(
         admin_route       = input$admin_route,
         dose              = if (use_data_dose) NA else input$dose,
         infusion_duration = ifelse(input$admin_route == "iv_infusion",
                                    input$inf_dur, 0),
         is_steady_state   = input$is_ss,
+        tau               = input$tau,
         dose_unit         = input$dose_unit,
         time_unit         = input$time_unit,
         conc_unit         = input$conc_unit,
@@ -410,10 +419,10 @@ path_multi_nca_server <- function(id, shared) {
           class = "alert alert-info py-2 small",
           icon("circle-info", class = "me-1"),
           tags$strong("Steady-state analysis: "),
-          "AUC to Last Point represents the AUC within the dosing interval (AUC\u03C4). ",
-          "CL/F is calculated as Dose/AUC\u03C4, which is the correct formula at steady state. ",
-          "AUC to infinity is not pharmacokinetically meaningful during repeated dosing and is ",
-          "hidden from the default view (available under 'Show all parameters')."
+          "AUC\u03C4 is the AUC from 0 to the dosing interval you entered (extrapolated with ",
+          "\u03BBz when the last sample is before \u03C4). CL/F and Vz/F are calculated from AUC\u03C4; ",
+          "average concentration is AUC\u03C4/\u03C4. AUC to infinity is not meaningful during ",
+          "repeated dosing and is hidden from the default view (available under 'Show all parameters')."
         )
       }
     })
@@ -488,7 +497,8 @@ path_multi_nca_server <- function(id, shared) {
           key_cols <- intersect(
             c("Subject", "Treatment", "Period",
               "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
-              "AUC to Last Point",
+              "AUC Within Dosing Interval", "Average Concentration (Cavg)",
+              "Trough Concentration (Cmin)", "Peak-Trough Fluctuation (%)",
               "Half-Life (h)", "Apparent Clearance (CL/F)",
               "Adjusted R-squared"),
             names(display_df))
@@ -567,8 +577,8 @@ path_multi_nca_server <- function(id, shared) {
       r <- nca_result()
       
       if (isTRUE(input$is_ss)) {
-        # At steady state: AUC0-t = AUCtau, show CL/F (derived from AUCtau by NonCompart)
-        key <- intersect(c("CMAX","TMAX","AUCLST","LAMZHL","LAMZ","CLFO"), names(r))
+        # At steady state: AUC over the dosing interval and its derived parameters
+        key <- intersect(c("CMAX","TMAX","AUCTAU","CAVG","CMIN_SS","FLUCTP","LAMZHL","CLFO"), names(r))
       } else {
         key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","LAMZ","CLFO","VZFO"), names(r))
       }
@@ -577,11 +587,6 @@ path_multi_nca_server <- function(id, shared) {
       summ <- summarize_pk_params(r, key, group_col = group)
       summ <- rename_summary_columns(summ)
       
-      # At steady state, relabel AUC to Last Point as AUC within dosing interval
-      if (isTRUE(input$is_ss) && "Parameter" %in% names(summ)) {
-        summ$Parameter[summ$Parameter == "AUC to Last Point"] <-
-          "AUC Within Dosing Interval (AUC\u03C4)"
-      }
       
       datatable(summ, options = list(scrollX = TRUE, dom = "t"),
                 rownames = FALSE, class = "compact stripe hover") %>%
@@ -838,7 +843,7 @@ path_multi_nca_server <- function(id, shared) {
         r <- nca_result()
         add_cdisc_code_sheet(wb, names(r)[vapply(r, is.numeric, logical(1))],
                              input$admin_route, isTRUE(input$is_ss))
-        key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r))
+        key <- intersect(if (isTRUE(input$is_ss)) c("CMAX","TMAX","AUCTAU","CAVG","CMIN_SS","FLUCTP","LAMZHL","CLFO") else c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r))
         if (length(key)>0) {
           addWorksheet(wb, "Summary_Statistics")
           writeData(wb, "Summary_Statistics", rename_summary_columns(summarize_pk_params(r, key, group_col = if ("Treatment" %in% names(r)) "Treatment" else NULL)))
@@ -870,14 +875,14 @@ path_multi_nca_server <- function(id, shared) {
         
         withProgress(message = "Generating analysis record...", value = 0.3, {
           r <- nca_result()
-          key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r))
+          key <- intersect(if (isTRUE(input$is_ss)) c("CMAX","TMAX","AUCTAU","CAVG","CMIN_SS","FLUCTP","LAMZHL","CLFO") else c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r))
           summ <- if (length(key) > 0) summarize_pk_params(r, key, group_col = if ("Treatment" %in% names(r)) "Treatment" else NULL) else NULL
           
           settings <- shared$nca_settings
           if (is.null(settings)) {
             settings <- list(
               admin_route = input$admin_route, dose = input$dose,
-              infusion_duration = 0, is_steady_state = isTRUE(input$is_ss),
+              infusion_duration = 0, is_steady_state = isTRUE(input$is_ss), tau = input$tau,
               dose_unit = input$dose_unit, time_unit = input$time_unit,
               conc_unit = input$conc_unit, trap_method = input$trap_method,
               r2adj_threshold = input$r2adj, n_obs = nrow(shared$pk_data)

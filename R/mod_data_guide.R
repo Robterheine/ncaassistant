@@ -587,9 +587,9 @@ data_guide_ui <- function() {
         tags$h6(class = "fw-semibold", "What you need"),
         tags$p(class = "small",
                "The same columns as for several subjects. Time 0 is just before the dose of the sampled ",
-               "interval, not the first dose of the treatment. Sample exactly one dosing interval: the app ",
-               "takes the interval (τ) as last minus first sampling time, so AUCτ, average ",
-               "concentration and fluctuation are only right when sampling ends at τ."),
+               "interval, not the first dose of the treatment. Include the pre-dose sample at time 0 and ",
+               "sample up to the end of the dosing interval (\u03C4). In the app you enter \u03C4; AUC\u03C4 is ",
+               "calculated from 0 to \u03C4, and extrapolated when the last sample is missing (for example BLQ)."),
         ex_table(data.frame(
           Subject = c("S01","S01","S01","S01","S01","S02","S02","S02","S02","S02"),
           Time    = c(0, 0.5, 1, 4, 12, 0, 0.5, 1, 4, 12),
@@ -600,14 +600,15 @@ data_guide_ui <- function() {
         tags$div(
           class = "alert alert-info py-2 small",
           tags$strong("In the app: "),
-          "tick 'Steady-state (drug given repeatedly)'. AUC to the last sample is then reported as AUCτ ",
-          "and CL/F is calculated from it; AUC to infinity has no meaning during repeated dosing."
+          "tick 'Steady-state (drug given repeatedly)' and enter the dosing interval \u03C4. The app reports ",
+          "AUC\u03C4, average concentration, trough, fluctuation and swing, and calculates CL/F from AUC\u03C4; ",
+          "AUC to infinity has no meaning during repeated dosing."
         ),
         checklist(c(
           "Time 0 is just before the dose of the sampled interval",
           "Pre-dose sample present (above zero is normal)",
-          "Sampling covers exactly one dosing interval (0 to 12 h for twice daily, 0 to 24 h for once daily)",
-          "'Steady-state' ticked in the app"
+          "Sampling covers one dosing interval (0 to 12 h for twice daily, 0 to 24 h for once daily)",
+          "'Steady-state' ticked and the dosing interval entered in the app"
         ))
       ),
 

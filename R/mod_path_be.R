@@ -74,7 +74,10 @@ path_be_ui <- function(id) {
                           min = 0,   max = 1, value = 0.7, step = 0.05),
               checkboxInput(ns("is_ss"),
                             tagList("Steady-state (drug given repeatedly)", help_steady_state),
-                            value = FALSE)
+                            value = FALSE),
+              conditionalPanel(
+                condition = sprintf("input['%s'] == true", ns("is_ss")),
+                numericInput(ns("tau"), "Dosing interval \u03C4 (same unit as Time)", value = NA, min = 0))
             )
           ),
           
@@ -350,12 +353,11 @@ path_be_server <- function(id, shared) {
       req(be_nca_result())
       r <- be_nca_result()
       available <- intersect(
-        c("CMAX","AUCLST","AUCIFO","AUCIFP","TMAX","LAMZHL"), names(r))
-      # At steady state, AUCLST = AUCτ and is the correct primary parameter.
-      # AUCIFO is not pharmacokinetically meaningful at steady state,
-      # so exclude it from the default selection.
+        c("CMAX","AUCTAU","AUCLST","AUCIFO","AUCIFP","TMAX","LAMZHL"), names(r))
+      # At steady state AUCTAU (AUC from 0 to tau) is the primary exposure
+      # parameter; AUC to infinity has no meaning during repeated dosing.
       default <- if (isTRUE(input$is_ss)) {
-        intersect(c("CMAX","AUCLST"), available)
+        intersect(c("CMAX","AUCTAU"), available)
       } else {
         intersect(c("CMAX","AUCLST","AUCIFO"), available)
       }
@@ -425,6 +427,11 @@ path_be_server <- function(id, shared) {
         return()
       }
 
+      if (isTRUE(input$is_ss) && (is.null(input$tau) || is.na(input$tau) || input$tau <= 0)) {
+        showNotification("Steady state: enter the dosing interval \u03C4 (for example 12 or 24 h).",
+                         type = "error", duration = 8)
+        return()
+      }
       withProgress(message = "Step 1: Running NCA...", value = 0.3, {
         
         # Run NCA
@@ -432,7 +439,7 @@ path_be_server <- function(id, shared) {
           admin_route = input$admin_route,
           dose = if (use_data_dose) NA else input$dose,
           infusion_duration = 0,
-          is_steady_state = isTRUE(input$is_ss),
+          is_steady_state = isTRUE(input$is_ss), tau = input$tau,
           dose_unit = input$dose_unit,
           time_unit = input$time_unit,
           conc_unit = input$conc_unit,
@@ -522,7 +529,17 @@ path_be_server <- function(id, shared) {
         
         params <- input$be_params
         if (is.null(params) || length(params) == 0)
-          params <- intersect(c("CMAX","AUCLST","AUCIFO"), names(nca_res))
+          params <- c("CMAX","AUCLST","AUCIFO")
+        if (isTRUE(input$is_ss)) {
+          # At steady state the exposure parameter is AUC from 0 to tau
+          swapped <- intersect(c("AUCLST","AUCIFO"), params)
+          params <- unique(c(setdiff(params, c("AUCLST","AUCIFO")), "AUCTAU"))
+          if (length(swapped) > 0)
+            showNotification(paste0("Steady state: AUC over the dosing interval (AUC\u03C4) is compared ",
+                                    "instead of ", paste(sapply(swapped, friendly_name), collapse = " and "), "."),
+                             type = "message", duration = 10)
+        }
+        params <- intersect(params, names(nca_res))
         
         # A single treatment order is a paired comparison whatever was selected;
         # analyse it as one rather than fitting a confounded crossover model.
@@ -605,7 +622,7 @@ path_be_server <- function(id, shared) {
           switch(param,
                  TMAX = , LAMZHL = input$time_unit,
                  CMAX = input$conc_unit,
-                 AUCLST = , AUCIFO = , AUCIFP = paste0(input$conc_unit, "\u00B7", input$time_unit),
+                 AUCLST = , AUCTAU = , AUCIFO = , AUCIFP = paste0(input$conc_unit, "\u00B7", input$time_unit),
                  NULL)
         }
 
@@ -806,11 +823,9 @@ path_be_server <- function(id, shared) {
         class = "alert alert-info py-2 small mb-2",
         icon("circle-info", class = "me-1"),
         tags$strong("Steady-state analysis: "),
-        "AUC to Last Point (AUCLST) represents the AUC within the dosing interval (AUC\u03C4). ",
-        "CL/F is calculated as Dose/AUC\u03C4, which is the correct formula at steady state. ",
-        "AUC to infinity is not pharmacokinetically meaningful during repeated dosing and has ",
-        "been removed from the default parameter selection. ",
-        "The primary BE parameters are Cmax and AUC\u03C4 (shown as AUC to Last Point)."
+        "AUC\u03C4 is the AUC from 0 to the dosing interval you entered (extrapolated with ",
+        "\u03BBz when the last sample is before \u03C4). The exposure parameters compared are ",
+        "Cmax and AUC\u03C4; AUC to infinity is not meaningful during repeated dosing."
       )
     })
 

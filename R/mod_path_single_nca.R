@@ -118,10 +118,11 @@ path_single_nca_ui <- function(id) {
           ),
           conditionalPanel(
             condition = sprintf("input['%s'] == true", ns("is_ss")),
+            numericInput(ns("tau"), "Dosing interval \u03C4 (same unit as Time)", value = NA, min = 0),
             tags$p(class = "text-muted small",
                    "The pre-dose concentration is not zero because the drug has accumulated. ",
-                   "The app will calculate AUC within the dosing interval (AUC\u03C4) ",
-                   "instead of AUC to infinity.")
+                   "The app calculates AUC from 0 to \u03C4 (AUC\u03C4), average concentration and ",
+                   "fluctuation instead of AUC to infinity. Sample from just before the dose to \u03C4.")
           )
         )
       ),
@@ -409,7 +410,7 @@ path_single_nca_server <- function(id, shared) {
       list(admin_route = input$admin_route,
            dose = suppressWarnings(as.numeric(input$dose)),
            infusion_duration = if (input$admin_route == "iv_infusion") input$inf_dur else 0,
-           is_steady_state = isTRUE(input$is_ss),
+           is_steady_state = isTRUE(input$is_ss), tau = input$tau,
            dose_unit = input$dose_unit, time_unit = input$time_unit, conc_unit = input$conc_unit,
            trap_method = input$trap_method, r2adj_threshold = input$r2adj,
            mw = if (is.null(input$mw) || is.na(input$mw)) 0 else input$mw)
@@ -437,12 +438,15 @@ path_single_nca_server <- function(id, shared) {
         return(NULL)
       }
 
+      if (isTRUE(input$is_ss) && (is.null(input$tau) || is.na(input$tau) || input$tau <= 0)) {
+        showNotification("Steady state: enter the dosing interval \u03C4 (for example 12 or 24 h).",
+                         type = "error", duration = 8)
+        return()
+      }
       settings <- single_settings()
       r <- tryCatch(run_single_nca(t_num, c_num, settings),
                      error = function(e) { showNotification(paste("Error:", e$message), type="error"); NULL })
       
-      # For steady-state: derive tau-based parameters (use coerced numerics)
-      if (!is.null(r) && isTRUE(input$is_ss)) r <- add_steady_state_parameters(r, t_num, c_num)
       if (!is.null(r) && below_r2_threshold(r["R2ADJ"], input$r2adj)) {
         showNotification(paste0("Adjusted R\u00b2 of the terminal fit (", signif(as.numeric(r["R2ADJ"]), 3),
                                 ") is below ", input$r2adj, ": half-life, AUC to infinity, CL/F, Vz/F ",
@@ -650,7 +654,6 @@ path_single_nca_server <- function(id, shared) {
         r <- tryCatch(run_single_nca(t_num, c_num, single_settings(), time_used = t_sel),
                       error = function(e) NULL)
         if (!is.null(r)) {
-          if (isTRUE(input$is_ss)) r <- add_steady_state_parameters(r, t_num, c_num)
           nca_res(r)
         }
       }

@@ -249,9 +249,11 @@ combination of points with the highest adjusted R&sup2; (&ge; ',
 settings$r2adj_threshold, '). The terminal half-life was calculated as
 ln(2)/&lambda;<sub>z</sub>. C<sub>max</sub> and T<sub>max</sub> were obtained
 directly from the observed data.</p>',
-if (settings$is_steady_state)
-'<p>Steady-state analysis: AUC<sub>0&ndash;t</sub> represents AUC within the dosing
-interval (AUC<sub>&tau;</sub>). Clearance was calculated as Dose/AUC<sub>&tau;</sub>.</p>' else "",
+if (isTRUE(settings$is_steady_state))
+paste0('<p>Steady-state analysis with a dosing interval &tau; = ', settings$tau, ' ', settings$time_unit,
+'. AUC<sub>&tau;</sub> is the AUC from 0 to &tau; (interpolated between samples, extrapolated with
+&lambda;<sub>z</sub> beyond the last sample). Clearance and volume were calculated from AUC<sub>&tau;</sub>;
+C<sub>avg</sub> = AUC<sub>&tau;</sub>/&tau;.</p>') else "",
 if (lloq > 0) paste0('<p>Concentrations below the LLOQ (', lloq, ' ', settings$conc_unit,
   ') were handled using ', blq_desc, '.</p>') else "",
 '
@@ -441,6 +443,7 @@ create_analysis_record <- function(output_path, results, settings, col_map,
       conc_unit       = settings$conc_unit,
       infusion_dur    = settings$infusion_duration,
       steady_state    = settings$is_steady_state,
+      tau             = settings$tau,
       trap_method     = settings$trap_method,
       r2adj_threshold = settings$r2adj_threshold,
       mw              = if (is.null(settings$mw)) 0 else settings$mw,
@@ -614,6 +617,7 @@ create_single_analysis_record <- function(output_path, result, settings,
       conc_unit       = settings$conc_unit,
       infusion_dur    = if (is.null(settings$infusion_duration)) 0 else settings$infusion_duration,
       steady_state    = isTRUE(settings$is_steady_state),
+      tau             = settings$tau,
       trap_method     = settings$trap_method,
       r2adj_threshold = if (is.null(settings$r2adj_threshold)) 0.7 else settings$r2adj_threshold,
       mw              = if (is.null(settings$mw)) 0 else settings$mw,
@@ -965,12 +969,12 @@ if (identical(rec$data_source, "uploaded_file")) {
 cat("Profile:", rec$subject, "-", length(time), "time points\n")
 
 settings <- list(admin_route = rec$admin_route, dose = rec$dose, infusion_duration = rec$infusion_dur,
-                 is_steady_state = isTRUE(rec$steady_state), dose_unit = rec$dose_unit,
+                 is_steady_state = isTRUE(rec$steady_state), tau = rec$tau, dose_unit = rec$dose_unit,
                  time_unit = rec$time_unit, conc_unit = rec$conc_unit,
-                 trap_method = rec$trap_method, mw = rec$mw)
+                 trap_method = rec$trap_method, mw = rec$mw,
+                 r2adj_threshold = rec$r2adj_threshold)
 time_used <- if (length(rec$lz_overrides) > 0) rec$lz_overrides[[1]]$time_used else NULL
 result <- run_single_nca(time, conc, settings, time_used = time_used)
-if (isTRUE(rec$steady_state)) result <- add_steady_state_parameters(result, time, conc)
 write.csv(data.frame(Parameter = names(result), Value = as.character(result)),
           "reproduced_results.csv", row.names = FALSE)
 
