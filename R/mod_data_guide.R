@@ -1,5 +1,5 @@
 # ============================================================================
-# NCA Assistant — Data Preparation Guide
+# NCA Assistant: Data Preparation Guide
 # ============================================================================
 # Scenario-based manual for preparing PK datasets.
 # Target audience: first-year PhD students in clinical pharmacology.
@@ -55,13 +55,16 @@ data_guide_ui <- function() {
     )
   }
   
+  # Helper: a sorted example table (rows ordered as they would be in a file)
+  code <- function(x) tags$code(x)
+
   # ======================================================================
   # PAGE LAYOUT
   # ======================================================================
   tags$div(
     class = "container-fluid py-4",
     style = "max-width: 1000px; margin: 0 auto;",
-    
+
     # Header
     tags$div(
       class = "text-center mb-4 p-4 rounded",
@@ -70,876 +73,813 @@ data_guide_ui <- function() {
               icon("book-open", class = "me-2"),
               "Data Preparation Guide"),
       tags$p(class = "text-white opacity-75 mb-0",
-             "How to prepare your concentration-time data for analysis. ",
+             "How to lay out concentration-time data for the app. ",
              "Find your study type below and follow the example.")
     ),
-    
+
     # Example datasets
     card(
       class = "mb-3",
       card_header(icon("download"), " Example Datasets"),
       card_body(
         tags$p(class = "small",
-               "Download these example files to practice with the app or follow the ",
-               "worked examples in the user manual."),
+               "Practice files for the app and for the worked examples in the user manual."),
         layout_columns(
-          col_widths = c(6, 6),
+          col_widths = c(4, 4, 4),
           tags$div(
-            tags$h6(class = "fw-semibold", "Theophylline PK Study"),
+            tags$h6(class = "fw-semibold", "Theophylline PK study"),
             tags$p(class = "small text-muted",
-                   "12 subjects, single 320 mg oral dose, 11 time points per subject. ",
-                   "Columns: Subject, Wt, Dose, Time, conc. ",
-                   "Use with Analyze All Subjects (Batch NCA)."),
-            downloadButton("dl_example_theoph", "Download theoph.csv",
+                   "12 subjects, one oral dose of about 320 mg (the Dose column is in mg/kg), ",
+                   "11 samples per subject. Use with All Subjects (Batch)."),
+            downloadButton("dl_example_theoph", "example_theoph.csv",
+                           class = "btn-outline-primary btn-sm mb-3")
+          ),
+          tags$div(
+            tags$h6(class = "fw-semibold", "2×2 crossover"),
+            tags$p(class = "small text-muted",
+                   "6 subjects, sequences TR and RT, 12 samples per period. ",
+                   "Use with Bioequivalence (2×2 standard crossover)."),
+            downloadButton("dl_example_be", "example_be_crossover.csv",
+                           class = "btn-outline-primary btn-sm mb-3")
+          ),
+          tags$div(
+            tags$h6(class = "fw-semibold", "Parallel groups"),
+            tags$p(class = "small text-muted",
+                   "12 subjects, 6 on Test and 6 on Reference, one period each. ",
+                   "Use with Bioequivalence (Parallel groups)."),
+            downloadButton("dl_example_parallel", "example_be_parallel.csv",
+                           class = "btn-outline-primary btn-sm mb-3")
+          )
+        ),
+        layout_columns(
+          col_widths = c(4, 4, 4),
+          tags$div(
+            tags$h6(class = "fw-semibold", "2×2×4 full replicate"),
+            tags$p(class = "small text-muted",
+                   "12 subjects, sequences TRTR and RTRT. Use with Bioequivalence ",
+                   "(2×2×4 full replicate); shows the within-subject variability table."),
+            downloadButton("dl_example_replicate", "example_be_replicate_2x2x4.csv",
                            class = "btn-outline-primary btn-sm")
           ),
           tags$div(
-            tags$h6(class = "fw-semibold", "Crossover BE Study"),
+            tags$h6(class = "fw-semibold", "CDISC ADNCA dataset"),
             tags$p(class = "small text-muted",
-                   "6 subjects, 2\u00D72\u00D72 crossover design (Test vs Reference), ",
-                   "12 time points per period. ",
-                   "Use with Bioequivalence Testing."),
-            downloadButton("dl_example_be", "Download crossover_be.csv",
+                   "12 subjects, 2×2 crossover in ADNCA layout (USUBJID, AVAL, NRRLT, ARRLT, ",
+                   "ANL01FL, ...). Upload with 'What kind of file?' set to CDISC ADNCA dataset."),
+            downloadButton("dl_example_adnca", "example_adnca.csv",
                            class = "btn-outline-primary btn-sm")
-          )
+          ),
+          tags$div()
         )
       )
     ),
-    
+
     # Quick reference card
     card(
       card_header(icon("table-list"), " Quick Reference: Which Columns Do I Need?"),
       card_body(
-        tags$table(
-          class = "table table-sm",
-          style = "font-size: 0.85rem;",
-          tags$thead(class = "table-light",
-            tags$tr(tags$th("Study type"),
-                    tags$th("Required columns"),
-                    tags$th("App path"))
-          ),
-          tags$tbody(
-            tags$tr(tags$td("Single subject, single dose"),
-                    tags$td(tags$code("Time"), ", ", tags$code("Concentration")),
-                    tags$td("One Subject at a Time (manual entry)")),
-            tags$tr(tags$td("Multiple subjects, same dose"),
-                    tags$td(tags$code("Subject"), ", ", tags$code("Time"), ", ", tags$code("Concentration")),
-                    tags$td("All Subjects (Batch)")),
-            tags$tr(tags$td("Multiple subjects, different doses"),
-                    tags$td(tags$code("Subject"), ", ", tags$code("Time"), ", ", tags$code("Concentration"), ", ", tags$code("Dose")),
-                    tags$td("All Subjects (select 'from Dose column')")),
-            tags$tr(tags$td("2-period crossover (BE)"),
-                    tags$td(tags$code("Subject"), ", ", tags$code("Period"), ", ", tags$code("Sequence"), ", ", tags$code("Treatment"), ", ", tags$code("Time"), ", ", tags$code("Concentration")),
-                    tags$td("Bioequivalence")),
-            tags$tr(tags$td("Paired comparison, single sequence"),
-                    tags$td(tags$code("Subject"), ", ", tags$code("Period"), ", ", tags$code("Sequence"), ", ", tags$code("Treatment"), ", ", tags$code("Time"), ", ", tags$code("Concentration")),
-                    tags$td("Bioequivalence (paired comparison, no verdict)")),
-            tags$tr(tags$td("3-period replicate (BE)"),
-                    tags$td(tags$code("Subject"), ", ", tags$code("Period"), ", ", tags$code("Sequence"), ", ", tags$code("Treatment"), ", ", tags$code("Time"), ", ", tags$code("Concentration")),
-                    tags$td("Bioequivalence")),
-            tags$tr(tags$td("Replicate crossover (BE)"),
-                    tags$td("Same as above"),
-                    tags$td("Bioequivalence")),
-            tags$tr(tags$td("Parallel-group BE"),
-                    tags$td(tags$code("Subject"), ", ", tags$code("Treatment"), ", ", tags$code("Time"), ", ", tags$code("Concentration")),
-                    tags$td("Bioequivalence")),
-            tags$tr(tags$td("Multiple-dose / steady-state"),
-                    tags$td(tags$code("Subject"), ", ", tags$code("Time"), ", ", tags$code("Concentration")),
-                    tags$td("All Subjects (tick 'steady-state')"))
+        tags$div(
+          class = "table-responsive",
+          tags$table(
+            class = "table table-sm",
+            style = "font-size: 0.85rem;",
+            tags$thead(class = "table-light",
+              tags$tr(tags$th("Study type"), tags$th("Columns"), tags$th("Where in the app"))
+            ),
+            tags$tbody(
+              tags$tr(tags$td("One subject"),
+                      tags$td(code("Time"), ", ", code("Concentration"), " (add ", code("Subject"), " to upload a file)"),
+                      tags$td("One Subject at a Time")),
+              tags$tr(tags$td("Several subjects, same dose"),
+                      tags$td(code("Subject"), ", ", code("Time"), ", ", code("Concentration")),
+                      tags$td("All Subjects (Batch)")),
+              tags$tr(tags$td("Several subjects, different doses"),
+                      tags$td(code("Subject"), ", ", code("Time"), ", ", code("Concentration"), ", ", code("Dose")),
+                      tags$td("All Subjects: 'Doses differ by subject or period'")),
+              tags$tr(tags$td("2×2 crossover"),
+                      tags$td(code("Subject"), ", ", code("Treatment"), ", ", code("Period"), ", ", code("Sequence"), ", ", code("Time"), ", ", code("Concentration")),
+                      tags$td("Bioequivalence: 2×2 standard crossover")),
+              tags$tr(tags$td("Paired comparison (everyone in the same order)"),
+                      tags$td("Same as 2×2; Sequence optional"),
+                      tags$td("Bioequivalence: Paired comparison (no verdict)")),
+              tags$tr(tags$td("2×2×3 full or 2×3×3 partial replicate"),
+                      tags$td("Same as 2×2, Period 1 to 3"),
+                      tags$td("Bioequivalence: 2×2×3 or 2×3×3")),
+              tags$tr(tags$td("2×2×4 full replicate"),
+                      tags$td("Same as 2×2, Period 1 to 4"),
+                      tags$td("Bioequivalence: 2×2×4")),
+              tags$tr(tags$td("Parallel groups"),
+                      tags$td(code("Subject"), ", ", code("Treatment"), ", ", code("Time"), ", ", code("Concentration")),
+                      tags$td("Bioequivalence: Parallel groups")),
+              tags$tr(tags$td("Steady state"),
+                      tags$td(code("Subject"), ", ", code("Time"), ", ", code("Concentration"), " (one dosing interval)"),
+                      tags$td("All Subjects or Bioequivalence: tick 'Steady-state'")),
+              tags$tr(tags$td("Drug interaction study"),
+                      tags$td("As a crossover or paired comparison"),
+                      tags$td("Bioequivalence (victim drug alone = Reference)")),
+              tags$tr(tags$td("CDISC ADNCA dataset"),
+                      tags$td("As delivered (USUBJID, AVAL, NRRLT or ARRLT, ...)"),
+                      tags$td("Upload: 'What kind of file?' = CDISC ADNCA dataset"))
+            )
           )
         ),
         tags$p(class = "text-muted small mt-2",
-               tags$strong("Note on the Dose column: "),
-               "If all subjects received the same dose, you don't need a Dose column — ",
-               "just enter the dose in the app settings. If subjects received different doses ",
-               "(dose escalation, weight-based dosing), include a Dose column in your data and ",
-               "select 'Doses differ by subject or period' in the analysis settings.")
+               tags$strong("Dose column: "),
+               "not needed when everyone received the same dose; you enter it in the app. ",
+               "When doses differ between subjects, or between periods of one subject, add a Dose ",
+               "column. The app uses the dose of each profile (subject, treatment and period).")
       )
     ),
-    
+
     # ====================================================================
     # SCENARIO TABS
     # ====================================================================
     navset_card_pill(
       title = "Choose Your Study Type",
-      
+
       # ----------------------------------------------------------------
-      # SCENARIO 1: Single subject
+      # Single subject
       # ----------------------------------------------------------------
       nav_panel(
         "Single Subject",
         icon = icon("user"),
-        
-        tags$h5(class = "fw-bold mt-2", "Scenario 1: One Subject, One Dose"),
-        tags$p("You gave a drug to one person (or animal) and collected blood samples over time. ",
-               "This is the simplest case. You can either type the data directly into the app ",
-               "or prepare a small file."),
-        
+        tags$h5(class = "fw-bold mt-2", "One Subject, One Dose"),
+        tags$p("You gave a drug to one person (or animal) and took blood samples over time. ",
+               "You can type the data straight into One Subject at a Time, or prepare a file."),
         tags$h6(class = "fw-semibold", "What you need"),
         tags$p(class = "small",
-               "Two columns: the time each sample was drawn (in hours after the dose) and the ",
-               "measured drug concentration in that sample."),
-        
+               "For manual entry: the sampling times (hours after the dose) and the concentrations. ",
+               "To upload a file, also add a Subject column. It can hold the same value on every row, ",
+               "such as 'Patient1'. Without it the upload cannot tell which rows belong together."),
         ex_table(data.frame(
+          Subject = rep("Patient1", 9),
           Time  = c(0, 0.25, 0.5, 1, 2, 4, 8, 12, 24),
           Concentration = c(0, 4.2, 12.8, 25.6, 18.3, 9.1, 3.4, 1.2, 0.15)
         )),
-        
-        tags$p(class = "small text-muted",
-               "If you upload a file instead of using manual entry, add a Subject column ",
-               "(it can be the same value for every row, like 'Patient1')."),
-        
         do_dont(
           do_items = c(
-            "Express time in hours since the dose was given",
-            "Include a pre-dose sample at time 0 (concentration should be 0 or near 0)",
-            "Include enough points in the terminal phase (the tail end, where concentrations decline) — at least 3 points",
-            "Use a period (.) as decimal separator"
+            "Give time in hours since the dose",
+            "Include the pre-dose sample at time 0",
+            "Sample the terminal phase well: at least 3 declining points after the peak",
+            "If the file uses decimal commas, choose 'Comma (,)' as decimal point when uploading"
           ),
           dont_items = c(
-            "Use clock time ('08:30', '09:00') — convert to hours since dosing",
+            "Use clock times ('08:30', '09:00'); the app refuses them",
             "Leave out the pre-dose sample",
-            "Mix units (some concentrations in ng/mL, others in \u00B5g/L)",
-            "Use commas as decimal separators (use periods)"
+            "Mix units (some values in ng/mL, others in µg/L)"
           )
         ),
-        
         checklist(c(
           "Time is in hours since the dose (not clock time)",
-          "Concentration units are consistent throughout",
-          "There is a time = 0 observation",
-          "At least 3 declining points after the peak for half-life estimation"
+          "One concentration unit throughout",
+          "A time 0 sample is present",
+          "At least 3 declining points after the peak for the half-life"
         ))
       ),
-      
+
       # ----------------------------------------------------------------
-      # SCENARIO 2: Multiple subjects
+      # Multiple subjects
       # ----------------------------------------------------------------
       nav_panel(
         "Multiple Subjects",
         icon = icon("users"),
-        
-        tags$h5(class = "fw-bold mt-2", "Scenario 2: Multiple Subjects"),
-        tags$p("Several subjects each received the drug and blood samples were collected ",
-               "at protocol-specified times. This covers both single-dose PK studies ",
-               "and dose-escalation studies."),
-        
-        # --- Same dose ---
-        tags$h6(class = "fw-semibold mt-3",
-                "Case A: Everyone received the same dose"),
+        tags$h5(class = "fw-bold mt-2", "Several Subjects"),
+        tags$p("Several subjects received the drug and were sampled at the protocol times. ",
+               "This covers single-dose PK studies and dose-escalation studies."),
+
+        tags$h6(class = "fw-semibold mt-3", "Case A: everyone received the same dose"),
         tags$p(class = "small",
-               "Three columns: subject ID, time, and concentration. ",
-               "You enter the dose once in the app settings — no Dose column needed."),
-        
+               "Three columns: subject ID, time and concentration. Enter the dose in the app."),
         ex_table(data.frame(
           Subject = c("S001","S001","S001","S001","S002","S002","S002","S002","S003","S003","S003","S003"),
           Time = c(0,1,4,24, 0,1,4,24, 0,1,4,24),
           Concentration = c(0,22.5,8.3,0.4, 0,28.1,10.2,0.6, 0,19.8,7.1,0.3)
         )),
-        
-        # --- Different doses ---
-        tags$h6(class = "fw-semibold mt-4",
-                "Case B: Subjects received different doses"),
+
+        tags$h6(class = "fw-semibold mt-4", "Case B: subjects received different doses"),
         tags$p(class = "small",
-               "This happens in dose-escalation studies (Phase I: cohort 1 gets 50 mg, ",
-               "cohort 2 gets 100 mg, etc.) and with weight-based dosing (each subject ",
-               "gets mg/kg \u00D7 their weight). Add a ",
-               tags$strong("Dose"), " column with each subject's actual dose."),
-        
+               "Dose escalation (cohort 1 gets 50 mg, cohort 2 gets 100 mg) or weight-based dosing. ",
+               "Add a ", tags$strong("Dose"), " column with each subject's actual dose, in the dose unit you select in the app."),
         ex_table(data.frame(
           Subject = c("S001","S001","S001","S002","S002","S002","S003","S003","S003"),
           Dose    = c(50,50,50, 50,50,50, 100,100,100),
           Time    = c(0,1,24, 0,1,24, 0,1,24),
           Concentration = c(0,10.2,0.2, 0,12.8,0.3, 0,25.1,0.5)
         )),
-        
         tags$div(
           class = "alert alert-info py-2 small",
-          tags$strong("How it works in the app: "),
-          "During data upload, map the Dose column. In the analysis settings, select ",
-          "'Doses differ by subject or period (from Dose column in data)'. ",
-          "The app reads each subject's dose from the data and uses it to calculate ",
-          "dose-dependent parameters like clearance (CL = Dose / AUC) and volume of distribution."
+          tags$strong("In the app: "),
+          "map the Dose column during upload, then choose ",
+          "'Doses differ by subject or period (from Dose column in data)' in the analysis settings. ",
+          "Clearance and volume then use each subject's own dose. The Dose column should hold one ",
+          "value per profile; if it varies within a profile, the app uses the largest value."
         ),
-        
-        tags$p(class = "small text-muted",
-               "The Dose column should contain a single value per profile (the same value ",
-               "on every row of that subject's treatment and period). A subject may receive ",
-               "different doses in different periods; each period then uses its own dose. ",
-               "If doses vary within one profile's rows, the app uses the maximum value."),
-        
-        tags$div(
-          class = "alert alert-info py-2 small",
-          tags$strong("Tip: "),
-          "Time points don't need to be identical across subjects. If one subject was ",
-          "sampled at 0.48h instead of the protocol's 0.5h, use the actual time (0.48). ",
-          "The app handles unequal time points automatically."
-        ),
-        
+
+        tags$h6(class = "fw-semibold mt-4", "Actual or nominal times?"),
+        tags$p(class = "small",
+               "Use the actual sampling times for the NCA (0.48 h rather than the protocol's 0.5 h); ",
+               "they give the more accurate AUC, and subjects do not need identical times. ",
+               "The mean curve in Visualize Data averages samples with the same time value, so for ",
+               "that plot a file with nominal times gives a cleaner curve."),
+
         do_dont(
           do_items = c(
-            "Use a unique ID for each subject (S001, S002, ... or 1, 2, 3, ...)",
-            "Stack all subjects into one long table, not separate sheets",
-            "Use actual sampling times if available (not just nominal protocol times)",
-            "Include all subjects, even those with incomplete profiles",
-            "Include a Dose column if subjects received different doses"
+            "Give every subject a unique ID across the whole study",
+            "Stack all subjects in one long table",
+            "Keep subjects with incomplete profiles",
+            "Add a Dose column when doses differ"
           ),
           dont_items = c(
             "Put each subject in a separate sheet or file",
-            "Use wide format (subjects as columns) — use long format (subjects as rows)",
-            "Remove subjects with missing data points — let the app handle them",
-            "Exclude pre-dose samples",
-            "Leave out the Dose column for dose-escalation studies — the app can't guess doses"
+            "Use wide format (one column per subject)",
+            "Reuse IDs in different groups (two people called '1' become one subject)",
+            "Leave out pre-dose samples"
           )
         ),
-        
+
         tags$h6(class = "fw-semibold", "What is long format?"),
         tags$p(class = "small",
-               "Your data should have one row per observation (one sample = one row). ",
-               "Each row has the subject ID, the time, and the concentration. ",
-               "If you have 10 subjects with 12 samples each, you should have 120 rows."),
-        
+               "One row per sample, with subject ID, time and concentration. ",
+               "10 subjects with 12 samples each gives 120 rows."),
         layout_columns(
           col_widths = c(6, 6),
           tags$div(
             tags$p(class = "small text-success fw-bold", icon("check"), " Correct: long format"),
-            ex_table(data.frame(
-              Subject = c("S1","S1","S2","S2"),
-              Time = c(0,1,0,1),
-              Conc = c(0,25,0,30)
-            ))
+            ex_table(data.frame(Subject = c("S1","S1","S2","S2"), Time = c(0,1,0,1), Conc = c(0,25,0,30)))
           ),
           tags$div(
             tags$p(class = "small text-danger fw-bold", icon("xmark"), " Wrong: wide format"),
-            ex_table(data.frame(
-              Time = c(0, 1),
-              S1 = c(0, 25),
-              S2 = c(0, 30)
-            ))
+            ex_table(data.frame(Time = c(0, 1), S1 = c(0, 25), S2 = c(0, 30)))
           )
         ),
-        
         checklist(c(
-          "One row per observation (long format)",
-          "Subject IDs are unique and consistent (no 'S01' vs 'S1' mix-up)",
-          "If same dose for all: enter the dose in the app (no Dose column needed)",
-          "If different doses: include a Dose column and map it during upload",
-          "Time is in hours since the individual subject's dose",
-          "Pre-dose sample (time 0) is present for each subject"
+          "One row per sample (long format)",
+          "Subject IDs unique and written the same way on every row ('S01', not sometimes 'S1')",
+          "Same dose for all: no Dose column needed",
+          "Different doses: Dose column, mapped during upload",
+          "Time in hours since each subject's dose",
+          "A time 0 sample for each subject"
         ))
       ),
-      
+
       # ----------------------------------------------------------------
-      # SCENARIO 3: 2-period crossover BE
+      # 2x2 crossover
       # ----------------------------------------------------------------
       nav_panel(
-        "Crossover BE (2-period)",
+        "Crossover (2×2)",
         icon = icon("arrows-left-right"),
-        
-        tags$h5(class = "fw-bold mt-2", "Scenario 3: Standard 2-Period Crossover (BE)"),
-        tags$p("The classic bioequivalence design: each subject takes two formulations ",
-               "(Test and Reference) in two separate periods, with a washout between them. ",
-               "Half the subjects take Test first (TR sequence), half take Reference first (RT sequence). ",
-               "This is the most common design for generic drug approval."),
-        
+        tags$h5(class = "fw-bold mt-2", "Standard 2×2 Crossover"),
+        tags$p("Each subject takes both formulations (Test and Reference) in two periods with a ",
+               "washout in between. Half the subjects take Test first (sequence TR), half take ",
+               "Reference first (RT). This is the usual design for bioequivalence studies."),
         tags$h6(class = "fw-semibold", "What you need"),
-        tags$p(class = "small",
-               "Six columns. The extra three (compared to a simple PK study) tell the statistical ",
-               "model which treatment each observation belongs to, and which period and sequence."),
-        
         tags$div(
           class = "bg-light rounded p-3 mb-3 small",
           tags$table(
             class = "table table-sm table-borderless mb-0",
             tags$tr(tags$td(class="fw-bold", "Subject"), tags$td("A unique ID for each person.")),
-            tags$tr(tags$td(class="fw-bold", "Treatment"), tags$td("'Test' or 'Reference'. These exact words are recommended, but any two labels work.")),
-            tags$tr(tags$td(class="fw-bold", "Period"), tags$td("1 or 2. The first dosing occasion is period 1, the second (after washout) is period 2.")),
-            tags$tr(tags$td(class="fw-bold", "Sequence"), tags$td("'TR' or 'RT'. Tells the model the order in which each subject received the treatments.")),
-            tags$tr(tags$td(class="fw-bold", "Time"), tags$td("Hours since dosing in that period. Resets to 0 at the start of each period.")),
-            tags$tr(tags$td(class="fw-bold", "Concentration"), tags$td("The measured drug concentration."))
+            tags$tr(tags$td(class="fw-bold", "Treatment"), tags$td("Any two labels, such as 'Test' and 'Reference', 'T' and 'R', or two product names. In the app you choose which one is the Reference; it is pre-selected only for R, Ref, Reference, Comparator, Innovator, Originator or RLD.")),
+            tags$tr(tags$td(class="fw-bold", "Period"), tags$td("1 or 2: the first or second dosing occasion.")),
+            tags$tr(tags$td(class="fw-bold", "Sequence"), tags$td("'TR' or 'RT': the order in which the subject received the treatments.")),
+            tags$tr(tags$td(class="fw-bold", "Time"), tags$td("Hours since the dose of that period. Starts again at 0 in every period.")),
+            tags$tr(tags$td(class="fw-bold", "Concentration"), tags$td("The measured concentration."))
           )
         ),
-        
         ex_table(data.frame(
-          Subject   = c("S01","S01","S01","S01","S01","S01","S01","S01"),
-          Treatment = c("Test","Test","Test","Test","Reference","Reference","Reference","Reference"),
-          Period    = c(1,1,1,1,2,2,2,2),
-          Sequence  = c("TR","TR","TR","TR","TR","TR","TR","TR"),
-          Time      = c(0,1,4,24, 0,1,4,24),
-          Conc      = c(0,24.5,9.1,0.5, 0,22.8,8.7,0.4)
+          Subject   = c(rep("S01", 8), rep("S02", 8)),
+          Treatment = c(rep("Test", 4), rep("Reference", 4), rep("Reference", 4), rep("Test", 4)),
+          Period    = rep(c(1,1,1,1,2,2,2,2), 2),
+          Sequence  = c(rep("TR", 8), rep("RT", 8)),
+          Time      = rep(c(0,1,4,24), 4),
+          Conc      = c(0,24.5,9.1,0.5, 0,22.8,8.7,0.4, 0,20.9,8.1,0.4, 0,23.6,8.8,0.5)
         )),
-        
         tags$p(class = "small text-muted",
-               "Subject S01 is in the TR sequence: they received Test in period 1, ",
-               "Reference in period 2. A subject in the RT sequence would have ",
-               "Reference in period 1 and Test in period 2."),
-        
+               "S01 is in sequence TR (Test in period 1, Reference in period 2); S02 is in RT."),
         tags$div(
           class = "alert alert-warning py-2 small",
-          tags$strong("Critical: "), "Time resets to 0 at the start of each period. ",
-          "If period 2 starts on day 8, the first sample of period 2 is still time = 0, ",
-          "not time = 192 (8 \u00D7 24)."
+          tags$strong("Time starts at 0 in every period. "),
+          "If period 2 starts on day 8, its pre-dose sample is time 0, not 192 h. ",
+          "The app refuses profiles that do not start near time zero."
         ),
-        
-        tags$h6(class = "fw-semibold mt-3", "Why do I need Sequence and Period?"),
+
+        tags$h6(class = "fw-semibold mt-3", "Why Period and Sequence?"),
         tags$p(class = "small",
-               "The statistical model for bioequivalence must separate the treatment effect ",
-               "(the thing you're testing) from the period effect (did something change between visits?) ",
-               "and the sequence effect (is there carryover from the first treatment?). ",
-               "Without these columns, the model can't do this separation, and the result is unreliable."),
-        
+               "Period lets the model separate the treatment effect from changes between visits. ",
+               "Sequence is part of the standard ANOVA table (sequence effect tested against ",
+               "subjects within sequence), so include it. Because every subject belongs to one sequence, ",
+               "the ratio and its confidence interval come out the same with or without the Sequence column."),
+
+        tags$h6(class = "fw-semibold mt-3", "Different doses in different periods"),
+        tags$p(class = "small",
+               "In a dose-proportionality crossover a subject receives, for example, 50 mg in period 1 and ",
+               "100 mg in period 2. Add a Dose column; each period is analysed with its own dose (clearance, volume and dose-normalised values)."),
+        ex_table(data.frame(
+          Subject = rep("S01", 6), Treatment = c(rep("Low", 3), rep("High", 3)),
+          Period = c(1,1,1,2,2,2), Sequence = rep("LH", 6), Dose = c(50,50,50,100,100,100),
+          Time = rep(c(0,2,24), 2), Conc = c(0,11.2,0.3, 0,21.9,0.7)
+        )),
+
         do_dont(
           do_items = c(
-            "Use 'Test' and 'Reference' (or 'T' and 'R') as treatment labels",
-            "Reset time to 0 at the start of each period",
-            "Include all subjects, even if they dropped out after period 1",
-            "Use the same time points (approximately) in both periods"
+            "Start time at 0 in each period",
+            "Keep subjects who dropped out after period 1; the mixed model can use their data",
+            "Use (approximately) the same sampling times in both periods",
+            "Choose the Reference treatment in the app before running"
           ),
           dont_items = c(
-            "Use brand names as treatment labels (use 'Test' / 'Reference')",
-            "Continue time from period 1 into period 2 without resetting",
-            "Forget the Sequence column (the ANOVA model needs it)",
-            "Exclude dropouts — include their available data"
+            "Continue time from period 1 into period 2",
+            "Measure time from the first dose of the study",
+            "Give one person different IDs in the two periods",
+            "Put several analytes in one Concentration column (duplicate times are refused)"
           )
         ),
-        
         checklist(c(
-          "Six columns present: Subject, Treatment, Period, Sequence, Time, Concentration",
-          "Treatment has exactly two levels (Test and Reference)",
-          "Period is 1 or 2 (numeric or text, both work)",
-          "Sequence matches the treatment order (TR means Test-first, RT means Reference-first)",
-          "Time resets to 0 at the start of each period",
-          "Roughly equal numbers of subjects in each sequence group",
-          "Every subject appears in both periods (or is flagged as a dropout)",
-          "If doses differ between subjects (e.g., weight-based dosing), add a Dose column"
+          "Columns: Subject, Treatment, Period, Sequence, Time, Concentration",
+          "Treatment has exactly two values",
+          "Period is 1 or 2 (number or text)",
+          "Sequence matches the order of treatments",
+          "Time starts at 0 in each period",
+          "Dose column if doses differ between subjects or periods"
         ))
       ),
-      
+
       # ----------------------------------------------------------------
-      # SCENARIO 3b: Fixed-order crossover
+      # Paired comparison (fixed order)
       # ----------------------------------------------------------------
       nav_panel(
-        "Fixed-Order Crossover",
+        "Paired (Fixed Order)",
         icon = icon("arrow-right"),
-        
-        tags$h5(class = "fw-bold mt-2", "Scenario 3b: Fixed-Order Crossover"),
-        tags$p("All subjects receive the treatments in the same fixed order ",
-               "(e.g., everyone gets Reference first, then Test after washout). ",
-               "This is used in some relative bioavailability studies where randomisation ",
-               "is not possible, for example when the test formulation was developed after ",
-               "the reference study was completed."),
-        
+        tags$h5(class = "fw-bold mt-2", "Paired Comparison: Everyone in the Same Order"),
+        tags$p("All subjects receive the treatments in the same order, without randomisation. ",
+               "Typical examples are drug interaction studies (the victim drug alone first, then with ",
+               "the interacting drug) and some food-effect studies."),
         tags$div(
           class = "alert alert-warning py-2 small",
-          tags$strong("Statistical limitation: "),
-          "Because all subjects follow the same order, the period effect ",
-          "(things that change between visits) cannot be separated from the treatment effect. ",
-          "The app uses a paired analysis (equivalent to a paired t-test). ",
-          "Results should be interpreted with this limitation in mind."
+          tags$strong("Limitation: "),
+          "with one order for everybody, a period effect cannot be separated from the treatment effect. ",
+          "The app therefore uses a paired analysis (equivalent to a paired t-test on the log scale) and ",
+          "reports the ratio and confidence interval without a bioequivalence verdict."
         ),
-        
         tags$h6(class = "fw-semibold", "What you need"),
         tags$p(class = "small",
-               "The same six columns as a standard crossover. The only difference is that the ",
-               "Sequence column has a single value for all subjects (e.g., 'RT' if everyone ",
-               "received Reference first and Test second)."),
-        
+               "The same columns as a 2×2 crossover. Sequence has one value for everybody, or can be left out: ",
+               "the app also recognises a single order from the Period column."),
         ex_table(data.frame(
-          Subject   = c("S01","S01","S01","S01","S01","S01","S01","S01",
-                         "S02","S02","S02","S02","S02","S02","S02","S02"),
-          Treatment = c("Reference","Reference","Reference","Reference",
-                         "Test","Test","Test","Test",
-                         "Reference","Reference","Reference","Reference",
-                         "Test","Test","Test","Test"),
-          Period    = c(1,1,1,1,2,2,2,2, 1,1,1,1,2,2,2,2),
+          Subject   = c(rep("S01", 8), rep("S02", 8)),
+          Treatment = rep(c(rep("Reference", 4), rep("Test", 4)), 2),
+          Period    = rep(c(1,1,1,1,2,2,2,2), 2),
           Sequence  = rep("RT", 16),
           Time      = rep(c(0,1,4,24), 4),
-          Conc      = c(0,22.8,8.7,0.4, 0,24.5,9.1,0.5,
-                         0,20.1,7.9,0.3, 0,23.2,8.5,0.6)
+          Conc      = c(0,22.8,8.7,0.4, 0,24.5,9.1,0.5, 0,20.1,7.9,0.3, 0,23.2,8.5,0.6)
         )),
-        
         tags$p(class = "small text-muted",
-               "Notice: all subjects have Sequence = 'RT'. Everyone received Reference in ",
-               "period 1 and Test in period 2. In the app, select ",
-               "'Paired comparison (single sequence)' as the study design; the app also detects ",
-               "a single sequence and switches to the paired analysis automatically."),
-        
-        tags$h6(class = "fw-semibold mt-3", "Do I still need the Sequence column?"),
-        tags$p(class = "small",
-               "Yes. Include it even though it has only one value. The app uses it to detect ",
-               "that this is a fixed-order design and applies the correct paired analysis ",
-               "instead of the standard crossover ANOVA."),
-        
+               "Everyone received Reference in period 1 and Test in period 2. In the app select ",
+               "'Paired comparison'. If you select a crossover design by mistake, the app detects the single ",
+               "order and switches to the paired analysis."),
         checklist(c(
-          "Six columns present: Subject, Treatment, Period, Sequence, Time, Concentration",
-          "Sequence has ONE value for all subjects (e.g., 'RT')",
-          "Treatment has exactly two levels (Test and Reference)",
-          "Time resets to 0 at the start of each period",
-          "In the app, select 'Paired comparison' as the study design (no BE verdict is given)",
-          "If doses differ between subjects, add a Dose column"
+          "Columns: Subject, Treatment, Period (Sequence optional)",
+          "The same treatment order for every subject",
+          "Treatment has exactly two values",
+          "Time starts at 0 in each period",
+          "Design in the app: Paired comparison"
         ))
       ),
-      
+
       # ----------------------------------------------------------------
-      # SCENARIO 3c: 3-period crossover
+      # 3-period replicates
       # ----------------------------------------------------------------
       nav_panel(
-        "3-Period Replicate",
+        "3-Period Replicates",
         icon = icon("rotate"),
-        
-        tags$h5(class = "fw-bold mt-2", "Scenario 3c: 3-Period Replicate Designs"),
-        tags$p("Each subject receives treatments across three periods. Two common variants exist:"),
-        
+        tags$h5(class = "fw-bold mt-2", "3-Period Replicate Designs"),
         tags$div(
           class = "bg-light rounded p-3 mb-3 small",
           tags$table(
             class = "table table-sm table-borderless mb-0",
-            tags$tr(tags$td(class = "fw-bold", "Full replicate (2\u00D72\u00D73)"),
-                    tags$td("Sequences TRT and RTR. One treatment is given twice, ",
-                            "the other once. Provides extra within-subject replication.")),
-            tags$tr(tags$td(class = "fw-bold", "Partial replicate (2\u00D73\u00D73)"),
-                    tags$td("Sequences TRR, RTR, RRT (three sequences, three periods). ",
-                            "Test is given once and Reference twice to every subject."))
+            tags$tr(tags$td(class = "fw-bold", "2×2×3 full replicate"),
+                    tags$td("Sequences TRT and RTR. Subjects in TRT get Test twice, subjects in RTR get Reference twice.")),
+            tags$tr(tags$td(class = "fw-bold", "2×3×3 partial replicate"),
+                    tags$td("Sequences TRR, RTR and RRT. Every subject gets Test once and Reference twice."))
           )
         ),
-        
-        tags$h6(class = "fw-semibold", "Same six columns as the 2-period design"),
         tags$p(class = "small",
-               "The data format is identical to Scenario 3, except Period goes up to 3."),
-        
-        tags$h6(class = "fw-semibold mt-3", "Example: TRT|RTR design"),
+               "The columns are the same as for a 2×2 crossover; Period runs from 1 to 3. ",
+               "Each administration is analysed as its own profile. Two samples per period are shown to keep the examples short."),
+        tags$h6(class = "fw-semibold mt-3", "Example: 2×2×3 (TRT | RTR)"),
         ex_table(data.frame(
-          Subject   = rep("S01", 6),
-          Treatment = c("Test","Ref","Test", "Test","Ref","Test"),
-          Period    = c(1,2,3, 1,2,3),
-          Sequence  = rep("TRT", 6),
-          Time      = rep(c(0, 4), 3),
-          Conc      = c(0,9.5, 0,8.8, 0,10.1)
-        )),
-        
-        tags$p(class = "small text-muted",
-               "Subject S01 is in the TRT sequence: Test in period 1, Reference in period 2, ",
-               "Test again in period 3. Shown with 2 time points per period for brevity."),
-        
-        tags$h6(class = "fw-semibold mt-3", "Example: partial replicate (TRR|RTR|RRT)"),
-        ex_table(data.frame(
-          Subject   = c(rep("S01", 6), rep("S04", 6)),
-          Treatment = c("Test","Ref","Ref", "Test","Ref","Ref",
-                         "Ref","Test","Ref", "Ref","Test","Ref"),
-          Period    = rep(c(1,2,3), 4),
-          Sequence  = c(rep("TRR", 6), rep("RTR", 6)),
+          Subject   = c(rep("S01", 6), rep("S02", 6)),
+          Treatment = c("Test","Test","Reference","Reference","Test","Test",
+                        "Reference","Reference","Test","Test","Reference","Reference"),
+          Period    = rep(c(1,1,2,2,3,3), 2),
+          Sequence  = c(rep("TRT", 6), rep("RTR", 6)),
           Time      = rep(c(0, 4), 6),
-          Conc      = c(0,9.5, 0,8.8, 0,9.0,
-                         0,8.5, 0,9.8, 0,8.3)
+          Conc      = c(0,8.8, 0,9.5, 0,10.1, 0,9.2, 0,8.6, 0,9.9)
         )),
-        
-        tags$p(class = "small text-muted",
-               "S01 is in sequence TRR, S04 in RTR. A third group would have sequence RRT."),
-        
+        tags$h6(class = "fw-semibold mt-3", "Example: 2×3×3 (TRR | RTR | RRT)"),
+        ex_table(data.frame(
+          Subject   = c(rep("S01", 6), rep("S02", 6), rep("S03", 6)),
+          Treatment = c("Test","Test","Reference","Reference","Reference","Reference",
+                        "Reference","Reference","Test","Test","Reference","Reference",
+                        "Reference","Reference","Reference","Reference","Test","Test"),
+          Period    = rep(c(1,1,2,2,3,3), 3),
+          Sequence  = c(rep("TRR", 6), rep("RTR", 6), rep("RRT", 6)),
+          Time      = rep(c(0, 4), 9),
+          Conc      = c(0,9.8, 0,8.5, 0,8.3, 0,9.0, 0,9.4, 0,8.7, 0,8.1, 0,8.9, 0,9.6)
+        )),
         tags$div(
           class = "alert alert-info py-2 small",
           tags$strong("In the app: "),
-          "Select '2\u00D72\u00D73 full replicate' or '2\u00D73\u00D73 partial replicate' as the ",
-          "study design in the Bioequivalence settings. Each administration is analysed as its ",
-          "own profile, and the results include the within-subject variability of the Reference."
+          "select '2×2×3 full replicate' or '2×3×3 partial replicate'. Besides the ",
+          "average bioequivalence result, the app shows the within-subject variability of the Reference ",
+          "(and of Test when it was given twice) for information. It does not give a scaled verdict."
         ),
-        
         checklist(c(
-          "Six columns: Subject, Treatment, Period, Sequence, Time, Concentration",
-          "Period goes up to 3",
-          "Sequence accurately reflects the treatment order across all 3 periods",
-          "Time resets to 0 at the start of each period",
-          "If doses differ between subjects, add a Dose column"
+          "Columns as for a 2×2 crossover",
+          "Period runs from 1 to 3",
+          "Sequence matches the order of treatments over all periods",
+          "Time starts at 0 in each period"
         ))
       ),
-      
+
       # ----------------------------------------------------------------
-      # SCENARIO 4: Replicate crossover
+      # 4-period replicate
       # ----------------------------------------------------------------
       nav_panel(
-        "Replicate Crossover",
+        "4-Period Replicate",
         icon = icon("repeat"),
-        
-        tags$h5(class = "fw-bold mt-2", "Scenario 4: Replicate Design (4-Period Crossover)"),
-        tags$p("Used for highly variable drugs. Each subject receives each formulation twice, in four periods. ",
-               "The common sequences are TRTR and RTRT. This design lets you estimate within-subject ",
-               "variability for both products, which is needed for widened acceptance limits."),
-        
-        tags$h6(class = "fw-semibold", "Same six columns as the 2-period design"),
+        tags$h5(class = "fw-bold mt-2", "2×2×4 Full Replicate"),
+        tags$p("Often used for highly variable drugs. Each subject receives each formulation twice, ",
+               "over four periods, usually in sequences TRTR and RTRT. The design estimates the ",
+               "within-subject variability of both products."),
         tags$p(class = "small",
-               "The data format is identical to the 2-period crossover, except Period goes up to 4 ",
-               "and each treatment appears twice per subject."),
-        
+               "The columns are the same as for a 2×2 crossover; Period runs from 1 to 4. ",
+               "Two samples per period are shown; a real study has 10 to 15."),
         ex_table(data.frame(
-          Subject   = rep("S01", 8),
-          Treatment = c("Test","Test","Ref","Ref", "Test","Test","Ref","Ref"),
-          Period    = c(1,1,2,2,3,3,4,4),
-          Sequence  = rep("TRTR", 8),
-          Time      = rep(c(0, 4), 4),
-          Conc      = c(0,9.5, 0,8.8, 0,10.1, 0,9.0)
+          Subject   = c(rep("S01", 8), rep("S02", 8)),
+          Treatment = c("Test","Test","Reference","Reference","Test","Test","Reference","Reference",
+                        "Reference","Reference","Test","Test","Reference","Reference","Test","Test"),
+          Period    = rep(c(1,1,2,2,3,3,4,4), 2),
+          Sequence  = c(rep("TRTR", 8), rep("RTRT", 8)),
+          Time      = rep(c(0, 4), 8),
+          Conc      = c(0,9.5, 0,8.8, 0,10.1, 0,9.0, 0,8.4, 0,9.7, 0,8.9, 0,10.3)
         )),
-        
-        tags$p(class = "small text-muted",
-               "Shown with only 2 time points per period for brevity. ",
-               "In practice, you would have 10-15 time points per period."),
-        
         tags$div(
           class = "alert alert-info py-2 small",
-          tags$strong("Note: "),
-          "If your study has 3 periods (e.g., the partial replicate with sequences TRR, RTR, RRT), ",
-          "the same format applies — just adjust the Period values (1, 2, 3) and the Sequence accordingly. ",
-          "In these designs, one treatment is given once and the other twice."
+          tags$strong("In the app: "),
+          "select '2×2×4 full replicate'. The app reports average bioequivalence and, for ",
+          "information, the within-subject variability of Test and Reference with the EMA widened limits ",
+          "they would imply. It does not perform a reference-scaled (ABEL or RSABE) analysis. ",
+          "Download example_be_replicate_2x2x4.csv above to try it."
         ),
-        
         checklist(c(
-          "Same six columns as 2-period design",
-          "Period goes up to 3 or 4 (depending on the design)",
-          "Each treatment appears at least twice per subject (for 4-period designs)",
-          "Sequence accurately reflects the order across all periods",
-          "If doses differ between subjects, add a Dose column"
+          "Columns as for a 2×2 crossover",
+          "Period runs from 1 to 4; each treatment appears twice per subject",
+          "Sequence matches the order of treatments over all periods",
+          "Time starts at 0 in each period"
         ))
       ),
-      
+
       # ----------------------------------------------------------------
-      # SCENARIO 5: Parallel-group BE
+      # Parallel groups
       # ----------------------------------------------------------------
       nav_panel(
-        "Parallel BE",
+        "Parallel Groups",
         icon = icon("arrow-right-arrow-left"),
-        
-        tags$h5(class = "fw-bold mt-2", "Scenario 5: Parallel-Group Bioequivalence"),
-        tags$p("Each subject receives only one formulation (either Test or Reference, never both). ",
-               "Used when crossover is impractical: long-acting drugs, irreversible effects, ",
-               "or drugs with very long half-lives where washout would take too long."),
-        
+        tags$h5(class = "fw-bold mt-2", "Parallel-Group Comparison"),
+        tags$p("Each subject receives one formulation only. Used when a crossover is impractical: ",
+               "very long half-lives, long-acting formulations, or effects that do not wash out."),
         tags$h6(class = "fw-semibold", "What you need"),
         tags$p(class = "small",
-               "Four columns. No Period or Sequence column is needed because ",
-               "each subject only takes one treatment."),
-        
+               "Four columns: Subject, Treatment, Time and Concentration. No Period or Sequence. ",
+               "Subject IDs must be unique across both groups."),
         ex_table(data.frame(
-          Subject   = c("S01","S01","S01","S02","S02","S02","S03","S03","S03"),
-          Treatment = c("Test","Test","Test","Test","Test","Test","Reference","Reference","Reference"),
-          Time      = c(0,4,24, 0,4,24, 0,4,24),
-          Conc      = c(0,18.3,1.1, 0,21.5,1.3, 0,19.8,0.9)
+          Subject   = c("S01","S01","S01","S02","S02","S02","S03","S03","S03","S04","S04","S04"),
+          Treatment = c(rep("Test", 6), rep("Reference", 6)),
+          Time      = rep(c(0,4,24), 4),
+          Conc      = c(0,18.3,1.1, 0,21.5,1.3, 0,19.8,0.9, 0,17.6,1.0)
         )),
-        
         tags$div(
           class = "alert alert-warning py-2 small",
           tags$strong("Keep in mind: "),
-          "Parallel designs have more between-subject variability than crossover designs ",
-          "because different people receive different treatments. You'll need more subjects ",
-          "to achieve the same statistical power."
+          "the groups contain different people, so differences between subjects end up in the comparison. ",
+          "A parallel study therefore needs more subjects than a crossover for the same power. ",
+          "In the app, select 'Parallel groups'."
         ),
-        
         checklist(c(
-          "Each subject appears under only one treatment",
-          "Treatment column present (Test or Reference)",
-          "Period and Sequence columns are NOT needed",
-          "Approximately equal numbers of subjects per treatment group",
-          "If doses differ between subjects, add a Dose column"
+          "Each subject appears under one treatment only",
+          "Treatment column with two values",
+          "No Period or Sequence column needed",
+          "Unique subject IDs across groups",
+          "Dose column if doses differ between subjects"
         ))
       ),
-      
+
       # ----------------------------------------------------------------
-      # SCENARIO 6: Steady-state
+      # Steady state
       # ----------------------------------------------------------------
       nav_panel(
-        "Steady-State",
+        "Steady State",
         icon = icon("rotate"),
-        
-        tags$h5(class = "fw-bold mt-2", "Scenario 6: Multiple-Dose / Steady-State PK"),
-        tags$p("The drug has been given repeatedly (e.g., once daily for 7 days), and you are ",
-               "sampling during one dosing interval at steady state. The drug has accumulated ",
-               "to a stable level, so the pre-dose concentration is no longer zero."),
-        
-        tags$h6(class = "fw-semibold", "Same columns as a single-dose study"),
+        tags$h5(class = "fw-bold mt-2", "Multiple Dosing at Steady State"),
+        tags$p("The drug has been given repeatedly (for example once daily for 7 days) and you sample ",
+               "over one dosing interval at steady state. The pre-dose concentration is above zero ",
+               "because the drug has accumulated."),
+        tags$h6(class = "fw-semibold", "What you need"),
         tags$p(class = "small",
-               "The data format is the same as Scenario 2 (multiple subjects). The key difference ",
-               "is that time = 0 now means 'just before the steady-state dose', not 'before the first-ever dose'. ",
-               "The pre-dose concentration will be above zero because the drug has accumulated."),
-        
+               "The same columns as for several subjects. Time 0 is just before the dose of the sampled ",
+               "interval, not the first dose of the treatment. Sample exactly one dosing interval: the app ",
+               "takes the interval (τ) as last minus first sampling time, so AUCτ, average ",
+               "concentration and fluctuation are only right when sampling ends at τ."),
         ex_table(data.frame(
           Subject = c("S01","S01","S01","S01","S01","S02","S02","S02","S02","S02"),
           Time    = c(0, 0.5, 1, 4, 12, 0, 0.5, 1, 4, 12),
           Conc    = c(3.2, 28.1, 22.4, 9.8, 4.1, 2.8, 25.6, 20.1, 8.5, 3.5)
         )),
-        
         tags$p(class = "small text-muted",
-               "Notice the pre-dose concentration (time 0) is 3.2 and 2.8, not zero — ",
-               "that's the remaining drug from previous doses."),
-        
+               "A twice-daily drug: sampling from 0 to 12 h. The pre-dose values (3.2 and 2.8) are left over from earlier doses."),
         tags$div(
           class = "alert alert-info py-2 small",
           tags$strong("In the app: "),
-          "When analyzing steady-state data, tick the 'Steady-state' checkbox in the analysis settings. ",
-          "This tells the NCA engine to calculate AUC within the dosing interval (AUC\u03C4) ",
-          "instead of AUC extrapolated to infinity."
+          "tick 'Steady-state (drug given repeatedly)'. AUC to the last sample is then reported as AUCτ ",
+          "and CL/F is calculated from it; AUC to infinity has no meaning during repeated dosing."
         ),
-        
         checklist(c(
-          "Time is relative to the steady-state dose (time 0 = just before the dose)",
-          "Pre-dose sample is present (it will NOT be zero — that's correct)",
-          "Sampling covers one full dosing interval (e.g., 0 to 12h for a twice-daily drug, 0 to 24h for once-daily)",
-          "Tick 'Steady-state' in the app before running the analysis",
-          "If doses differ between subjects (e.g., weight-based dosing), add a Dose column"
+          "Time 0 is just before the dose of the sampled interval",
+          "Pre-dose sample present (above zero is normal)",
+          "Sampling covers exactly one dosing interval (0 to 12 h for twice daily, 0 to 24 h for once daily)",
+          "'Steady-state' ticked in the app"
         ))
       ),
-      
+
       # ----------------------------------------------------------------
-      # SCENARIO 7: Working with real lab data
+      # Drug interaction study
       # ----------------------------------------------------------------
       nav_panel(
-        "Handling Real Lab Data",
+        "Drug Interaction",
+        icon = icon("pills"),
+        tags$h5(class = "fw-bold mt-2", "Drug Interaction (DDI) Study"),
+        tags$p("A DDI study measures how one drug (the perpetrator, or precipitant) changes the exposure of ",
+               "another (the victim, or substrate). Subjects receive the victim drug alone and together with ",
+               "the perpetrator, in a randomised crossover or in a fixed order."),
+        tags$h6(class = "fw-semibold", "What you need"),
+        tags$p(class = "small",
+               "The layout of a 2×2 crossover, or of a paired comparison when everyone had the same order. ",
+               "Concentrations are those of the victim drug."),
+        ex_table(data.frame(
+          Subject   = rep("S01", 8),
+          Treatment = c(rep("Alone", 4), rep("With inhibitor", 4)),
+          Period    = c(1,1,1,1,2,2,2,2),
+          Time      = rep(c(0,1,4,24), 2),
+          Conc      = c(0,12.4,6.1,0.4, 0,19.8,13.5,2.2)
+        )),
+        tags$div(
+          class = "alert alert-info py-2 small",
+          tags$strong("In the app: "),
+          "in Bioequivalence, choose the victim drug alone ('Alone') as the Reference treatment. ",
+          "The ratio is then exposure with the perpetrator divided by exposure alone: 200% means the ",
+          "exposure doubled. Select 'Paired comparison' for a fixed-order study."
+        ),
+        tags$h6(class = "fw-semibold mt-3", "Interpreting the result"),
+        tags$p(class = "small",
+               "ICH M12 (section 5.2) asks for the geometric mean ratio with its 90% confidence interval, for ",
+               "AUC and Cmax. A 90% interval within 80–125% is an accepted default no-effect boundary, although ",
+               "M12 calls it overly conservative for most drugs; boundaries based on exposure-response are preferred. ",
+               "The labels strong, moderate and weak inhibitor or inducer describe the precipitant's effect on a ",
+               "sensitive index substrate; they do not classify the interaction for any other victim drug."),
+        checklist(c(
+          "Crossover or paired layout, victim drug concentrations",
+          "The victim drug alone chosen as Reference in the app",
+          "Paired comparison selected for a fixed-order study"
+        ))
+      ),
+
+      # ----------------------------------------------------------------
+      # CDISC ADNCA
+      # ----------------------------------------------------------------
+      nav_panel(
+        "CDISC ADNCA",
+        icon = icon("database"),
+        tags$h5(class = "fw-bold mt-2", "CDISC ADNCA Datasets"),
+        tags$p("Pharmaceutical companies and CROs often deliver PK data as a CDISC ADNCA dataset. ",
+               "You recognise it by variables such as USUBJID, AVAL, PARAMCD, NRRLT, ARRLT and ANL01FL. ",
+               "Do not convert it by hand."),
+        tags$h6(class = "fw-semibold", "How to upload"),
+        tags$ol(class = "small",
+          tags$li("On Upload & Check Data, set 'What kind of file?' to 'CDISC ADNCA dataset'."),
+          tags$li("Upload the .csv or .xlsx file. The app shows the analytes, time variables, units, LLOQ and record counts."),
+          tags$li("Choose the time: NRRLT (nominal), ARRLT (actual; pre-dose samples have negative times, which you can set to 0) or MRRLT (actual, pre-dose at 0). AFRLT, time since the first dose, is refused."),
+          tags$li("Choose the analyte if there is more than one, then process the data. The choices are stored in the Analysis Record.")
+        ),
+        tags$h6(class = "fw-semibold", "What the app does with it"),
+        tags$ul(class = "small",
+          tags$li("Keeps records with ANL01FL = 'Y' and drops PCSTAT = 'NOT DONE'."),
+          tags$li("Refuses derived records (DTYPE filled in), more than one unit or LLOQ, more than one analyte or matrix without a choice, duplicate times within a profile, and AVAL missing without a BLQ result."),
+          tags$li("Passes BLQ results (for example '<0.5' in PCORRES) to the BLQ rule you choose.")
+        ),
+        tags$p(class = "small",
+               "SAS transport (.xpt) files are not read. Convert them to CSV first; ",
+               code("converters/ADNCA_TO_FLAT.md"), " in the repository gives a two-line R recipe. ",
+               "The same conversion is available outside the app as ", code("converters/adnca_to_flat.R"), ". ",
+               "Download example_adnca.csv above to try it."),
+        tags$p(class = "small text-muted",
+               "Variable names follow common ADNCA usage; the app has not been checked against a specific ",
+               "version of the ADNCA Implementation Guide and is not affiliated with CDISC.")
+      ),
+
+      # ----------------------------------------------------------------
+      # Real lab data
+      # ----------------------------------------------------------------
+      nav_panel(
+        "Real Lab Data",
         icon = icon("flask-vial"),
-        
         tags$h5(class = "fw-bold mt-2", "Working with Real Bioanalytical Data"),
-        tags$p("The data from the bioanalytical laboratory rarely arrives in the exact format ",
-               "the app needs. This section covers the most common issues you'll encounter."),
-        
-        # BLQ
-        tags$h6(class = "fw-semibold mt-3",
-                "Below the limit of quantification (BLQ)"),
+        tags$p("Laboratory data rarely arrive in exactly the layout the app needs. These are the usual issues."),
+
+        tags$h6(class = "fw-semibold mt-3", "Below the limit of quantification (BLQ)"),
         tags$p(class = "small",
-               "Every analytical method has a lower limit of quantification (LLOQ): the lowest ",
-               "concentration it can reliably measure. Samples below this limit are reported as ",
-               "'<0.5', 'BLQ', 'BQL', 'BLOQ', 'ND' (not detected) or 'NQ' (not quantifiable). The app ",
-               "recognizes these (in any capitals) once you set the LLOQ, and applies the BLQ rule ",
-               "you choose; you don't need to change them before uploading. Other text, such as ",
-               "'NS' (no sample), 'N/A' or 'missing', is treated as a missing value, not as BLQ."),
-        
+               "Every assay has a lower limit of quantification (LLOQ): the lowest concentration it measures ",
+               "reliably. Results below it are reported as '<0.5', 'BLQ', 'BQL', 'BLOQ', 'ND' (not detected) ",
+               "or 'NQ' (not quantifiable). Leave them as text. Once you set the LLOQ, the app recognises them ",
+               "in any capitals and applies the BLQ rule you choose. 'NS' (no sample), 'N/A' and 'missing' ",
+               "count as missing values, not as BLQ."),
         tags$p(class = "small",
-               "In the upload step, you set the LLOQ value and choose a BLQ handling rule. ",
-               "The most common rule (and the default) is: BLQ samples before the first measurable ",
-               "concentration are set to zero, and BLQ samples after the last measurable concentration ",
-               "are excluded from the analysis. This matches what WinNonlin does by default."),
-        
+               "The default rule (Rule 1) sets BLQ samples before the first measurable concentration to 0, ",
+               "ignores BLQ samples after the last measurable concentration, and sets BLQ samples between ",
+               "measurable ones to 0. The rules work per profile, in time order."),
         tags$div(
           class = "alert alert-warning py-2 small",
-          tags$strong("You must set LLOQ > 0 when your data contains BLQ entries. "),
-          "The LLOQ value is the number from your bioanalytical validation report ",
-          "(e.g., 0.5 ng/mL). If you leave LLOQ at 0, the app cannot process BLQ text entries ",
-          "and will show an error. The app tries to auto-detect the LLOQ from entries like ",
-          "'<0.5' (both period and comma decimal separators are recognised) ",
-          "and will pre-fill it for you — verify the value and click Process Data."
+          tags$strong("Set the LLOQ when the data contain BLQ text. "),
+          "Use the value from the bioanalytical validation report (for example 0.5 ng/mL). With the LLOQ ",
+          "left at 0 the app stops with an error. When it finds entries such as '<0.5' (or '<0,5'), it ",
+          "offers a button 'Apply LLOQ = 0.5 and process'; check the value before clicking."
         ),
-        
         ex_table(data.frame(
           Subject = rep("S01", 8),
           Time = c(0, 0.25, 0.5, 1, 2, 8, 12, 24),
           Conc = c("BLQ", "BLQ", "4.2", "18.5", "12.1", "2.8", "0.9", "<0.5")
         )),
-        
-        tags$p(class = "small text-muted",
-               "The app auto-detects BLQ strings and the LLOQ value (0.5 in this case, ",
-               "from the '<0.5' entry). Both period and comma decimal separators are ",
-               "recognised in BLQ entries. Leave them as-is in your file."),
-        
-        # Actual vs nominal time
-        tags$h6(class = "fw-semibold mt-4",
-                "Actual vs. nominal sampling times"),
+
+        tags$h6(class = "fw-semibold mt-4", "Units"),
         tags$p(class = "small",
-               "Your protocol specifies nominal times (0, 0.5, 1, 2, 4, 8, 12, 24 hours). ",
-               "The actual blood draws happen close to these times but not exactly: ",
-               "the 0.5h sample might be drawn at 0.52h, the 4h sample at 3.95h."),
-        
-        tags$p(class = "small fw-semibold",
-               "Use actual times if you have them. They give more accurate AUC calculations. ",
-               "Use nominal times only if actual times are not recorded."),
-        
-        # Missing samples
+               "Use one concentration unit, one time unit and one dose unit for the whole file, and select ",
+               "them in the app: they set the conversion factor for clearance and volume. A unit column ",
+               "with more than one unit (even ng/mL and µg/L) is refused. Molar concentration units ",
+               "(nmol/L) with a mass dose (mg) need the molecular weight."),
+
         tags$h6(class = "fw-semibold mt-4", "Missing samples"),
         tags$p(class = "small",
-               "Sometimes a sample is lost (haemolysed, tube broke, subject vomited). ",
-               "You can either leave the row out entirely, or include it with an empty ",
-               "concentration cell (the app treats both the same way). Do NOT enter 0 for ",
-               "a missing sample — that tells the app the concentration was actually zero."),
-        
+               "A lost sample (haemolysed, broken tube) can be left out, left blank, or marked 'NS'. ",
+               "Do not enter 0: that says the concentration was measured and was zero."),
+
+        tags$h6(class = "fw-semibold mt-4", "What the app refuses"),
+        tags$ul(class = "small",
+          tags$li("Dates or clock times in the Time column."),
+          tags$li("Profiles that do not start near time 0, such as period 2 starting at 168 h (time since the first dose)."),
+          tags$li("Duplicate times within a profile: usually several analytes, matrices or periods stacked in one column."),
+          tags$li("A unit column with more than one unit."),
+          tags$li("A CDISC-style file uploaded as a simple table.")
+        ),
+
         do_dont(
           do_items = c(
-            "Leave BLQ entries as text ('BLQ', '<0.5', 'ND') — the app handles them",
-            "Use actual sampling times when available",
-            "Leave missing samples blank or omit the row",
-            "Include all subjects, even with incomplete data"
+            "Leave BLQ entries as text ('BLQ', '<0.5', 'ND')",
+            "Use actual sampling times for the NCA",
+            "Leave missing samples blank, write NS, or leave the row out",
+            "Keep all subjects, also with incomplete data"
           ),
           dont_items = c(
-            "Replace BLQ with 0 yourself (let the app apply the correct rule)",
-            "Replace missing samples with 0 (that means 'concentration was zero')",
-            "Round actual times to nominal times",
-            "Remove subjects with 1-2 missing samples (the app works with partial profiles)"
+            "Replace BLQ with 0 yourself",
+            "Enter 0 for a missing sample",
+            "Mix units within the file",
+            "Remove subjects with a few missing samples"
           )
         ),
-        
-        # Data quality warnings
-        tags$h6(class = "fw-semibold mt-4",
-                "Understanding data quality warnings"),
-        tags$p(class = "small",
-               "After you click Process Data, the app runs a set of checks and shows — ",
-               "depending on what it finds — errors (red, must fix), warnings (amber, ",
-               "investigate), and information notices (blue). Here are the most common ones:"),
 
+        tags$h6(class = "fw-semibold mt-4", "Data quality messages you may see"),
         tags$div(
           class = "small",
-
           tags$p(tags$strong("Large sampling gap.")),
           tags$p(class = "text-muted",
-                 "Fires when consecutive time points within a profile are far apart. ",
-                 "For single-dose studies (observation window up to 48 h) the threshold is 24 h. ",
-                 "For multi-day studies (observation window > 48 h) the threshold is 48 h, ",
-                 "so daily trough samples at 24 h, 48 h, 72 h, 96 h, 120 h are not flagged. ",
-                 "If you see this warning, check the ‘Largest gap’ value shown. ",
-                 "A gap of 24.0–25.0 h in a multi-day study is normal sampling time variability. ",
-                 "A gap of 48 h or more usually means a sample was missed."),
-
+                 "Two consecutive samples in a profile are far apart. The threshold is 24 h, or 48 h when the ",
+                 "profile lasts longer than 48 h, so daily trough samples are not flagged. A gap just above ",
+                 "24 h is usually normal timing; a much larger gap often means a missed sample."),
           tags$p(tags$strong("BLQ entries detected but LLOQ is not set.")),
           tags$p(class = "text-muted",
-                 "Your concentration column contains text like ‘<0.5’, ‘BLQ’, or ‘ND’ but the ",
-                 "LLOQ field is set to 0. The app cannot process BLQ values without knowing the ",
-                 "LLOQ. If your BLQ entries use the format '<X' (e.g., '<0.5'), ",
-                 "both period and comma decimal separators are recognised. ",
-                 "The app will auto-detect the LLOQ and show a button to apply it. ",
-                 "Otherwise, enter the LLOQ manually and click Process Data again."),
-
+                 "Set the LLOQ, or use the 'Apply LLOQ' button when the app found '<X' entries."),
           tags$p(tags$strong("Tmax = 0 in one or more subjects.")),
           tags$p(class = "text-muted",
-                 "The highest concentration in a profile occurs at time = 0. For oral or IM dosing, ",
-                 "this almost always means the pre-dose sample has been mislabelled, or the first ",
-                 "sample was collected before absorption began. Check the raw data for that subject."),
-
+                 "The highest concentration is at time 0. After an oral dose this usually means a mislabelled ",
+                 "pre-dose sample. Check the raw data."),
           tags$p(tags$strong("Subjects with < 3 observations.")),
           tags$p(class = "text-muted",
-                 "Lambda-z and half-life cannot be estimated with fewer than 3 time points. ",
-                 "NCA will still run and report Cmax, Tmax, and AUClast for these subjects, ",
-                 "but AUC to infinity, clearance, and volume will be missing."),
-
+                 "The half-life needs at least 3 points after the peak. A profile with 2 positive concentrations ",
+                 "still gives Cmax, Tmax and AUClast; a profile with fewer than 2 is left out of the analysis."),
           tags$p(tags$strong("Unequal observations per subject.")),
           tags$p(class = "text-muted",
-                 "This is informational only. Missing samples are normal in real-world studies ",
-                 "and the app handles them automatically.")
+                 "For information only. Missing samples are common and the app handles them.")
         ),
 
-        # Common column name variations
-        tags$h6(class = "fw-semibold mt-4", "Common column name variations the app recognizes"),
+        tags$h6(class = "fw-semibold mt-4", "Column names the app recognises"),
         tags$p(class = "small",
-               "You don't need to rename your columns. The app auto-detects common names:"),
-        
-        tags$table(
-          class = "table table-sm small",
-          style = "max-width: 600px;",
-          tags$thead(class = "table-light",
-            tags$tr(tags$th("Meaning"), tags$th("Recognized names (case-insensitive)"))
-          ),
-          tags$tbody(
-            tags$tr(tags$td("Subject"),
-                    tags$td("Subject, SubjectID, USUBJID, ID, Pat, PatID, Proband")),
-            tags$tr(tags$td("Time"),
-                    tags$td("Time, Hours, Hour, Tpt, NTIM, APTS, Zeit")),
-            tags$tr(tags$td("Concentration"),
-                    tags$td("Conc, Concentration, DV, Cp, Result, Konz, Plasma")),
-            tags$tr(tags$td("Treatment"),
-                    tags$td("Treatment, Trt, Formulation, Drug, Arm")),
-            tags$tr(tags$td("Period"),
-                    tags$td("Period, Per, Prd, Phase")),
-            tags$tr(tags$td("Sequence"),
-                    tags$td("Sequence, Seq, Grp")),
-            tags$tr(tags$td("Dose"),
-                    tags$td("Dose, Amt, Amount")))
+               "The app suggests a mapping from common names (not case-sensitive). Always check it: when no name ",
+               "matches, it falls back to a column by position."),
+        tags$div(
+          class = "table-responsive",
+          tags$table(
+            class = "table table-sm small",
+            style = "max-width: 650px;",
+            tags$thead(class = "table-light",
+              tags$tr(tags$th("Meaning"), tags$th("Recognised names"))
+            ),
+            tags$tbody(
+              tags$tr(tags$td("Subject"), tags$td("Subject, SubjectID, USUBJID, ID, Pat, PatID, Proband, Teilnehmer")),
+              tags$tr(tags$td("Time"), tags$td("Time, Hours, Hour, Tpt, NTIM, APTS, Zeit, Tid")),
+              tags$tr(tags$td("Concentration"), tags$td("Conc, Concentration, DV, Cp, Result, Konz, Plasma, or a name containing ng/mL or ug/L")),
+              tags$tr(tags$td("Treatment"), tags$td("Treatment, Trt, Formulation, Drug, Arm, Behandlung")),
+              tags$tr(tags$td("Period"), tags$td("Period, Per, Prd, Phase")),
+              tags$tr(tags$td("Sequence"), tags$td("Sequence, Seq, Grp")),
+              tags$tr(tags$td("Dose"), tags$td("Dose, Amt, Amount, Dosis"))
+            )
+          )
         )
       ),
-      
+
       # ----------------------------------------------------------------
-      # COMMON MISTAKES
+      # Common mistakes
       # ----------------------------------------------------------------
       nav_panel(
         "Common Mistakes",
         icon = icon("triangle-exclamation"),
-        
-        tags$h5(class = "fw-bold mt-2", "The Most Common Data Preparation Mistakes"),
-        tags$p("These are the issues we see most often. Check your data against this list ",
-               "before uploading."),
-        
-        # Mistake 1
+        tags$h5(class = "fw-bold mt-2", "Common Data Preparation Mistakes"),
+        tags$p("Check your file against this list before uploading."),
         tags$div(
           class = "border-start border-4 border-danger ps-3 mb-4",
-          tags$h6(class = "fw-bold text-danger", "1. Clock time instead of hours since dosing"),
+          tags$h6(class = "fw-bold text-danger", "1. Clock time instead of hours since the dose"),
           tags$p(class = "small",
-                 "Your lab report might have '08:30', '09:00', '09:30'. ",
-                 "The app needs hours since the dose: 0, 0.5, 1.0. ",
-                 "You need to convert. If the dose was given at 08:30, then 09:30 = 1.0 hour.")
+                 "A lab report lists '08:30', '09:30'. The app needs hours since the dose: with the dose at ",
+                 "08:30, 09:30 is 1.0 h. The app refuses clock times.")
         ),
-        
-        # Mistake 2
         tags$div(
           class = "border-start border-4 border-danger ps-3 mb-4",
-          tags$h6(class = "fw-bold text-danger", "2. Wide format instead of long format"),
+          tags$h6(class = "fw-bold text-danger", "2. Wide format"),
           tags$p(class = "small",
-                 "Some people create a table with one column per subject. ",
-                 "The app expects one ROW per observation: Subject, Time, Concentration. ",
-                 "See the 'Multiple Subjects' tab for a visual example.")
+                 "One column per subject does not work. Use one row per sample; see the Multiple Subjects tab.")
         ),
-        
-        # Mistake 3
         tags$div(
           class = "border-start border-4 border-danger ps-3 mb-4",
-          tags$h6(class = "fw-bold text-danger", "3. Not resetting time in crossover studies"),
+          tags$h6(class = "fw-bold text-danger", "3. Time not restarted in each period"),
           tags$p(class = "small",
-                 "In a crossover study, time must reset to 0 at the start of each period. ",
-                 "Period 2 does not continue from where period 1 ended. ",
-                 "The 'pre-dose' sample in period 2 is time = 0, not time = 168 or 336.")
+                 "In a crossover, the pre-dose sample of period 2 is time 0, not 168 h. The app refuses profiles ",
+                 "that do not start near zero.")
         ),
-        
-        # Mistake 4
         tags$div(
           class = "border-start border-4 border-danger ps-3 mb-4",
-          tags$h6(class = "fw-bold text-danger", "4. Replacing BLQ with 0 before uploading"),
+          tags$h6(class = "fw-bold text-danger", "4. BLQ replaced by 0 before uploading"),
           tags$p(class = "small",
-                 "Don't do this. The app has specific rules for handling BLQ values that depend on ",
-                 "where they fall in the profile (before Cmax vs. after Cmax). ",
-                 "If you replace them with 0 yourself, you take away the app's ability ",
-                 "to apply the correct rule. Leave BLQ as text.")
+                 "The BLQ rules treat a BLQ sample according to where it sits in the profile: before the first ",
+                 "or after the last measurable concentration (Rules 1 and 6), or before or after Cmax (Rule 5). ",
+                 "Once you have typed 0, the app cannot tell a BLQ result from a real zero. Leave BLQ as text.")
         ),
-        
-        # Mistake 5
         tags$div(
           class = "border-start border-4 border-danger ps-3 mb-4",
-          tags$h6(class = "fw-bold text-danger", "5. Missing the Sequence column in BE studies"),
+          tags$h6(class = "fw-bold text-danger", "5. Several analytes or matrices in one column"),
           tags$p(class = "small",
-                 "Treatment and Period alone are not enough. Without Sequence, the statistical model ",
-                 "cannot estimate or test for carryover effects. Many investigators forget this column, ",
-                 "but it is essential for the ANOVA to give valid results.")
+                 "Parent drug and metabolite, or plasma and urine, stacked in one Concentration column give ",
+                 "duplicate times per profile. The app refuses this. Make one file per analyte and matrix.")
         ),
-        
-        # Mistake 6
         tags$div(
           class = "border-start border-4 border-danger ps-3 mb-4",
-          tags$h6(class = "fw-bold text-danger", "6. Inconsistent subject IDs"),
+          tags$h6(class = "fw-bold text-danger", "6. Subject IDs that are not unique or not consistent"),
           tags$p(class = "small",
-                 "If subject 1 is called 'S01' in period 1 and 'S1' in period 2, ",
-                 "the app treats them as two different people. Check that IDs are ",
-                 "exactly the same across all rows for each subject.")
+                 "'S01' in period 1 and 'S1' in period 2 become two people. Numbering that restarts in each group ",
+                 "or sequence turns two people into one subject. Use one ID per person for the whole study.")
         ),
-        
-        # Mistake 7
         tags$div(
           class = "border-start border-4 border-danger ps-3 mb-4",
-          tags$h6(class = "fw-bold text-danger", "7. Entering 0 for a missing sample"),
+          tags$h6(class = "fw-bold text-danger", "7. 0 entered for a missing sample"),
           tags$p(class = "small",
-                 "A missing sample and a sample with concentration = 0 are completely different things. ",
-                 "Zero means 'we measured and found nothing.' Missing means 'we don't have a measurement.' ",
-                 "Leave the cell blank for missing data, or omit the row entirely.")
+                 "Zero means the sample was measured and nothing was found. For a missing sample leave the cell ",
+                 "blank, write NS, or leave the row out.")
+        ),
+        tags$div(
+          class = "border-start border-4 border-danger ps-3 mb-4",
+          tags$h6(class = "fw-bold text-danger", "8. Mixed or wrong units"),
+          tags$p(class = "small",
+                 "All concentrations need the same unit, and the units selected in the app must match the file: ",
+                 "they determine the conversion factor for clearance and volume.")
         )
       )
     ),
-    
+
     # Ready to go
     tags$div(
       class = "text-center mt-4 mb-3",
       tags$p(class = "text-muted",
-             "Ready to upload? Head to ",
+             "Ready to upload? Go to ",
              tags$a(href = "#",
                     onclick = "Shiny.setInputValue('nav_path', 'data', {priority: 'event'}); return false;",
                     tags$strong("Upload & Check Data")),
-             ". The app will verify your data and flag any remaining issues."
+             ". The app checks your data and flags remaining issues."
       )
     )
   )

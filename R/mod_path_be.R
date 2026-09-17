@@ -540,11 +540,11 @@ path_be_server <- function(id, shared) {
             be_design_model(design_used$design) == "crossover") {
           showNotification(
             paste0("No Sequence column is mapped. For a ", design_used$design,
-                   " design the Sequence term is part of the standard ANOVA model ",
+                   " design the Sequence term is part of the standard ANOVA table ",
                    "(ln(PK) = Sequence + Subject(Sequence) + Period + Treatment). ",
-                   "Without it, between-sequence variance is uncontrolled and ",
-                   "degrees of freedom may be slightly incorrect. ",
-                   "If your data has a Sequence column, map it in the Upload step."),
+                   "With subject as a fixed effect the ratio and confidence interval are the same ",
+                   "without it, because each subject belongs to one sequence; only the test of the ",
+                   "sequence effect is missing. If your data have a Sequence column, map it in the Upload step."),
             type = "warning", duration = 15)
         }
 
