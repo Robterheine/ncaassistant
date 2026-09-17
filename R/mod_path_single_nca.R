@@ -740,7 +740,9 @@ path_single_nca_server <- function(id, shared) {
             study_name         = if (nchar(input$record_study) > 0) input$record_study else "Untitled Study",
             lz_override        = lz_override,
             col_map            = if (has_file) shared$col_map else NULL,
-            read_args          = if (has_file) shared$study_info$read_args else NULL
+            read_args          = if (has_file) shared$study_info$read_args else NULL,
+            adnca              = if (has_file && identical(shared$study_info$door, "adnca"))
+                                   shared$study_info$adnca else NULL
           )
           notify_reproduction(rec_out)
         })

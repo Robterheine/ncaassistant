@@ -21,6 +21,11 @@ data_upload_ui <- function(id) {
                       onclick = "Shiny.setInputValue('nav_path', 'guide', {priority: 'event'}); return false;",
                       "Data Preparation Guide"),
                " for format instructions and example datasets."),
+        radioButtons(ns("data_type"),
+                     tagList("What kind of file?", help_data_type),
+                     choices = c("Simple table (one row per sample)" = "flat",
+                                 "CDISC ADNCA dataset" = "adnca"),
+                     selected = "flat", inline = TRUE),
         layout_columns(
           col_widths = c(4, 8),
           
@@ -52,6 +57,13 @@ data_upload_ui <- function(id) {
           uiOutput(ns("upload_status"))
         )
       )
+    ),
+
+    # ADNCA import: summary, choices and conversion (only in ADNCA mode)
+    conditionalPanel(
+      condition = sprintf("input['%s'] == 'adnca' && output['%s'] == true",
+                          ns("data_type"), ns("has_file")),
+      uiOutput(ns("adnca_panel"))
     ),
     
     # Column mapping (only shown after upload)
@@ -178,6 +190,9 @@ data_upload_server <- function(id, shared) {
     
     output$has_data <- reactive({ !is.null(raw_data()) })
     outputOptions(output, "has_data", suspendWhenHidden = FALSE)
+
+    output$has_file <- reactive({ !is.null(input$file_upload) })
+    outputOptions(output, "has_file", suspendWhenHidden = FALSE)
     
     # Reset all shared state when a new file is uploaded
     observeEvent(input$file_upload, {
@@ -198,9 +213,132 @@ data_upload_server <- function(id, shared) {
       else list(sep = input$csv_sep, dec = input$csv_dec)
     })
 
-    # Read raw data
+    # ---- CDISC ADNCA import (R/adnca_import.R) ------------------------------
+    adnca_conv  <- reactiveVal(NULL)   # successful conversion
+    adnca_error <- reactiveVal(NULL)   # refusal message
+
+    adnca_file <- reactive({
+      req(input$file_upload, input$data_type == "adnca")
+      tryCatch(adnca_read(input$file_upload$datapath, read_args(), ext = file_ext()),
+               error = function(e) {
+                 showNotification(paste("Error reading file:", e$message), type = "error", duration = 8)
+                 NULL
+               })
+    })
+    adnca_info <- reactive({ req(adnca_file()); adnca_inspect(adnca_file()) })
+
+    # Any change of file, file type or choice invalidates a previous conversion
+    observeEvent(list(input$file_upload, input$data_type, input$csv_sep, input$csv_dec,
+                      input$excel_sheet, input$adnca_time, input$adnca_paramcd,
+                      input$adnca_pcspec, input$adnca_zero_predose), {
+      adnca_conv(NULL); adnca_error(NULL)
+    }, ignoreInit = TRUE)
+
+    output$adnca_panel <- renderUI({
+      info <- adnca_info()
+      if (!info$is_adnca) {
+        return(card(card_body(class = "alert alert-warning mb-0",
+          icon("triangle-exclamation", class = "me-1"),
+          "This file does not look like an ADNCA dataset (USUBJID and AVAL are required). ",
+          "If it is a simple table, choose 'Simple table' above.")))
+      }
+      fmt_vals <- function(x) if (length(x) == 0) "\u2014" else paste(x, collapse = ", ")
+      units_txt <- if (length(info$units) == 0) "\u2014" else
+        paste(paste0(names(info$units), ": ", vapply(info$units, fmt_vals, "")), collapse = "; ")
+      time_choices <- stats::setNames(info$time_vars,
+        paste0(c(NRRLT = "Nominal time (NRRLT)", ARRLT = "Actual time (ARRLT)",
+                 MRRLT = "Actual time, pre-dose at 0 (MRRLT)")[info$time_vars]))
+      card(
+        card_header(class = "bg-primary text-white", "CDISC ADNCA dataset: check and convert",
+                    help_data_type),
+        card_body(
+          tags$table(class = "table table-sm small mb-3",
+            tags$tbody(
+              tags$tr(tags$th("Records"), tags$td(info$n_records)),
+              tags$tr(tags$th("Analytes"), tags$td(paste0(fmt_vals(info$analytes),
+                                                          if (!is.null(info$analyte_var)) paste0(" (", info$analyte_var, ")")))),
+              tags$tr(tags$th("Matrices (PCSPEC)"), tags$td(fmt_vals(info$matrices))),
+              tags$tr(tags$th("Time variables"), tags$td(fmt_vals(info$time_vars),
+                                                         if (info$has_afrlt) " (AFRLT present, not used)")),
+              tags$tr(tags$th("Units"), tags$td(units_txt)),
+              tags$tr(tags$th("LLOQ (PCLLOQ)"), tags$td(fmt_vals(info$lloq))),
+              tags$tr(tags$th("Not in analysis set (ANL01FL \u2260 Y)"),
+                      tags$td(if (is.na(info$n_anl01fl_excluded)) "ANL01FL not present"
+                              else paste(info$n_anl01fl_excluded, "record(s), will be dropped"))),
+              tags$tr(tags$th("Derived records (DTYPE)"),
+                      tags$td(if (info$n_derived > 0) tags$span(class = "text-danger fw-semibold",
+                                paste(info$n_derived, "record(s): the dataset will be refused"))
+                              else "none"))
+            )
+          ),
+          if (length(info$time_vars) == 0) {
+            tags$div(class = "alert alert-danger small",
+                     "No usable time variable (NRRLT, ARRLT or MRRLT). ",
+                     if (length(info$datetime_vars)) paste0("Only date-times were found (",
+                       paste(info$datetime_vars, collapse = ", "), "). "),
+                     "Elapsed time must be derived before upload.")
+          } else tagList(
+            radioButtons(ns("adnca_time"), tagList("Time to use", help_adnca_time),
+                         choices = time_choices, selected = character(0)),
+            if (isTRUE(info$negative_times[["ARRLT"]]))
+              conditionalPanel(
+                condition = sprintf("input['%s'] == 'ARRLT'", ns("adnca_time")),
+                checkboxInput(ns("adnca_zero_predose"),
+                              "Set pre-dose times (negative ARRLT) to 0", value = FALSE)),
+            if (length(info$analytes) > 1)
+              selectInput(ns("adnca_paramcd"), tagList("Analyte to analyse", help_adnca_analyte),
+                          choices = c("Choose..." = "", info$analytes)),
+            if (length(info$matrices) > 1)
+              selectInput(ns("adnca_pcspec"), tagList("Matrix to analyse", help_adnca_analyte),
+                          choices = c("Choose..." = "", info$matrices)),
+            actionButton(ns("btn_adnca_convert"), "Convert dataset", class = "btn-primary",
+                         icon = icon("right-left"))
+          ),
+          uiOutput(ns("adnca_result"))
+        )
+      )
+    })
+
+    observeEvent(input$btn_adnca_convert, {
+      d <- adnca_file(); req(d)
+      if (is.null(input$adnca_time) || !nzchar(input$adnca_time)) {
+        adnca_error("Choose the time to use."); adnca_conv(NULL); return()
+      }
+      res <- tryCatch(
+        adnca_convert(d, time = input$adnca_time, paramcd = input$adnca_paramcd,
+                      pcspec = input$adnca_pcspec, zero_predose = isTRUE(input$adnca_zero_predose)),
+        adnca_refusal = function(e) e,
+        error = function(e) e)
+      if (inherits(res, "condition")) {
+        adnca_error(sub("^Refused: ", "", conditionMessage(res))); adnca_conv(NULL)
+      } else {
+        adnca_error(NULL)
+        adnca_conv(c(res, list(n_records = nrow(d))))
+        if (!is.null(res$lloq)) updateNumericInput(session, "lloq", value = res$lloq)
+      }
+    })
+
+    output$adnca_result <- renderUI({
+      if (!is.null(adnca_error())) {
+        return(tags$div(class = "alert alert-danger small mt-3",
+                        icon("ban", class = "me-1"), tags$strong("Not converted: "), adnca_error()))
+      }
+      conv <- adnca_conv(); if (is.null(conv)) return(NULL)
+      tags$div(class = "alert alert-success small mt-3",
+               icon("circle-check", class = "me-1"),
+               tags$strong(paste0("Converted: ", nrow(conv$flat), " samples ready. ")),
+               "Check the column mapping and LLOQ below, then click Process Data.",
+               tags$ul(class = "mb-0 mt-1", lapply(conv$notes, tags$li)))
+    })
+
+    # Read raw data: the uploaded table, or the converted ADNCA dataset
     raw_data <- reactive({
       req(input$file_upload)
+      if (identical(input$data_type, "adnca")) {
+        conv <- adnca_conv()
+        req(conv)
+        return(conv$flat)
+      }
       ext <- file_ext()
       path <- input$file_upload$datapath
       tryCatch({
@@ -214,6 +352,16 @@ data_upload_server <- function(id, shared) {
     
     # Upload status
     output$upload_status <- renderUI({
+      if (identical(input$data_type, "adnca") && !is.null(input$file_upload) && is.null(adnca_conv())) {
+        info <- tryCatch(adnca_info(), error = function(e) NULL)
+        return(tags$div(class = "py-2",
+          tags$div(class = "d-flex align-items-center mb-2",
+                   icon("file-medical", class = "text-primary me-2"),
+                   tags$strong(input$file_upload$name)),
+          tags$p(class = "text-muted small mb-0",
+                 if (!is.null(info)) paste0(info$n_records, " records. ") else "",
+                 "Check the summary below, choose the time to use and click Convert dataset.")))
+      }
       if (is.null(raw_data())) {
         tags$div(
           class = "text-center py-4 text-muted",
@@ -277,8 +425,9 @@ data_upload_server <- function(id, shared) {
       }
       
       # Quality check
+      is_adnca <- identical(input$data_type, "adnca")
       qc <- run_data_quality_check(raw_data(), col_map, lloq = input$lloq,
-                                   dec = if (is.null(read_args()$dec)) "." else read_args()$dec)
+                                   dec = if (is_adnca || is.null(read_args()$dec)) "." else read_args()$dec)
       shared$qc_result <- qc
       
       # Auto-detect LLOQ from BLQ text entries if not set
@@ -313,9 +462,10 @@ data_upload_server <- function(id, shared) {
       # Process: one Shiny-free implementation (R/pipeline.R), shared with the
       # validation suite and the reproduction script
       ds <- prepare_pk_dataset(raw_data(), col_map, list(
-        lloq = input$lloq, blq_rule = input$blq_rule, door = "flat",
+        lloq = input$lloq, blq_rule = input$blq_rule, door = if (is_adnca) "adnca" else "flat",
         file_name = input$file_upload$name, file_path = input$file_upload$datapath,
-        read_args = read_args(), pipeline_sha256 = PIPELINE_SHA256, qc = qc,
+        read_args = if (is_adnca) list() else read_args(),
+        pipeline_sha256 = PIPELINE_SHA256, qc = qc,
         interlocks = run_interlocks(raw_data(), col_map)))
       data   <- ds$data
       design <- ds$design
@@ -331,7 +481,10 @@ data_upload_server <- function(id, shared) {
         blq_rule  = input$blq_rule,
         file_name = input$file_upload$name,
         file_path = input$file_upload$datapath,
-        read_args = read_args()
+        read_args = read_args(),
+        door      = if (is_adnca) "adnca" else "flat",
+        # ADNCA import: the choices, notes and sources, for the Analysis Record
+        adnca     = if (is_adnca) adnca_conv()[c("options", "notes", "sources", "lloq", "n_records")] else NULL
       )
       
       showNotification(

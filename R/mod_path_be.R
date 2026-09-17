@@ -1236,12 +1236,14 @@ path_be_server <- function(id, shared) {
           original_name <- si$file_name
           original_path <- si$file_path
           read_args <- si$read_args
+          adnca_rec <- if (identical(si$door, "adnca")) si$adnca else NULL
           
           if (is.null(original_path) || !file.exists(original_path)) {
             original_path <- file.path(tempdir(), original_name)
             if (!is.null(shared$raw_data))
               write.csv(shared$raw_data, original_path, row.names = FALSE)
-            read_args <- list()  # the fallback copy is a standard CSV
+            read_args <- list()  # the fallback copy is a standard CSV (already converted)
+            adnca_rec <- NULL
           }
           
           setProgress(0.6, message = "Building R script and summary...")
@@ -1261,7 +1263,8 @@ path_be_server <- function(id, shared) {
             be_settings    = run$be,
             lz_overrides   = if (length(lz_state$overrides_log) > 0) lz_state$overrides_log else NULL,
             viz_settings   = shared$viz_settings,
-            read_args      = read_args
+            read_args      = read_args,
+            adnca          = adnca_rec
           )
           notify_reproduction(rec_out)
         })

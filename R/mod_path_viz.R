@@ -967,13 +967,15 @@ path_viz_server <- function(id, shared) {
           original_name <- si$file_name %||% "data.csv"
           original_path <- si$file_path
           read_args <- si$read_args
+          adnca_rec <- if (identical(si$door, "adnca")) si$adnca else NULL
 
           # Fallback: persist raw data to a temp file if the original is gone
           if (is.null(original_path) || !file.exists(original_path)) {
             original_path <- file.path(tempdir(), original_name)
             if (!is.null(shared$raw_data))
               write.csv(shared$raw_data, original_path, row.names = FALSE)
-            read_args <- list()  # the fallback copy is a standard CSV
+            read_args <- list()  # the fallback copy is a standard CSV (already converted)
+            adnca_rec <- NULL
           }
 
           n_subj <- tryCatch(length(unique(shared$pk_data[[cm$subject]])),
@@ -1012,7 +1014,8 @@ path_viz_server <- function(id, shared) {
             study_name         = if (!is.null(input$record_study) && nchar(input$record_study) > 0) input$record_study else "Untitled Study",
             n_subjects         = n_subj,
             n_obs              = n_obs,
-            read_args          = read_args
+            read_args          = read_args,
+            adnca              = adnca_rec
           )
           notify_reproduction(rec_out)
         })

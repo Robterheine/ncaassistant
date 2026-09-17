@@ -72,6 +72,50 @@ help_data_format <- info_btn("help_data_format", "What should my data look like?
   </ul>
   For crossover studies (e.g., bioequivalence), you also need Treatment, Period, and Sequence columns.")
 
+help_data_type <- info_btn("help_data_type", "What kind of file do I have?",
+  "<b>Simple table</b> (most users): one row per blood sample, with columns such as
+  Subject, Time and Concentration, and for crossover studies Treatment, Period and
+  Sequence. This is what a lab spreadsheet usually looks like.
+  <em>Not sure? Choose Simple table.</em>
+  <br><br>
+  <b>CDISC ADNCA dataset</b>: a standardised dataset from a pharmaceutical company
+  or CRO. You can recognise it by column names such as <code>USUBJID</code>,
+  <code>AVAL</code>, <code>PARAMCD</code>, <code>ARRLT</code>/<code>NRRLT</code> and
+  <code>ANL01FL</code>.
+  <br><br>
+  <b>How the ADNCA option works:</b>
+  <ol class='ps-3 mb-0'>
+  <li>Upload the file (.csv or .xlsx).</li>
+  <li>Check the summary and choose the time to use (and the analyte if there are several).</li>
+  <li>Click <b>Convert dataset</b>. The app keeps only rows flagged for analysis
+  (<code>ANL01FL = Y</code>) and refuses files it cannot use safely, with the reason.</li>
+  <li>Continue as usual: the columns and LLOQ are filled in for you.</li>
+  </ol>
+  The choices and a conversion log are saved in the Analysis Record.")
+
+help_adnca_time <- info_btn("help_adnca_time", "Which time should I use?",
+  "NCA needs the time since the dose of each profile.
+  <br><br>
+  <b>Nominal (NRRLT)</b>: the planned sampling times from the protocol (0, 0.5, 1, 2 h, ...).
+  <br><br>
+  <b>Actual (ARRLT)</b>: the times the samples were really taken. Pre-dose samples
+  have small negative times; tick <em>Set pre-dose times to 0</em> to use them.
+  <br><br>
+  <b>Actual, pre-dose at 0 (MRRLT)</b>: actual times with pre-dose already at 0.
+  <br><br>
+  The choice changes AUC. Use what your analysis plan specifies; regulatory
+  bioequivalence analyses usually use actual times.
+  <br><br>
+  <em>Time since the first dose (AFRLT) is not offered: in a crossover it would
+  start period 2 at about one week.</em>")
+
+help_adnca_analyte <- info_btn("help_adnca_analyte", "Why choose one analyte or matrix?",
+  "The dataset contains more than one analyte (for example a drug and its metabolite)
+  or matrix (for example plasma and urine) in the same column.
+  <br><br>
+  NCA is done for one analyte in one matrix at a time. Choose the one to analyse
+  now; repeat the upload for the others. Values are never averaged or combined.")
+
 help_column_mapping <- info_btn("help_col_mapping", "What is column mapping?",
   "The app needs to know which column in your data contains what information.
   <br><br>

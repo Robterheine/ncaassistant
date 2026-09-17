@@ -45,6 +45,7 @@ library(nlme)
 
 # --- Source all modules ------------------------------------------------------
 source("R/pipeline.R")
+source("R/adnca_import.R")
 # Fingerprint of the pipeline code, recorded with every dataset and record
 PIPELINE_SHA256 <- if (requireNamespace("digest", quietly = TRUE))
   digest::digest(file = "R/pipeline.R", algo = "sha256") else NA_character_

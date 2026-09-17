@@ -732,6 +732,23 @@ verify_file_hash <- function(path, recorded, label) {
   invisible(status)
 }
 
+#' Read the data of an Analysis Record the way the app read it
+#'
+#' A flat upload is read with its recorded separator/decimal mark. An ADNCA
+#' import is converted again with the recorded choices; that needs
+#' adnca_import.R (shipped in the record) to be sourced first.
+#' @return list(raw = flat table, read_args = arguments for prepare_pk_dataset)
+read_record_input <- function(rec) {
+  if (identical(rec$door, "adnca")) {
+    conv <- adnca_convert(adnca_read(rec$input_file, rec$read_args), time = rec$adnca$time,
+                          paramcd = rec$adnca$paramcd, pcspec = rec$adnca$pcspec,
+                          zero_predose = isTRUE(rec$adnca$zero_predose))
+    list(raw = conv$flat, read_args = list())
+  } else {
+    list(raw = read_pk_file(rec$input_file, rec$read_args), read_args = rec$read_args)
+  }
+}
+
 #' NCA settings as recorded in analysis_settings.json
 #'
 #' Per-subject doses are recomputed from the Dose column with

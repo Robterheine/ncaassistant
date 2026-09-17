@@ -6,9 +6,16 @@ It refuses files that look like CDISC ADNCA or SDTM PC data, because reading
 them as flat files would ignore their analysis flags, derived records and time
 variables.
 
-`adnca_to_flat.R` converts an analysis-ready, ADNCA-shaped dataset into a flat
-file. It makes every choice explicit, refuses what it cannot convert safely,
-and writes a log you can keep with your study documentation.
+**In the app**, set *What kind of file?* to **CDISC ADNCA dataset** on the
+Upload page: the app shows a summary, asks for the same choices as below,
+converts the dataset with the same code, and stores the choices and a
+conversion log in the Analysis Record.
+
+**Outside the app**, `adnca_to_flat.R` converts an analysis-ready, ADNCA-shaped
+dataset into a flat file. Keep `adnca_import.R` (in the repository's `R/`
+folder) next to it: it contains the conversion, shared with the app. Both make
+every choice explicit, refuse what they cannot convert safely, and write a log
+you can keep with your study documentation.
 
 ## 1. Convert
 

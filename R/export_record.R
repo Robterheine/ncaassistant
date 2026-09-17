@@ -345,7 +345,8 @@ create_analysis_record <- function(output_path, results, settings, col_map,
                                     be_settings = NULL,
                                     lz_overrides = NULL,
                                     viz_settings = NULL,
-                                    read_args = NULL) {
+                                    read_args = NULL,
+                                    adnca = NULL) {
   
   # Create temp directory
   tmp <- tempdir()
@@ -367,6 +368,7 @@ create_analysis_record <- function(output_path, results, settings, col_map,
     file.copy(original_file_path, file.path(rec_dir, original_file_name), overwrite = TRUE)
   }, error = function(e) warning("Could not copy data file: ", e$message))
   pipeline_sha256 <- .ship_pipeline(rec_dir)
+  shipped_adnca <- .ship_adnca(rec_dir, adnca, original_file_path)
 
   # 1. Results Excel
   tryCatch({
@@ -439,6 +441,7 @@ create_analysis_record <- function(output_path, results, settings, col_map,
         PowerTOST  = tryCatch(as.character(packageVersion("PowerTOST")), error = function(e) "?")
       )
     )
+    settings_export <- c(settings_export, shipped_adnca$json)
     if (!is.null(be_results)) {
       settings_export$bioequivalence <- be_settings
       settings_export$reproduction_scope <- paste(
@@ -462,12 +465,12 @@ create_analysis_record <- function(output_path, results, settings, col_map,
 
   # 4. Data integrity manifest (source data, settings, results, pipeline code)
   tryCatch({
-    write_integrity_manifest(rec_dir, list(
+    write_integrity_manifest(rec_dir, c(list(
       "Source data"       = original_file_path,
       "Analysis settings" = file.path(rec_dir, "analysis_settings.json"),
       "Results (Excel)"   = file.path(rec_dir, "results.xlsx"),
       "Pipeline code"     = file.path(rec_dir, "nca_pipeline.R")
-    ))
+    ), shipped_adnca$manifest))
   }, error = function(e) warning("Could not create integrity file: ", e$message))
 
   # 5. Run the reproduction now, so the user knows before download
@@ -522,7 +525,8 @@ create_single_analysis_record <- function(output_path, result, settings,
                                            study_name = "Untitled Study",
                                            lz_override = NULL,
                                            col_map = NULL,
-                                           read_args = NULL) {
+                                           read_args = NULL,
+                                           adnca = NULL) {
 
   tmp <- tempdir()
   rec_dir <- file.path(tmp, "analysis_record")
@@ -549,6 +553,7 @@ create_single_analysis_record <- function(output_path, result, settings,
   source_path <- file.path(rec_dir, input_file)
   data_sha256 <- sha256_or_na(source_path)
   pipeline_sha256 <- .ship_pipeline(rec_dir)
+  shipped_adnca <- .ship_adnca(rec_dir, if (has_file) adnca else NULL, source_path)
 
   # 1. Results Excel (friendly Parameter / Abbreviation / Value layout)
   tryCatch({
@@ -606,6 +611,7 @@ create_single_analysis_record <- function(output_path, result, settings,
         PowerTOST  = tryCatch(as.character(packageVersion("PowerTOST")), error = function(e) "?")
       )
     )
+    settings_export <- c(settings_export, shipped_adnca$json)
     if (!is.null(lz_overrides)) settings_export$lz_overrides <- lz_overrides
     .write_json(settings_export, file.path(rec_dir, "analysis_settings.json"))
   }, error = function(e) warning("Could not create settings JSON: ", e$message))
@@ -617,12 +623,12 @@ create_single_analysis_record <- function(output_path, result, settings,
 
   # 4. Integrity manifest
   tryCatch({
-    write_integrity_manifest(rec_dir, list(
+    write_integrity_manifest(rec_dir, c(list(
       "Source data"       = source_path,
       "Analysis settings" = file.path(rec_dir, "analysis_settings.json"),
       "Results (Excel)"   = file.path(rec_dir, "results.xlsx"),
       "Pipeline code"     = file.path(rec_dir, "nca_pipeline.R")
-    ))
+    ), shipped_adnca$manifest))
   }, error = function(e) warning("Could not create integrity file: ", e$message))
 
   # 5. Run the reproduction now, so the user knows before download
@@ -748,7 +754,7 @@ create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
                               original_file_path, original_file_name,
                               blq_rule = "none", lloq = 0,
                               analyst = "Analyst", study_name = "Untitled Study",
-                              n_subjects = NA, n_obs = NA, read_args = NULL) {
+                              n_subjects = NA, n_obs = NA, read_args = NULL, adnca = NULL) {
 
   tmp <- tempdir()
   rec_dir <- file.path(tmp, "figure_record")
@@ -773,6 +779,7 @@ create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
     file.copy(original_file_path, file.path(rec_dir, original_file_name), overwrite = TRUE)
   }
   pipeline_sha256 <- .ship_pipeline(rec_dir)
+  shipped_adnca <- .ship_adnca(rec_dir, adnca, original_file_path)
 
   # 2. Figure settings JSON
   tryCatch({
@@ -797,6 +804,7 @@ create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
         dplyr   = tryCatch(as.character(packageVersion("dplyr")), error = function(e) "?")
       )
     )
+    settings_export <- c(settings_export, shipped_adnca$json)
     .write_json(settings_export, file.path(rec_dir, "figure_settings.json"))
   }, error = function(e) warning("Could not create figure settings JSON: ", e$message))
 
@@ -808,12 +816,12 @@ create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
 
   # 4. Integrity manifest (source data, figure settings, figure, pipeline code)
   tryCatch({
-    write_integrity_manifest(rec_dir, list(
+    write_integrity_manifest(rec_dir, c(list(
       "Source data"     = original_file_path,
       "Figure settings" = file.path(rec_dir, "figure_settings.json"),
       "Figure"          = file.path(rec_dir, paste0("figure.", fmt)),
       "Pipeline code"   = file.path(rec_dir, "nca_pipeline.R")
-    ))
+    ), shipped_adnca$manifest))
   }, error = function(e) warning("Could not create integrity file: ", e$message))
 
   # 5. Rebuild the figure now, so the user knows before download that it works
@@ -881,9 +889,15 @@ source("nca_pipeline.R")
 verify_file_hash(rec$input_file, rec$data_sha256, "Data file")
 
 # 2. Read and prepare the data exactly as the app did
-raw <- read_pk_file(rec$input_file, rec$read_args)
-ds  <- prepare_pk_dataset(raw, rec$column_mapping,
-                          list(lloq = rec$lloq, blq_rule = rec$blq_rule, read_args = rec$read_args))
+if (identical(rec$door, "adnca")) {
+  # CDISC ADNCA import: convert again with the recorded choices (adnca_import.R)
+  cat("ADNCA import code:", if (identical(digest::digest(file = "adnca_import.R", algo = "sha256"),
+                                        rec$adnca_import_sha256)) "MATCH" else "MISMATCH", "\n")
+  source("adnca_import.R")
+}
+inp <- read_record_input(rec)
+ds  <- prepare_pk_dataset(inp$raw, rec$column_mapping,
+                          list(lloq = rec$lloq, blq_rule = rec$blq_rule, read_args = inp$read_args))
 
 # 3. NCA with the recorded settings and half-life overrides
 result <- run_nca(ds$data, ds$col_map, record_nca_settings(rec, ds$data, ds$col_map),
@@ -917,9 +931,14 @@ verify_file_hash(rec$input_file, rec$data_sha256, "Data file")
 
 # The profile: from the uploaded file (prepared as in the app) or manual entry
 if (identical(rec$data_source, "uploaded_file")) {
-  raw  <- read_pk_file(rec$input_file, rec$read_args)
-  ds   <- prepare_pk_dataset(raw, rec$column_mapping,
-                             list(lloq = rec$lloq, blq_rule = rec$blq_rule, read_args = rec$read_args))
+  if (identical(rec$door, "adnca")) {
+    cat("ADNCA import code:", if (identical(digest::digest(file = "adnca_import.R", algo = "sha256"),
+                                          rec$adnca_import_sha256)) "MATCH" else "MISMATCH", "\n")
+    source("adnca_import.R")
+  }
+  inp  <- read_record_input(rec)
+  ds   <- prepare_pk_dataset(inp$raw, rec$column_mapping,
+                             list(lloq = rec$lloq, blq_rule = rec$blq_rule, read_args = inp$read_args))
   rows <- profile_data_rows(ds$data, ds$col_map, rec$subject)
   time <- ds$data[[ds$col_map$time]][rows]
   conc <- ds$data[[ds$col_map$conc]][rows]
@@ -985,6 +1004,25 @@ run_reproduction_check <- function(rec_dir, script, outputs = "reproduced_result
   if (!file.exists(src)) stop("R/pipeline.R not found; the record cannot be made reproducible.")
   file.copy(src, file.path(rec_dir, "nca_pipeline.R"), overwrite = TRUE)
   sha256_or_na(file.path(rec_dir, "nca_pipeline.R"))
+}
+
+#' Ship the ADNCA import with a record: code, choices and conversion log
+#'
+#' @param adnca list(options, notes, sources, lloq) from the app's ADNCA upload,
+#'   or NULL for a flat upload
+#' @return list of JSON fields (door, adnca, adnca_import_sha256) and the
+#'   manifest entries to add
+.ship_adnca <- function(rec_dir, adnca, input_path) {
+  if (is.null(adnca)) return(list(json = list(door = "flat"), manifest = list()))
+  src <- "R/adnca_import.R"
+  if (!file.exists(src)) stop("R/adnca_import.R not found; the ADNCA import cannot be reproduced.")
+  file.copy(src, file.path(rec_dir, "adnca_import.R"), overwrite = TRUE)
+  log_path <- file.path(rec_dir, "adnca_conversion_log.txt")
+  writeLines(adnca_log_lines(adnca, input_path, adnca$n_records), log_path)
+  list(json = list(door = "adnca", adnca = adnca$options,
+                   adnca_import_sha256 = sha256_or_na(file.path(rec_dir, "adnca_import.R"))),
+       manifest = list("ADNCA import code" = file.path(rec_dir, "adnca_import.R"),
+                       "ADNCA conversion log" = log_path))
 }
 
 #' Write a settings JSON; digits = NA keeps full precision (doses, LLOQ,
@@ -1123,9 +1161,14 @@ cat("Pipeline code:", if (identical(digest::digest(file = "nca_pipeline.R", algo
                                     rec$pipeline_sha256)) "MATCH" else "MISMATCH", "\\n")
 source("nca_pipeline.R")
 verify_file_hash(rec$input_file, rec$data_sha256, "Data file")
-raw <- read_pk_file(rec$input_file, rec$read_args)
-ds  <- prepare_pk_dataset(raw, rec$column_mapping,
-                          list(lloq = rec$lloq, blq_rule = rec$blq_rule, read_args = rec$read_args))
+if (identical(rec$door, "adnca")) {
+  cat("ADNCA import code:", if (identical(digest::digest(file = "adnca_import.R", algo = "sha256"),
+                                        rec$adnca_import_sha256)) "MATCH" else "MISMATCH", "\\n")
+  source("adnca_import.R")
+}
+inp <- read_record_input(rec)
+ds  <- prepare_pk_dataset(inp$raw, rec$column_mapping,
+                          list(lloq = rec$lloq, blq_rule = rec$blq_rule, read_args = inp$read_args))
 
 
 # --- Step 3: Assemble plotting frame ----------------------------------------

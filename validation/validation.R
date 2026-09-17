@@ -34,7 +34,7 @@ if (length(missing) > 0) {
 }
 library(NonCompart); library(PowerTOST); library(nlme); library(digest)
 
-for (f in c("R/pipeline.R", "R/utils.R", "R/nca_helpers.R", "R/interlocks.R", "R/data_quality.R",
+for (f in c("R/pipeline.R", "R/adnca_import.R", "R/utils.R", "R/nca_helpers.R", "R/interlocks.R", "R/data_quality.R",
            "R/export_record.R", "R/designs.R", "R/be_analysis.R")) {
   tryCatch(source(f, local = TRUE), error = function(e) NULL)
 }
@@ -53,7 +53,7 @@ APP_VERSION <- tryCatch({
 
 source_files <- c("R/utils.R", "R/nca_helpers.R", "R/data_quality.R",
                   "R/export_record.R", "R/mod_data_upload.R", "R/designs.R", "R/be_analysis.R",
-                  "R/pipeline.R", "R/interlocks.R", "converters/adnca_to_flat.R")
+                  "R/pipeline.R", "R/interlocks.R", "R/adnca_import.R", "converters/adnca_to_flat.R")
 hash_files <- c("validation/validation.R", source_files)
 file_hashes <- sapply(hash_files, function(f) {
   if (file.exists(f)) digest(file = f, algo = "sha256") else "FILE_NOT_FOUND"
@@ -2239,7 +2239,7 @@ check("CONV-11", "The conversion log records inputs, choices, counts and file ha
   tryCatch({
     cv <- conv_run("adnca_clean.csv", time = "NRRLT")
     all(sapply(c("Input:", "Output:", "Time: NRRLT \\(nominal\\)", "ANL01FL: kept 288",
-                 "Analyte: single PARAMCD", "LLOQ \\(PCLLOQ\\): 0.5", "Subject = USUBJID"),
+                 "Analyte: single PARAMCD", "LLOQ \\(PCLLOQ\\): 0.5", "Subject = Subject \\(from USUBJID\\)"),
                function(p) grepl(p, cv$log))) &&
       grepl(digest::digest(file = conv_fx("adnca_clean.csv"), algo = "sha256"), cv$log, fixed = TRUE)
   }, error = function(e) FALSE),
@@ -2260,6 +2260,97 @@ check("CONV-12", "Missing AVAL: BLQ results pass on as text, other gaps are refu
   }, error = function(e) FALSE),
   "URS-DAT-04", critical = TRUE, method = "two AVAL set missing with PCORRES '<0.5'; then one without",
   expected = "text passed on for BLQ; unexplained gap refused")
+
+check("ADNCA-01", "Inspection summarises an ADNCA dataset for the upload screen",
+  tryCatch({
+    i1 <- adnca_inspect(adnca_read(conv_fx("adnca_clean.csv")))
+    i4 <- adnca_inspect(adnca_read(conv_fx("adnca_anl01fl.csv")))
+    i3 <- adnca_inspect(adnca_read(conv_fx("adnca_dtype.csv")))
+    i5 <- adnca_inspect(adnca_read(conv_fx("adnca_multi_analyte.csv")))
+    i1$is_adnca && identical(i1$analytes, "DRUGX") && identical(i1$time_vars, c("NRRLT", "ARRLT")) &&
+      isTRUE(i1$negative_times[["ARRLT"]]) && !isTRUE(i1$negative_times[["NRRLT"]]) && i1$has_afrlt &&
+      identical(i1$lloq, 0.5) && i1$n_anl01fl_excluded == 0 && identical(i1$treatment_var, "TRTP") &&
+      i4$n_anl01fl_excluded == 24 && i3$n_derived == 48 && length(i5$analytes) == 2
+  }, error = function(e) FALSE),
+  "URS-DAT-01", critical = FALSE, method = "adnca_inspect on F1, F3, F4, F5",
+  expected = "analytes, time variables, negative ARRLT, LLOQ, counts as in the fixtures")
+check("ADNCA-02", "The standalone converter and the app share one conversion implementation",
+  tryCatch({
+    src <- readLines(file.path("converters", "adnca_to_flat.R"), warn = FALSE)
+    code <- src[!grepl("^\\s*#", src)]
+    !any(grepl("adnca_convert <- function|refuse\\(", code)) && any(grepl("adnca_import.R", code, fixed = TRUE)) &&
+      identical(conv_run("adnca_clean.csv", time = "NRRLT")$flat,
+                { x <- adnca_convert(adnca_read(conv_fx("adnca_clean.csv")), time = "NRRLT")$flat
+                  f <- tempfile(fileext = ".csv"); write.csv(x, f, row.names = FALSE); read.csv(f, stringsAsFactors = FALSE) })
+  }, error = function(e) FALSE),
+  "URS-DAT-01", critical = TRUE, method = "source inspection; same output from converter and adnca_convert()",
+  expected = "converter sources adnca_import.R and adds no conversion logic; identical output")
+
+adnca_record <- function(fixture, time, kind = "batch", paramcd = NULL, zero_predose = FALSE,
+                         overrides = NULL, lloq = 0.5) {
+  wd <- file.path(tempdir(), paste0("adr", as.integer(runif(1, 1, 1e7)))); dir.create(wd)
+  src <- file.path(wd, fixture); file.copy(conv_fx(fixture), src)
+  d <- adnca_read(src)
+  conv <- adnca_convert(d, time = time, paramcd = paramcd, zero_predose = zero_predose)
+  adnca <- c(conv[c("options", "notes", "sources", "lloq")], list(n_records = nrow(d)))
+  cm <- conv$col_map
+  ds <- prepare_pk_dataset(conv$flat, cm, list(lloq = lloq, blq_rule = "rule1"))
+  zp <- file.path(wd, "rec.zip")
+  if (kind == "single") {
+    lab <- data_profiles(ds$data, cm)$label[3]; rows <- profile_data_rows(ds$data, cm, lab)
+    res <- run_single_nca(ds$data$Time[rows], ds$data$Conc[rows], conv_st)
+    create_single_analysis_record(zp, res, conv_st, ds$data$Time[rows], ds$data$Conc[rows],
+      subject_label = lab, original_file_path = src, original_file_name = fixture,
+      blq_rule = "rule1", lloq = lloq, col_map = cm, read_args = list(), adnca = adnca)
+  } else if (kind == "viz") {
+    p <- ggplot2::ggplot(ds$data, ggplot2::aes(Time, suppressWarnings(as.numeric(Conc)), group = Subject)) + ggplot2::geom_line()
+    create_viz_record(zp, p, list(plot_type = "spaghetti", export_format = "png", dpi = 72), cm, src, fixture,
+                      blq_rule = "rule1", lloq = lloq, read_args = list(), adnca = adnca)
+  } else {
+    st <- conv_st
+    res <- suppressWarnings(run_nca(ds$data, cm, st, lz_overrides = overrides))
+    create_analysis_record(zp, res, st, cm, src, fixture, blq_rule = "rule1", lloq = lloq,
+      lz_overrides = overrides, read_args = list(), adnca = adnca,
+      be_results = if (kind == "be") list(ci_table = data.frame(Parameter = "CMAX"), anova = list()) else NULL)
+  }
+  ex <- rec_unzip(zp)
+  js <- jsonlite::fromJSON(file.path(ex, list.files(ex, "settings.json")[1]), simplifyDataFrame = FALSE)
+  list(ex = ex, json = js, check = rec_check_text(ex), files = list.files(ex),
+       manifest = paste(readLines(file.path(ex, "data_integrity.txt")), collapse = "\n"))
+}
+check("ADNCA-03", "Record from an ADNCA import (records outside the analysis set) reproduces",
+  tryCatch({
+    r <- adnca_record("adnca_anl01fl.csv", "NRRLT")
+    grepl("Result: MATCH", r$check) && grepl("ADNCA import code: MATCH", r$check) &&
+      all(c("adnca_anl01fl.csv", "adnca_import.R", "adnca_conversion_log.txt") %in% r$files) &&
+      identical(r$json$door, "adnca") && identical(r$json$adnca$time, "NRRLT") &&
+      grepl("ADNCA import code", r$manifest) &&
+      identical(r$json$adnca_import_sha256, digest::digest(file = "R/adnca_import.R", algo = "sha256"))
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = TRUE, method = "F4 imported with NRRLT; batch record; run the reproduction",
+  expected = "MATCH; original ADNCA file, import code (hashed) and conversion log in the record")
+check("ADNCA-04", "BE record from an ADNCA import with analyte selection, actual time and an override reproduces",
+  tryCatch({
+    ov <- list("x" = list(profile = "x", subject = "NCAA-001-002", treatment = "Test", period = "2",
+                          original_lambda_z = 0.15, adjusted_lambda_z = 0.14, original_r2adj = 0.99,
+                          adjusted_r2adj = 0.98, points_used = 3, time_used = c(6.0, 8.0, 12.0)))
+    d <- adnca_read(conv_fx("adnca_multi_analyte.csv"))
+    tu <- d$ARRLT[d$USUBJID == "NCAA-001-002" & d$APERIOD == 2 & d$PARAMCD == "DRUGX" & d$NRRLT %in% c(6, 8, 12)]
+    ov$x$time_used <- tu
+    r <- adnca_record("adnca_multi_analyte.csv", "ARRLT", kind = "be", paramcd = "DRUGX",
+                      zero_predose = TRUE, overrides = ov)
+    grepl("Result: MATCH", r$check) && isTRUE(r$json$adnca$zero_predose) && identical(r$json$adnca$paramcd, "DRUGX")
+  }, error = function(e) FALSE),
+  "URS-EXP-07", critical = TRUE, method = "F5, PARAMCD DRUGX, ARRLT with pre-dose at 0, one override",
+  expected = "MATCH")
+check("ADNCA-05", "Single-subject and figure records from an ADNCA import reproduce",
+  tryCatch({
+    s1 <- adnca_record("adnca_clean.csv", "NRRLT", kind = "single")
+    v1 <- adnca_record("adnca_clean.csv", "NRRLT", kind = "viz")
+    grepl("Result: MATCH", s1$check) && grepl("Result: FIGURE CREATED", v1$check) &&
+      "adnca_import.R" %in% v1$files
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = TRUE, method = "F1 with NRRLT", expected = "MATCH; FIGURE CREATED")
 
 end_section("CONV")
 

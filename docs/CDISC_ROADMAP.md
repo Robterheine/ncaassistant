@@ -11,7 +11,7 @@ refusals that look like omissions.
 
 | Part | Workstream | Status |
 |---|---|---|
-| **A** (§1–9) | CDISC / SDTM interoperability | Phase 0 shipped in v1.3.0 (`58d6f5b`). **Phases 1 and 2 shipped** (see §4.1, §4.2). Phases 3–5 pending (decisions). |
+| **A** (§1–9) | CDISC / SDTM interoperability | Phase 0 shipped in v1.3.0 (`58d6f5b`). **Phases 1, 2 and 3 shipped** (see §4.1, §4.2, §4.3). Phases 4–5 pending (decisions). |
 | **B** (§10–15) | Bioequivalence design coverage — replicate designs | Reviewed and decided. **This is the next version.** Verified against the code on 2026-09-17 (§10.5). **Tier 0 and B1–B6 shipped** (Tier 0: `a85936b`, `7faf9bf`, `5a73794`; Part B: `0ad844b`, `138ea3d`, `e277f37`, `37a2a12`, `c47dbfc`, `193da3d`). README and user manual update pending. |
 
 The two interact: Part B's implementation is cheaper and cleaner if Part A's
@@ -374,6 +374,44 @@ two is its own wrong-number bug. This must become a recorded user choice
 does not; `EQV-01` passes (below).
 
 ---
+
+### 4.3 Phase 3 implementation record (2026-09-17)
+
+**Decision (with the maintainer):** build the ADNCA door so that people who work
+with ADNCA datasets can use the app, and keep the standalone converter. The
+door reuses the converter as its engine, so the §7 "converter first" route and
+the door are one implementation:
+
+- `R/adnca_import.R` (base R, Shiny-free, standalone) holds `adnca_read()`,
+  `adnca_inspect()`, `adnca_convert()` (all refusals from the Phase 3 list) and
+  the conversion log. `converters/adnca_to_flat.R` is now a thin wrapper that
+  sources it.
+- Upload page: a toggle **What kind of file?** — *Simple table* / *CDISC ADNCA
+  dataset* — with a beginner tooltip (what each option is, how to recognise an
+  ADNCA dataset, the four steps). In ADNCA mode the app shows a summary
+  (records, analytes, matrices, time variables, units, LLOQ, ANL01FL and DTYPE
+  counts), asks for the time variable (tooltip), the analyte/matrix when there
+  are several (tooltip) and pre-dose zeroing for ARRLT, then converts or shows
+  the refusal reason. The converted table enters the same mapping, quality
+  check, interlocks and analyses as any flat upload; mapping and LLOQ are
+  filled in.
+- Analysis Records from an ADNCA import ship the original ADNCA file,
+  `adnca_import.R` (hashed, in the manifest), the choices (`door`, `adnca` in
+  the settings JSON) and `adnca_conversion_log.txt`; the reproduction scripts
+  re-run the conversion before the analysis.
+- The flat upload's ADNCA refusal now points to the toggle.
+
+The "ships complete" rule is met because every refusal was already
+implemented and mutation-tested in the converter. Out of scope, as decided in
+§3: XPT input, SDTM merging, PP output, conformance claims.
+
+Tests: ADNCA-01 (inspection), ADNCA-02 (converter and app share one
+implementation; identical output), ADNCA-03..05 (batch, BE with analyte
+selection + actual time + override, single-subject and figure records from an
+ADNCA import reproduce). Validation 293/293. Verified in the app: summary,
+refusals (two analytes; negative ARRLT; DTYPE), conversion with analyte and
+pre-dose choice, automatic mapping and LLOQ, BE analysis, and an Analysis
+Record whose reproduction check says MATCH.
 
 ### Phase 4 — Draft PP export (5–7 days)
 
