@@ -87,6 +87,17 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
   # 2. COLUMN EXISTENCE & TYPE CHECKS
   # ===========================================================================
   
+  # The Subject column must not be the Time or Concentration column (this
+  # happens when a file has no Subject column and the suggestion is accepted)
+  if (!is.null(col_map$subject) && nzchar(col_map$subject) &&
+      col_map$subject %in% c(col_map$time, col_map$conc)) {
+    add("WARNING", "Columns",
+        paste0("Subject is mapped to the same column as ",
+               if (identical(col_map$subject, col_map$time)) "Time" else "Concentration"),
+        paste0("Column '", col_map$subject, "' is used twice, so every value becomes its own subject."),
+        "Map the Subject column. For a single profile, add a Subject column with one value on every row.")
+  }
+
   # Check mapped columns actually exist
   for (field in c("subject", "time", "conc")) {
     col_name <- col_map[[field]]

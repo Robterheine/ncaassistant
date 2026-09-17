@@ -501,7 +501,7 @@ server <- function(input, output, session) {
       list(
         name    = "NonCompart",
         version = as.character(packageVersion("NonCompart")),
-        role    = "Non-compartmental analysis engine. Calculates Cmax, AUC, half-life, clearance, and all standard NCA parameters. Its authors found no discrepancies with WinNonlin\u00AE.",
+        role    = "Non-compartmental analysis engine. Calculates Cmax, AUC, half-life, clearance, and all standard NCA parameters.",
         url     = "https://cran.r-project.org/package=NonCompart",
         ref     = "Kim H, Han S, Cho YS, Yoon SK, Bae KS. Transl Clin Pharmacol. 2018;26(1):10-15"
       ),
@@ -702,7 +702,7 @@ server <- function(input, output, session) {
                         "NonCompart ", tags$code(nc$version), " ",
                         tags$span(class = paste("badge", badge_class), nc$label),
                         tags$div(class = "text-muted", style = "font-size: 0.85em;",
-                                 "No discrepancies with WinNonlin\u00AE reported by its authors (Kim et al. 2018); ",
+                                 "Kim et al. 2018; ",
                                  "app validated with NonCompart ", NONCOMPART_TESTED_VERSION, ".")
                       ))
             }),
@@ -797,8 +797,8 @@ server <- function(input, output, session) {
               tags$li(tags$strong("New: CDISC parameter codes. "), "Results, downloads and Analysis Records list the official CDISC code of each parameter, from CDISC SDTM Controlled Terminology release 2026-03-27. This is a code lookup only; results are not SDTM PP datasets"),
               tags$li(tags$strong("New: safety checks on upload. "), "The app refuses CDISC-style files in the simple upload, mixed units, dates or clock times in the Time column, time measured from the first dose instead of the dose of each profile, and stacked profiles. Files with a decimal comma and BLQ text are now read correctly"),
               tags$li(tags$strong("Analysis Record: "), "every record now contains the app's own data-processing code, and the app runs the reproduction script when the record is created and reports whether it matches. Records state the settings actually used (including per-profile doses and bioequivalence settings) and which model was fitted. Previously, the reproduction script failed for files with a semicolon separator or decimal comma, and for molar units it reported a match while clearance and volume were missing"),
-              tags$li("Data Preparation Guide revised: corrected statements on the Sequence column, BLQ rules and data quality messages, consistent advice on actual and nominal times, new tabs for drug interaction studies and CDISC ADNCA datasets, sorted replicate examples, and three more example files (parallel groups, 2\u00d72\u00d74 replicate, ADNCA). User manual 1.5 updated to match. Smaller fixes: the warning for a missing Sequence column no longer claims the confidence interval is affected; an empty LLOQ field no longer closes the app; the figure legend now describes the error bars as geometric SD (not geometric CV%); help texts no longer mention regulatory submissions; the Statistical Methods page describes the slope selection, R\u00b2 rule, widened limits, rounding and simulations as implemented; exported batch summary statistics and the Analysis Record now give crossover summaries per treatment, as on screen; confidence interval columns are labelled with the chosen level instead of always 90%; the About page no longer lists the unused ncar package; the batch results table left out Cmax, AUC, half-life, CL/F and Vz/F in its default view; spaces around subject or treatment names created extra levels; subject counts in crossovers now include only subjects with both treatments; a failed mixed model is reported instead of silently replaced"),
-              tags$li("Validation: 326 automated and 44 manual tests (was 191 and 32), including comparisons with replicateBE and PowerTOST and a check that every record reproduces")
+              tags$li("Data Preparation Guide revised: corrected statements on the Sequence column, BLQ rules and data quality messages, consistent advice on actual and nominal times, new tabs for drug interaction studies and CDISC ADNCA datasets, sorted replicate examples, and three more example files (parallel groups, 2\u00d72\u00d74 replicate, ADNCA). User manual 1.5 updated to match. Smaller fixes: a warning when no Subject column is recognised (the app would otherwise pre-select another column as Subject); the warning for a missing Sequence column no longer claims the confidence interval is affected; an empty LLOQ field no longer closes the app; the figure legend now describes the error bars as geometric SD (not geometric CV%); help texts no longer mention regulatory submissions; the Statistical Methods page describes the slope selection, R\u00b2 rule, widened limits, rounding and simulations as implemented; exported batch summary statistics and the Analysis Record now give crossover summaries per treatment, as on screen; confidence interval columns are labelled with the chosen level instead of always 90%; the About page no longer lists the unused ncar package; the batch results table left out Cmax, AUC, half-life, CL/F and Vz/F in its default view; spaces around subject or treatment names created extra levels; subject counts in crossovers now include only subjects with both treatments; a failed mixed model is reported instead of silently replaced"),
+              tags$li("Validation: 329 automated and 44 manual tests (was 191 and 32), including comparisons with replicateBE and PowerTOST and a check that every record reproduces")
             )
           ),
 
@@ -1025,8 +1025,8 @@ server <- function(input, output, session) {
             tags$h6(class = "fw-bold mb-1", "v0.1 \u2014 Initial Release"),
             tags$p(class = "text-muted mb-1", "March 2026"),
             tags$ul(class = "mb-0",
-              tags$li("Non-compartmental analysis engine (NonCompart) validated against WinNonlin"),
-              tags$li("5 BLQ handling rules (WinNonlin-compatible)"),
+              tags$li("Non-compartmental analysis engine (NonCompart)"),
+              tags$li("5 BLQ handling rules"),
               tags$li("Bioequivalence ANOVA with fixed and mixed-effects models"),
               tags$li("PowerTOST integration for sample size and power"),
               tags$li("Crossover data handling with composite Subject||Treatment key"),

@@ -410,6 +410,24 @@ data_upload_server <- function(id, shared) {
                         choices = c(none_choice, cols), selected = guess$sequence)
       updateSelectInput(session, "col_dose",
                         choices = c(none_choice, cols), selected = guess$dose)
+
+      # Required columns that matched no known name were filled in by position
+      unmatched <- attr(guess, "unmatched")
+      if ("subject" %in% unmatched) {
+        showNotification(
+          paste0("No Subject column recognised. The app pre-selected '", guess$subject,
+                 "' as Subject, which is probably wrong. Choose the Subject column; ",
+                 "for a single profile, add a Subject column to the file."),
+          type = "warning", duration = NULL)
+      }
+      other <- setdiff(unmatched, "subject")
+      if (length(other) > 0) {
+        showNotification(
+          paste0("No column name recognised for: ",
+                 paste(c(time = "Time", conc = "Concentration")[other], collapse = ", "),
+                 ". The pre-selected columns are a guess; check the mapping."),
+          type = "warning", duration = 15)
+      }
     })
     
     # Process data

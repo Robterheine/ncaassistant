@@ -197,15 +197,23 @@ dose_by_subject <- function(data, col_map) {
   stats::setNames(as.numeric(v), names(v))
 }
 
-# Column auto-detection (same as v1, with extended patterns)
+#' Suggest a column mapping from common column names
+#'
+#' A required field (subject, time, conc) that matches no known name falls
+#' back to a column by position. Those fields are listed in
+#' attr(result, "unmatched"), so the caller can warn that the suggestion is a
+#' guess (for example a file without a Subject column, where the fallback
+#' would pick the Time column).
 auto_detect_columns <- function(cols) {
   cols_lower <- tolower(cols)
-  
-  detect <- function(patterns, fallback_idx = 1) {
+  unmatched <- character(0)
+
+  detect <- function(patterns, fallback_idx = 1, field) {
     for (p in patterns) {
       match <- grep(p, cols_lower, value = FALSE)
       if (length(match) > 0) return(cols[match[1]])
     }
+    unmatched <<- c(unmatched, field)
     return(cols[min(fallback_idx, length(cols))])
   }
   
@@ -217,19 +225,21 @@ auto_detect_columns <- function(cols) {
     return("")
   }
   
-  list(
+  out <- list(
     subject   = detect(c("^subj", "^id$", "^subject", "^usubjid", "^patid",
-                          "^pat$", "^proband", "^teilnehmer"), 1),
+                          "^pat$", "^proband", "^teilnehmer"), 1, "subject"),
     time      = detect(c("^time", "^tpt", "^hours?$", "^hour", "^apts",
-                          "^ntim", "^zeit", "^tid"), 2),
+                          "^ntim", "^zeit", "^tid"), 2, "time"),
     conc      = detect(c("^conc", "^dv$", "^cp[^a-z]", "^cp$", "^concentration",
-                          "^result", "^konz", "^plasma", "ug.l", "ng.ml"), 3),
+                          "^result", "^konz", "^plasma", "ug.l", "ng.ml"), 3, "conc"),
     treatment = detect_optional(c("^trt", "^treat", "^form", "^drug", "^arm",
                                    "^behandl")),
     period    = detect_optional(c("^per", "^period", "^prd", "^phase")),
     sequence  = detect_optional(c("^seq", "^grp", "^sequence")),
     dose      = detect_optional(c("^dose", "^amt$", "^amount", "^dosis"))
   )
+  attr(out, "unmatched") <- unmatched
+  out
 }
 
 #' Identify the concentration-time profile each row belongs to
@@ -294,7 +304,7 @@ profile_data_rows <- function(data, col_map, label) {
 
 #' Apply BLQ (Below Limit of Quantification) handling rules
 #' 
-#' Implements WinNonlin-compatible BLQ rules:
+#' Implements the BLQ rules:
 #'   Rule 1: Pre-first-quantifiable set to 0; post-last-quantifiable set to Missing
 #'   Rule 2: All BLQ set to 0
 #'   Rule 3: All BLQ set to Missing (NA)

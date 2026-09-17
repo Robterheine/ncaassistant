@@ -155,7 +155,7 @@ start_section("DAT")
 
 col_conventions <- list(
   standard=c("Subject","Time","Concentration"), cdisc=c("USUBJID","NTIM","DV"),
-  winnonlin=c("SubjID","Hours","Conc"), dutch=c("Proband","Zeit","Konzentration"),
+  export=c("SubjID","Hours","Conc"), dutch=c("Proband","Zeit","Konzentration"),
   lowercase=c("subject","time","conc"), abbrev=c("ID","Tpt","Cp"),
   mixed=c("PatID","hour","plasma_ng_ml"))
 
@@ -2766,6 +2766,33 @@ check("REV3-10", "Methods page matches the implementation",
       !grepl("Subject nested within Sequence was modelled as a random effect", m, fixed = TRUE)
   }, error = function(e) FALSE),
   "URS-GEN-03", critical = FALSE, method = "search mod_methods.R", expected = "limits, rounding, simulations, random effect described as implemented")
+
+
+check("REV3-11", "Auto-detect reports when no Subject column is recognised",
+  tryCatch({
+    g1 <- auto_detect_columns(c("Time", "Concentration"))
+    g2 <- auto_detect_columns(c("Subject", "Time", "Concentration"))
+    "subject" %in% attr(g1, "unmatched") && !("subject" %in% attr(g2, "unmatched"))
+  }, error = function(e) FALSE),
+  "URS-DAT-02", critical = FALSE, method = "auto_detect_columns on files with and without a subject column",
+  expected = "'subject' listed as unmatched only when absent")
+
+check("REV3-12", "Upload warns when no Subject column is recognised or Subject duplicates another column",
+  tryCatch({
+    src <- paste(rev3_code("R/mod_data_upload.R"), collapse = "\n")
+    d <- data.frame(Time = c(0, 1, 2, 4), Concentration = c(0, 5, 3, 1))
+    q <- run_data_quality_check(d, list(subject = "Time", time = "Time", conc = "Concentration"))
+    grepl('attr(guess, "unmatched")', src, fixed = TRUE) &&
+      any(q$findings$Severity == "WARNING" & grepl("Subject", q$findings$Message))
+  }, error = function(e) FALSE),
+  "URS-DAT-02", critical = FALSE, method = "upload module uses the unmatched attribute; quality check with Subject = Time",
+  expected = "notification in the upload module; WARNING finding about the Subject mapping")
+
+check("REV3-13", "The app names no commercial NCA software package",
+  tryCatch(!any(grepl("winnonlin", c(readLines("app.R", warn = FALSE),
+                                     unlist(lapply(list.files("R", "\\.R$", full.names = TRUE), readLines, warn = FALSE))),
+                      ignore.case = TRUE)), error = function(e) FALSE),
+  "URS-GEN-03", critical = FALSE, method = "search app.R and R/*.R", expected = "no occurrence")
 
 end_section("REV3")
 

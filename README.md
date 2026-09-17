@@ -13,7 +13,7 @@ The app offers six self-contained workflow paths accessible from a central hub:
 
 **1. Plan a Study** — Calculate sample size or power for bioequivalence studies with PowerTOST: standard average bioequivalence, highly variable drugs (EMA ABEL, FDA RSABE) and narrow therapeutic index drugs (FDA NTID). The scaled methods use the within-subject CVs of both Test and Reference. Offers the same study designs, under the same names, as the Bioequivalence analysis, and can take the within-subject CV from a bioequivalence analysis of your own data. Interactive power curves and a CV sensitivity plot.
 
-**2. Upload & Check Data** — Import CSV or Excel files (comma or semicolon separator, point or decimal comma) and auto-detect common column names (including WinNonlin export and European naming conventions). CDISC ADNCA datasets are read through a separate *CDISC ADNCA dataset* option (see below). Set the LLOQ and one of 6 BLQ rules, applied per profile; text such as `<0.5`, BLQ, BQL, BLOQ, ND and NQ is handled as below the LLOQ. 20+ automated data quality checks, including safety checks that refuse data the app cannot analyse safely: mixed units, dates or clock times as time, time since the first dose instead of the dose of each period, and several profiles stacked in one column.
+**2. Upload & Check Data** — Import CSV or Excel files (comma or semicolon separator, point or decimal comma) and auto-detect common column names (including common export and European naming conventions). CDISC ADNCA datasets are read through a separate *CDISC ADNCA dataset* option (see below). Set the LLOQ and one of 6 BLQ rules, applied per profile; text such as `<0.5`, BLQ, BQL, BLOQ, ND and NQ is handled as below the LLOQ. 20+ automated data quality checks, including safety checks that refuse data the app cannot analyse safely: mixed units, dates or clock times as time, time since the first dose instead of the dose of each period, and several profiles stacked in one column.
 
 **3. Visualize Data** — Create publication-ready concentration-time plots directly from uploaded data. Individual profiles (spaghetti plot) with flexible colour grouping, and geometric mean ×/÷ geometric SD summary curves with treatment overlays for crossover data. Export to PNG, PDF, or SVG at up to 600 DPI. Includes an auto-generated figure legend ready to paste into a manuscript.
 
@@ -95,7 +95,7 @@ A consolidated validation package is available in [`validation/`](validation/), 
 Rscript validation/validation.R
 ```
 
-This executes 326 automated tests (plus 44 manual tests defined for a running app) and generates a results CSV with environment details, per-section results, and URS traceability.
+This executes 329 automated tests (plus 44 manual tests defined for a running app) and generates a results CSV with environment details, per-section results, and URS traceability.
 
 **Validation deliverables:**
 

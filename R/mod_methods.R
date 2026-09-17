@@ -66,7 +66,7 @@ methods_ui <- function() {
         tags$p(
           "Pharmacokinetic parameters were estimated by non-compartmental analysis ",
           "using the NonCompart R package (version ", pkg_ver("NonCompart"),
-          "; Kim et al., 2018). Its authors compared it with Certara Phoenix WinNonlin\u00AE ",
+          "; Kim et al., 2018). Its authors compared it with established commercial NCA software ",
           "on the Indometh dataset and on phase 1 data with bolus, infusion and oral dosing, ",
           "and found no discrepancies (Kim et al., 2018)."
         ),
@@ -425,7 +425,7 @@ methods_ui <- function() {
           "or narrow therapeutic index (NTID) analyses. For highly variable drug products ",
           "that require widened or scaled acceptance limits, the replicate design data should be ",
           "analysed using dedicated software that implements reference-scaling (e.g., the ",
-          "replicateBE or bear R packages, SAS PROC MIXED, or Phoenix WinNonlin). ",
+          "replicateBE or bear R packages, or SAS PROC MIXED). ",
           "The Power & Sample Size module ", tags$em("can"), " plan studies for these ",
           "approaches, but the BE analysis module applies standard ABE limits to all designs."
         ),

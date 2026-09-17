@@ -41,7 +41,7 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **326 automated tests** in sixteen sections, each mapped to a URS requirement:
+The script runs **329 automated tests** in sixteen sections, each mapped to a URS requirement:
 
 | Section | Code | Tests | Tests cover |
 |---------|------|------:|-------------|
@@ -60,7 +60,7 @@ The script runs **326 automated tests** in sixteen sections, each mapped to a UR
 | ADNCA conversion | CONV | 19 | The ADNCA import shared by the app and `converters/adnca_to_flat.R`: time variable choice, ANL01FL, DTYPE, analyte/matrix selection, units, LLOQ, refusals, conversion log |
 | First adversarial review | REV | 11 | Per-profile doses, BLQ text, unit-column detection, rounded CI limits, model column, subject counts, whitespace in IDs, steady-state message, record fallback copy, record file names |
 | Second review (1) | REV2 | 7 | Reference treatment chosen by the user, Test and Reference CV in scaled planning, within-subject CV for the planner, grouped exports, CI labels |
-| Second review (2) | REV3 | 10 | Minimum R² applied to results, half-life review equal to NonCompart's fit, results cleared on new data or profile, empty LLOQ, figure legend, help and Methods wording |
+| Second review (2) | REV3 | 13 | Minimum R² applied to results, half-life review equal to NonCompart’s fit, results cleared on new data or profile, empty LLOQ, figure legend, help and Methods wording, warning when no Subject column is recognised, no references to commercial NCA software |
 
 In addition, **44 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload (flat and CDISC ADNCA), column mapping, interlock messages, the half-life review and minimum-R² note, choosing the Reference treatment, the replicate variability table, planning with both CVs, CDISC parameter codes, the Complete Analysis Record download and its reproduction check, and the Visualize Figure Record. They are included in the script for traceability but are marked SKIP in automated runs.
 
