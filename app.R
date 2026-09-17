@@ -508,7 +508,7 @@ server <- function(input, output, session) {
       list(
         name    = "PowerTOST",
         version = as.character(packageVersion("PowerTOST")),
-        role    = "Power analysis and sample size estimation for bioequivalence studies. Supports ABE, ABEL, RSABE, NTID, dose-proportionality, and non-inferiority designs.",
+        role    = "Power analysis and sample size estimation for bioequivalence studies. Plan a Study uses it for average bioequivalence, ABEL, RSABE and NTID.",
         url     = "https://cran.r-project.org/package=PowerTOST",
         ref     = "Labes D, Sch\u00FCtz H, Lang B. PowerTOST: Power and Sample Size for (Bio)Equivalence Studies."
       ),

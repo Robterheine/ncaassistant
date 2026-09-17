@@ -1,6 +1,6 @@
 # NCA Assistant — Validation Package
 
-This folder contains the validation package for NCA Assistant v1.3.0. It follows a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles for custom software used in a regulated pharmaceutical environment.
+This folder contains the validation package for NCA Assistant v1.4.0. It follows a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles for custom software used in a regulated pharmaceutical environment.
 
 ---
 
@@ -9,7 +9,7 @@ This folder contains the validation package for NCA Assistant v1.3.0. It follows
 | File | Description |
 |------|-------------|
 | `validation.R` | Consolidated validation script (Attachment A to the IQ/OQ/PQ protocol) |
-| `NCA_Assistant_URS.docx` | User Requirement Specification — 57 requirements across 8 categories |
+| `NCA_Assistant_URS.docx` | User Requirement Specification — 58 requirements across 8 categories |
 | `NCA_Assistant_IQOQPQ.docx` | IQ/OQ/PQ protocol — every test listed individually with method, expected result, URS cross-reference, and criticality |
 | `validation_results.csv` | Generated on each run — pass/fail record with timestamps and environment details |
 
@@ -41,20 +41,26 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **191 automated tests** across ten sections, each mapped to a URS requirement:
+The script runs **325 automated tests** in sixteen sections, each mapped to a URS requirement:
 
-| Section | Code | Tests cover |
-|---------|------|-------------|
-| Installation Qualification | IQ | R version, package availability, file integrity (SHA-256 hashes) |
-| Data Handling | DAT | Column auto-detection, BLQ rules 1–6, LLOQ validation, crossover data |
-| NCA Accuracy | NCA | Analytical ground truth (mono-exponential IV bolus), Theoph dataset, lambda-z estimation, R²adj, steady-state |
-| Bioequivalence | BE | CI construction, TOST logic, crossover ANOVA, forest plot data |
-| v1.1 Features | OQ-NEW | R² slider propagation, half-life recalculation, negative slope rejection, 2-point edge case, override audit trail |
-| Power & Sample Size | PWR | ABE, ABEL, RSABE, NTID designs via PowerTOST |
-| Export & Reproducibility | EXP | JSON settings structure, R script generation, SHA-256 integrity, schema version, three-way integrity manifest, reproduced-vs-app comparison |
-| Usability & Code Quality | UI | Module loading, defensive coding checks |
-| Visualisation | VIZ | Plot data construction, dose normalisation, colour palette handling |
-| Correctness regressions | REG | Dose-to-subject matching, BLQ rule scoping and ordering, unit validation, execution of the shipped reproducibility script |
+| Section | Code | Tests | Tests cover |
+|---------|------|------:|-------------|
+| Installation Qualification | IQ | 18 | R version, package availability, file integrity (SHA-256 hashes) |
+| Data Handling | DAT | 63 | Column auto-detection, data quality checks, BLQ rules 1–6 per profile, BLQ text, study design detection, the shared data pipeline, interlocks (IL: CDISC-shaped flat files, mixed units, date/clock time, time since first dose, stacked profiles) and decimal-comma reading |
+| NCA Accuracy | NCA | 40 | Analytical ground truth (mono-exponential IV bolus), Theoph and Indometh datasets, lambda-z, routes, trapezoid methods, dose normalisation, steady state, edge cases, manual data entry, crossover profiles |
+| Bioequivalence | BE | 10 | CI construction, TOST logic, crossover ANOVA, mixed model, paired and parallel designs |
+| Half-life overrides | OQ-NEW | 12 | R² propagation, recalculation by NonCompart, negative slope rejection, 2-point edge case, override audit trail |
+| Power & Sample Size | PWR | 14 | ABE, ABEL, RSABE, NTID and the planner designs via PowerTOST |
+| Export & Reproducibility | EXP | 18 | Determinism, summary statistics, R script generation, SHA-256 integrity, app and package versions, CDISC parameter codes from the pinned release |
+| Usability & Code Quality | UI | 31 | Parameter labels and help topics, column-mapping validation, defensive coding checks, requirement spot checks |
+| Visualisation | VIZ | 9 | Plot data construction, dose normalisation, colour palette handling |
+| Correctness regressions | REG | 29 | Dose matching, BLQ rule scoping and ordering, unit validation, bioequivalence model and verdict (point-estimate constraint, rounding, factor coding), execution of the shipped reproduction script |
+| Replicate designs | REP | 25 | Profiles per administration, design merge, CVwR/CVwT diagnostic, design registry, agreement with `replicateBE` method A on its 30 reference data sets |
+| Analysis Records | REC | 9 | Shipped pipeline and hashes; reproduction MATCH for theophylline, molar units, a semicolon/decimal-comma file with BLQ text, a replicate BE study with overrides, single-subject and manual entry; tampered data detected; figure rebuilt |
+| ADNCA conversion | CONV | 19 | The ADNCA import shared by the app and `converters/adnca_to_flat.R`: time variable choice, ANL01FL, DTYPE, analyte/matrix selection, units, LLOQ, refusals, conversion log |
+| First adversarial review | REV | 11 | Per-profile doses, BLQ text, unit-column detection, rounded CI limits, model column, subject counts, whitespace in IDs, steady-state message, record fallback copy, record file names |
+| Second review (1) | REV2 | 7 | Reference treatment chosen by the user, Test and Reference CV in scaled planning, within-subject CV for the planner, grouped exports, CI labels |
+| Second review (2) | REV3 | 10 | Minimum R² applied to results, half-life review equal to NonCompart's fit, results cleared on new data or profile, empty LLOQ, figure legend, help and Methods wording |
 
 In addition, **32 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload, column mapping, the half-life review inspector, the Complete Analysis Record download (across all four analysis paths), and the Visualize Figure Record. The manual test definitions are included in the script for traceability but are marked SKIP in automated runs.
 
@@ -77,7 +83,7 @@ A passing run produces:
 
 ```
 ALL CRITICAL TESTS PASSED
-URS: 57/57 covered
+URS: 58/58 covered
 Results: validation/validation_results.csv
 ```
 
@@ -103,7 +109,7 @@ The documents are provided without version numbers in headers or filenames so th
 
 ## File Integrity
 
-The validation script computes SHA-256 hashes of `validation.R` itself and the core R source files it tests (`converters/adnca_to_flat.R`, `R/adnca_import.R`, `R/cdisc_terms.R`, `R/pipeline.R`, `R/interlocks.R`, `R/utils.R`, `R/nca_helpers.R`, `R/data_quality.R`, `R/export_record.R`, `R/mod_data_upload.R`, `R/designs.R`, `R/be_analysis.R`). These hashes are printed at the start of each run and recorded in `validation_results.csv`. Retain these alongside the results as evidence that the validated source files were not modified between qualification and use.
+The validation script computes SHA-256 hashes of `validation.R` itself and the core R source files it tests (`R/utils.R`, `R/nca_helpers.R`, `R/data_quality.R`, `R/export_record.R`, `R/mod_data_upload.R`, `R/designs.R`, `R/be_analysis.R`, `R/pipeline.R`, `R/interlocks.R`, `R/adnca_import.R`, `R/cdisc_terms.R`, `converters/adnca_to_flat.R`). These hashes are printed at the start of each run and recorded in `validation_results.csv`. Retain these alongside the results as evidence that the validated source files were not modified between qualification and use.
 
 ---
 
