@@ -34,25 +34,13 @@ if (length(missing) > 0) {
 }
 library(NonCompart); library(PowerTOST); library(nlme); library(digest)
 
-for (f in c("R/utils.R", "R/nca_helpers.R", "R/data_quality.R", "R/export_record.R",
-           "R/designs.R", "R/be_analysis.R")) {
+for (f in c("R/pipeline.R", "R/utils.R", "R/nca_helpers.R", "R/data_quality.R",
+           "R/export_record.R", "R/designs.R", "R/be_analysis.R")) {
   tryCatch(source(f, local = TRUE), error = function(e) NULL)
 }
 
-tryCatch({
-  lines <- readLines("R/mod_data_upload.R")
-  start <- grep("^auto_detect_columns", lines)
-  if (length(start) > 0) {
-    depth <- 0; end <- start
-    for (i in start:length(lines)) {
-      depth <- depth + nchar(gsub("[^{]", "", lines[i])) - nchar(gsub("[^}]", "", lines[i]))
-      if (depth == 0 && i > start) { end <- i; break }
-    }
-    eval(parse(text = paste(lines[start:end], collapse = "
-")), envir = globalenv())
-  }
-}, error = function(e) cat("Warning: could not extract auto_detect_columns
-"))
+# auto_detect_columns() and the data preparation now live in R/pipeline.R, so
+# they are sourced directly instead of being text-extracted from the Shiny module.
 
 # generate_nca_script() and the other record helpers are provided by sourcing
 # R/export_record.R above (more robust than extracting a single function).
@@ -64,7 +52,8 @@ APP_VERSION <- tryCatch({
 }, error = function(e) "unknown")
 
 source_files <- c("R/utils.R", "R/nca_helpers.R", "R/data_quality.R",
-                  "R/export_record.R", "R/mod_data_upload.R", "R/designs.R", "R/be_analysis.R")
+                  "R/export_record.R", "R/mod_data_upload.R", "R/designs.R", "R/be_analysis.R",
+                  "R/pipeline.R")
 hash_files <- c("validation/validation.R", source_files)
 file_hashes <- sapply(hash_files, function(f) {
   if (file.exists(f)) digest(file = f, algo = "sha256") else "FILE_NOT_FOUND"
@@ -264,6 +253,84 @@ check("DAT-DES-01", "Design: single-arm",
 check("DAT-DES-02", "Design: crossover",
       { d <- data.frame(Subject=rep(c("A","B"),each=4),Time=rep(c(0,1),4),Conc=c(0,5,0,4,0,6,0,3),Treatment=rep(c("T","R"),each=2,times=2),Period=rep(c(1,1,2,2),2),Sequence=rep(c("TR","RT"),each=4)); des <- detect_study_design(d, list(subject="Subject",time="Time",conc="Conc",treatment="Treatment",period="Period",sequence="Sequence")); des$is_crossover && des$n_treatments==2 },
       "URS-DAT-07", method="2x2 crossover data", expected="is_crossover=TRUE", critical=TRUE)
+
+# --- DAT-PREP: the Shiny-free data pipeline (R/pipeline.R) --------------------
+prep_raw <- data.frame(Subject = c(2, 2, 2, 1, 1, 1, 1), Treatment = "T",
+                       Time = c("4", "0", "1", "0", "1", NA, "2"),
+                       Conc = c("<0,5", "<0.5", "6.2", "0", "5.1", "3", "BLQ"),
+                       Dose = c(100, 100, 100, 50, 50, 50, 50), stringsAsFactors = FALSE)
+prep_cm <- list(subject = "Subject", time = "Time", conc = "Conc", treatment = "Treatment", dose = "Dose")
+check("DAT-PREP-01", "prepare_pk_dataset returns the canonical object",
+  tryCatch({
+    ds <- prepare_pk_dataset(prep_raw, prep_cm, list(lloq = 0.5, blq_rule = "rule1"))
+    all(c("data", "col_map", "design", "provenance", "analyte", "units", "time_basis",
+          "blq", "flags", "interlocks", "qc") %in% names(ds)) &&
+      identical(ds$col_map, prep_cm) && ds$provenance$door == "flat" &&
+      is.data.frame(ds$interlocks) && identical(names(ds$interlocks),
+        c("Severity", "Category", "Message", "Detail", "Action"))
+  }, error = function(e) FALSE),
+  "URS-DAT-01", critical = TRUE, method = "field names and shapes", expected = "all 11 fields present")
+check("DAT-PREP-02", "Rows without a time are dropped, counted, and data sorted by subject and time",
+  tryCatch({
+    ds <- prepare_pk_dataset(prep_raw, prep_cm, list(lloq = 0.5, blq_rule = "rule1"))
+    ds$flags$n_rows_dropped == 1 && nrow(ds$data) == 6 &&
+      identical(ds$data$Subject, c(1, 1, 1, 2, 2, 2)) && identical(ds$data$Time, c(0, 1, 2, 0, 1, 4))
+  }, error = function(e) FALSE),
+  "URS-DAT-02", critical = TRUE, method = "unsorted input with one NA time", expected = "6 rows, sorted")
+check("DAT-PREP-03", "'<x' BLQ text reaches the BLQ rule; other text becomes missing",
+  tryCatch({
+    ds <- prepare_pk_dataset(prep_raw, prep_cm, list(lloq = 0.5, blq_rule = "rule4"))
+    d <- ds$data
+    ds$blq$text_tokens_converted == 2 &&
+      identical(d$Conc[d$Subject == 2 & d$Time %in% c(0, 4)], c(0.25, 0.25)) &&
+      is.na(d$Conc[d$Subject == 1 & d$Time == 2])
+  }, error = function(e) FALSE),
+  "URS-DAT-04", critical = TRUE, method = "rule 4 (LLOQ/2) with '<0.5', '<0,5' and 'BLQ'",
+  expected = "'<' entries -> 0.25; 'BLQ' -> NA")
+check("DAT-PREP-04", "Without an LLOQ no BLQ rule is applied and text becomes missing",
+  tryCatch({
+    ds <- prepare_pk_dataset(prep_raw, prep_cm, list(lloq = 0))
+    ds$blq$rule == "none" && ds$blq$text_tokens_converted == 0 && sum(is.na(ds$data$Conc)) == 3
+  }, error = function(e) FALSE),
+  "URS-DAT-04", critical = TRUE, method = "lloq = 0", expected = "3 missing concentrations")
+check("DAT-PREP-05", "LLOQ suggestion from '<x' text, including decimal commas",
+  tryCatch({
+    b <- blq_text_summary(c("<0,5", "<0.25", "BLQ", "3.1"))
+    b$n_blq_text == 3 && identical(b$suggested_lloq, 0.25) &&
+      is.null(blq_text_summary(c("1", "2"))$suggested_lloq)
+  }, error = function(e) FALSE),
+  "URS-DAT-04", critical = FALSE, method = "blq_text_summary()", expected = "3 entries, LLOQ 0.25")
+check("DAT-PREP-06", "Files are read with the recorded separator and decimal mark",
+  tryCatch({
+    f <- tempfile(fileext = ".csv")
+    writeLines(c("Subject;Time;Conc", "1;0,5;12,25", "1;1;8,5"), f)
+    d <- read_pk_file(f, list(sep = ";", dec = ","))
+    identical(d$Time, c(0.5, 1)) && identical(d$Conc, c(12.25, 8.5))
+  }, error = function(e) FALSE),
+  "URS-DAT-01", critical = TRUE, method = "semicolon / decimal-comma CSV", expected = "numeric columns")
+check("DAT-PREP-07", "Per-subject dose is the subject's maximum, named by subject",
+  tryCatch({
+    identical(dose_by_subject(prep_raw, prep_cm), c("1" = 50, "2" = 100))
+  }, error = function(e) FALSE),
+  "URS-NCA-05", critical = TRUE, method = "dose_by_subject()", expected = "c('1' = 50, '2' = 100)")
+check("DAT-PREP-08", "Source file SHA-256 is recorded in provenance",
+  tryCatch({
+    f <- tempfile(fileext = ".csv"); write.csv(prep_raw, f, row.names = FALSE)
+    ds <- prepare_pk_dataset(read_pk_file(f), prep_cm, list(file_path = f, file_name = "x.csv"))
+    identical(ds$provenance$sha256, digest::digest(file = f, algo = "sha256"))
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = FALSE, method = "file_path in opts", expected = "hash equals digest of the file")
+check("DAT-PREP-09", "The pipeline is Shiny-free and the upload module uses it",
+  tryCatch({
+    pl <- readLines("R/pipeline.R", warn = FALSE); pl <- pl[!grepl("^\\s*#", pl)]
+    up <- readLines("R/mod_data_upload.R", warn = FALSE); up <- up[!grepl("^\\s*#", up)]
+    vr <- readLines("validation/validation.R", warn = FALSE)
+    !any(grepl("input\\$|shared\\$|showNotification|shiny::", pl)) &&
+      any(grepl("prepare_pk_dataset\\(", up)) && !any(grepl("apply_blq_rules\\(", up)) &&
+      !any(grepl(paste0("nchar(gsub(\"[^{]\", \"\", ", "lines[i]))"), vr, fixed = TRUE))
+  }, error = function(e) FALSE),
+  "URS-GEN-01", critical = FALSE, method = "source inspection",
+  expected = "no Shiny calls in pipeline.R; module calls prepare_pk_dataset; no brace counting in validation.R")
 
 end_section("DAT")
 

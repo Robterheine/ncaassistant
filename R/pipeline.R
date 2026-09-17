@@ -1,0 +1,566 @@
+# ============================================================================
+# NCA Assistant — Data pipeline (Shiny-free)
+# ============================================================================
+# Everything between "a file on disk" and "an NCA result table" lives here:
+# reading, column detection, BLQ handling, profile definition and the NCA
+# call. The app sources this file, the validation suite tests it directly,
+# and every Analysis Record ships an exact copy as nca_pipeline.R, which the
+# reproduction script sources. There is therefore one implementation of the
+# pipeline, not an app version and a transcribed script version.
+#
+# Rules for this file:
+# - No Shiny: no input$, no shared$, no showNotification().
+# - Dependencies: base R, stats, NonCompart; readxl only for Excel files;
+#   digest only for hashes (optional).
+# - The canonical object is pk_dataset (see prepare_pk_dataset()). Existing
+#   analysis code reads only $data and $col_map; every other field is
+#   additive metadata.
+# ============================================================================
+
+#' Read an uploaded PK data file exactly as the app does
+#'
+#' @param path File path
+#' @param read_args list(sep, dec, sheet) as chosen in the upload screen
+#' @param ext File extension; defaults to the extension of `path`
+read_pk_file <- function(path, read_args = list(), ext = tools::file_ext(path)) {
+  sep   <- if (is.null(read_args$sep))   "," else read_args$sep
+  dec   <- if (is.null(read_args$dec))   "." else read_args$dec
+  sheet <- if (is.null(read_args$sheet)) 1   else read_args$sheet
+  if (tolower(ext) %in% c("xlsx", "xls")) {
+    readxl::read_excel(path, sheet = sheet)
+  } else {
+    read.csv(path, sep = sep, dec = dec, stringsAsFactors = FALSE)
+  }
+}
+
+#' Count BLQ text entries and suggest an LLOQ from "<x" values
+#'
+#' @param conc_raw Concentration column as uploaded
+#' @return list(n_blq_text, suggested_lloq (NULL if none))
+blq_text_summary <- function(conc_raw) {
+  conc_chr <- as.character(conc_raw)
+  n_blq_text <- sum(grepl("^(BLQ|BQL|<|BLOQ|NS|ND|NQ)", conc_chr, ignore.case = TRUE))
+  suggested <- NULL
+  lt_vals <- conc_chr[grepl("^<", conc_chr)]
+  if (length(lt_vals) > 0) {
+    lt_nums <- suppressWarnings(as.numeric(gsub(",", ".", gsub("^<\\s*", "", lt_vals))))
+    lt_nums <- lt_nums[!is.na(lt_nums)]
+    if (length(lt_nums) > 0) suggested <- min(lt_nums)
+  }
+  list(n_blq_text = n_blq_text, suggested_lloq = suggested)
+}
+
+#' Turn an uploaded table into the canonical analysis dataset
+#'
+#' Converts time and concentration to numbers (rewriting "<x" BLQ text to a
+#' placeholder below the LLOQ so the BLQ rule sees it), drops rows without a
+#' time, sorts by subject and time, applies the BLQ rule, and detects the
+#' study design. Quality checks run before this step in the app and are
+#' attached through opts$qc.
+#'
+#' @param raw Data frame as read by read_pk_file()
+#' @param col_map Column mapping (subject, time, conc and optional
+#'   treatment, period, sequence, dose)
+#' @param opts list(lloq, blq_rule, door, file_name, file_path, read_args,
+#'   pipeline_sha256, qc)
+#' @return pk_dataset: list(data, col_map, design, provenance, analyte, units,
+#'   time_basis, blq, flags, interlocks, qc)
+prepare_pk_dataset <- function(raw, col_map, opts = list()) {
+  lloq <- if (is.null(opts$lloq)) 0 else opts$lloq
+  rule <- if (is.null(opts$blq_rule)) "rule1" else opts$blq_rule
+
+  data <- raw
+  data[[col_map$time]] <- suppressWarnings(as.numeric(data[[col_map$time]]))
+
+  # Pre-process BLQ text entries before numeric conversion. Values like
+  # "<0,195" (European decimal) or "<0.1" become NA after as.numeric(), so
+  # apply_blq_rules would never see them as BLQ (it checks !is.na(x) & x <
+  # lloq). Setting them to 0 ensures they are flagged, and the selected rule
+  # then decides their value.
+  n_text <- 0L
+  if (lloq > 0) {
+    conc_raw_chr <- as.character(data[[col_map$conc]])
+    blq_text_mask <- grepl("^<", conc_raw_chr) &
+                     is.na(suppressWarnings(as.numeric(conc_raw_chr)))
+    n_text <- sum(blq_text_mask)
+    if (any(blq_text_mask)) {
+      conc_raw_chr[blq_text_mask] <- "0"  # placeholder: 0 < lloq -> BLQ
+    }
+    data[[col_map$conc]] <- suppressWarnings(as.numeric(conc_raw_chr))
+  } else {
+    data[[col_map$conc]] <- suppressWarnings(as.numeric(data[[col_map$conc]]))
+  }
+
+  # Drop unusable rows and sort BEFORE applying the BLQ rules. Rules 1, 5 and
+  # 6 are positional ("first quantifiable", "post-Cmax"), so running them on
+  # file order rather than time order imputes the wrong samples whenever the
+  # upload is not already sorted.
+  n_before <- nrow(data)
+  data <- data[!is.na(data[[col_map$time]]), ]
+  data <- data[order(data[[col_map$subject]], data[[col_map$time]]), ]
+  n_dropped <- n_before - nrow(data)
+
+  if (lloq > 0) {
+    data <- apply_blq_rules(data, col_map, rule = rule, lloq = lloq)
+  }
+
+  sha <- if (!is.null(opts$file_path) && file.exists(opts$file_path) &&
+             requireNamespace("digest", quietly = TRUE)) {
+    digest::digest(file = opts$file_path, algo = "sha256")
+  } else NA_character_
+
+  list(
+    data       = data,
+    col_map    = col_map,
+    design     = detect_study_design(data, col_map),
+    provenance = list(door = if (is.null(opts$door)) "flat" else opts$door,
+                      file_name = opts$file_name, file_path = opts$file_path,
+                      sha256 = sha, read_args = opts$read_args,
+                      pipeline_sha256 = opts$pipeline_sha256),
+    analyte    = list(name = NA_character_, paramcd = NA_character_,
+                      pctestcd = NA_character_, matrix = NA_character_),
+    units      = list(conc = NA_character_, time = NA_character_,
+                      dose = NA_character_, mw = NA_real_, source = "user"),
+    time_basis = list(col = col_map$time, kind = NA_character_,
+                      cdisc_var = NA_character_, user_confirmed = FALSE),
+    blq        = list(lloq = lloq, rule = if (lloq > 0) rule else "none",
+                      source = if (lloq > 0) "app_rule" else "none",
+                      text_tokens_converted = n_text,
+                      na_policy = "missing"),
+    flags      = list(anl01fl_applied = FALSE, dtype_present = FALSE,
+                      n_rows_dropped = n_dropped),
+    interlocks = data.frame(Severity = character(0), Category = character(0),
+                            Message = character(0), Detail = character(0),
+                            Action = character(0), stringsAsFactors = FALSE),
+    qc         = opts$qc
+  )
+}
+
+#' One dose per subject: the maximum of the Dose column, named by subject ID
+#'
+#' run_nca() matches a multi-element dose vector by these names.
+dose_by_subject <- function(data, col_map) {
+  d <- suppressWarnings(as.numeric(data[[col_map$dose]]))
+  v <- tapply(d, as.character(data[[col_map$subject]]), max, na.rm = TRUE)
+  stats::setNames(as.numeric(v), names(v))
+}
+
+# Column auto-detection (same as v1, with extended patterns)
+auto_detect_columns <- function(cols) {
+  cols_lower <- tolower(cols)
+  
+  detect <- function(patterns, fallback_idx = 1) {
+    for (p in patterns) {
+      match <- grep(p, cols_lower, value = FALSE)
+      if (length(match) > 0) return(cols[match[1]])
+    }
+    return(cols[min(fallback_idx, length(cols))])
+  }
+  
+  detect_optional <- function(patterns) {
+    for (p in patterns) {
+      match <- grep(p, cols_lower, value = FALSE)
+      if (length(match) > 0) return(cols[match[1]])
+    }
+    return("")
+  }
+  
+  list(
+    subject   = detect(c("^subj", "^id$", "^subject", "^usubjid", "^patid",
+                          "^pat$", "^proband", "^teilnehmer"), 1),
+    time      = detect(c("^time", "^tpt", "^hours?$", "^hour", "^apts",
+                          "^ntim", "^zeit", "^tid"), 2),
+    conc      = detect(c("^conc", "^dv$", "^cp[^a-z]", "^cp$", "^concentration",
+                          "^result", "^konz", "^plasma", "ug.l", "ng.ml"), 3),
+    treatment = detect_optional(c("^trt", "^treat", "^form", "^drug", "^arm",
+                                   "^behandl")),
+    period    = detect_optional(c("^per", "^period", "^prd", "^phase")),
+    sequence  = detect_optional(c("^seq", "^grp", "^sequence")),
+    dose      = detect_optional(c("^dose", "^amt$", "^amount", "^dosis"))
+  )
+}
+
+#' Identify the concentration-time profile each row belongs to
+#'
+#' A profile is one subject, under one treatment, in one period. Treatment
+#' and Period are included whenever they are mapped, so a replicate design
+#' (the same treatment given in two periods) yields one profile per
+#' administration instead of merging them. The same key is used by the BLQ
+#' rules, the NCA and the generated reproduction script, so all three agree on
+#' what a profile is. The key is applied unconditionally: its shape depends on
+#' the mapping, never on the data.
+#'
+#' @param data Data frame
+#' @param col_map Column mapping (subject, and optionally treatment/period)
+#' @return list(key   = character profile key per row,
+#'              parts = data.frame per row with Subject and, when mapped,
+#'                      Treatment and Period (all character),
+#'              cols  = names(parts))
+profile_key <- function(data, col_map) {
+  parts <- data.frame(Subject = as.character(data[[col_map$subject]]),
+                      stringsAsFactors = FALSE)
+  if (!is.null(col_map$treatment) && col_map$treatment %in% names(data))
+    parts$Treatment <- as.character(data[[col_map$treatment]])
+  if (!is.null(col_map$period) && col_map$period %in% names(data))
+    parts$Period <- as.character(data[[col_map$period]])
+  key <- if (ncol(parts) == 1) parts$Subject else do.call(paste, c(parts, sep = "||"))
+  list(key = key, parts = parts, cols = names(parts))
+}
+
+#' Apply BLQ (Below Limit of Quantification) handling rules
+#' 
+#' Implements WinNonlin-compatible BLQ rules:
+#'   Rule 1: Pre-first-quantifiable set to 0; post-last-quantifiable set to Missing
+#'   Rule 2: All BLQ set to 0
+#'   Rule 3: All BLQ set to Missing (NA)
+#'   Rule 4: All BLQ set to LLOQ/2
+#'   Rule 5: Pre-Cmax BLQ = 0; post-Cmax BLQ = Missing
+#'   Rule 6: Pre-first-quantifiable set to LLOQ/2; all other BLQ set to 0
+#'           (for drugs with absorption lag; used in ROSIE and similar studies)
+#'
+#' @param data Data frame with subject/time/concentration
+#' @param col_map Column mapping list
+#' @param rule Character: one of "rule1" through "rule6"
+#' @param lloq Numeric: lower limit of quantification
+#' @return Modified data frame
+apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
+  
+  subj_col <- col_map$subject
+  time_col <- col_map$time
+  conc_col <- col_map$conc
+
+  # Rules 1, 5 and 6 are positional: they depend on which samples come first
+  # and last within ONE concentration-time profile. A profile is one subject
+  # under one treatment in one period (profile_key()). Grouping more coarsely
+  # concatenates profiles (Test and Reference periods, or both administrations
+  # of a replicate) and then applies "first/last quantifiable" (rules 1, 6)
+  # and "Cmax" (rule 5) across them at once, which imputes the wrong samples
+  # and biases the ratio the BE analysis reports.
+  prof_key <- profile_key(data, col_map)$key
+
+  # These rules are also order-dependent, so each profile is visited in time
+  # order regardless of how the rows happen to be arranged in the file.
+  profile_idx <- function(k) {
+    i <- which(prof_key == k)
+    i[order(suppressWarnings(as.numeric(data[[time_col]][i])))]
+  }
+
+  # Identify BLQ values
+  data$.is_blq <- !is.na(data[[conc_col]]) & data[[conc_col]] < lloq
+  
+  if (rule == "rule2") {
+    # All BLQ -> 0
+    data[[conc_col]][data$.is_blq] <- 0
+    
+  } else if (rule == "rule3") {
+    # All BLQ -> NA
+    data[[conc_col]][data$.is_blq] <- NA
+    
+  } else if (rule == "rule4") {
+    # All BLQ -> LLOQ/2
+    data[[conc_col]][data$.is_blq] <- lloq / 2
+    
+  } else if (rule == "rule5") {
+    # Pre-Cmax BLQ -> 0; post-Cmax BLQ -> NA
+    for (s in unique(prof_key)) {
+      idx <- profile_idx(s)
+      sub <- data[idx, ]
+      tmax_idx <- which.max(sub[[conc_col]])
+      
+      # Guard: which.max returns integer(0) when all concentrations are NA.
+      # 1:integer(0) throws "argument of length 0" — skip this subject.
+      if (length(tmax_idx) == 0) next
+      
+      pre_cmax  <- idx[1:tmax_idx]
+      post_cmax <- if (tmax_idx < length(idx)) idx[(tmax_idx + 1):length(idx)] else integer(0)
+      
+      data[[conc_col]][intersect(pre_cmax,  which(data$.is_blq))] <- 0
+      data[[conc_col]][intersect(post_cmax, which(data$.is_blq))] <- NA
+    }
+    
+  } else if (rule == "rule6") {
+    # Rule 6: Pre-first-quantifiable BLQ -> LLOQ/2; all other BLQ -> 0
+    # Appropriate for drugs with absorption lag where first samples may be BLQ
+    for (s in unique(prof_key)) {
+      idx <- profile_idx(s)
+      sub <- data[idx, ]
+      quant_idx <- which(!sub$.is_blq & !is.na(sub[[conc_col]]))
+      
+      if (length(quant_idx) == 0) {
+        data[[conc_col]][idx[data$.is_blq[idx]]] <- lloq / 2
+        next
+      }
+      
+      first_quant <- min(quant_idx)
+      
+      # Before first quantifiable: set BLQ to LLOQ/2
+      if (first_quant > 1) {
+        pre <- idx[1:(first_quant - 1)]
+        data[[conc_col]][intersect(pre, which(data$.is_blq))] <- lloq / 2
+      }
+      # All other BLQ (during and after quantifiable phase): set to 0
+      from_quant <- idx[first_quant:length(idx)]
+      data[[conc_col]][intersect(from_quant, which(data$.is_blq))] <- 0
+    }
+    
+  } else {
+    # Rule 1 (default): pre-first-quantifiable -> 0, post-last-quantifiable -> NA
+    for (s in unique(prof_key)) {
+      idx <- profile_idx(s)
+      sub <- data[idx, ]
+      quant_idx <- which(!sub$.is_blq & !is.na(sub[[conc_col]]))
+      
+      if (length(quant_idx) == 0) {
+        data[[conc_col]][idx[data$.is_blq[idx]]] <- NA
+        next
+      }
+      
+      first_quant <- min(quant_idx)
+      last_quant  <- max(quant_idx)
+      
+      # Before first quantifiable: set BLQ to 0
+      if (first_quant > 1) {
+        pre <- idx[1:(first_quant - 1)]
+        data[[conc_col]][intersect(pre, which(data$.is_blq))] <- 0
+      }
+      # After last quantifiable: set BLQ to NA
+      if (last_quant < length(idx)) {
+        post <- idx[(last_quant + 1):length(idx)]
+        data[[conc_col]][intersect(post, which(data$.is_blq))] <- NA
+      }
+      # Between: BLQ to 0 (common convention)
+      between <- idx[first_quant:last_quant]
+      data[[conc_col]][intersect(between, which(data$.is_blq))] <- 0
+    }
+  }
+  
+  data$.is_blq <- NULL
+  data
+}
+
+#' Run NCA for all subjects using NonCompart::tblNCA
+#'
+#' Wrapper that handles column mapping, options, and returns clean output.
+#'
+#' @param data Processed PK data
+#' @param col_map Column mapping
+#' @param settings List of NCA settings
+#' @return Data frame of NCA results
+run_nca <- function(data, col_map, settings) {
+  
+  # Build iAUC if specified
+  iAUC_df <- ""
+  if (!is.null(settings$partial_aucs) && nrow(settings$partial_aucs) > 0) {
+    iAUC_df <- data.frame(
+      Name  = settings$partial_aucs$name,
+      Start = settings$partial_aucs$start,
+      End   = settings$partial_aucs$end,
+      stringsAsFactors = FALSE
+    )
+  }
+  
+  # Determine administration mode
+  adm <- switch(settings$admin_route,
+                "extravascular" = "Extravascular",
+                "iv_bolus"      = "Bolus",
+                "iv_infusion"   = "Infusion",
+                "Extravascular")
+  
+  # Determine trapezoidal method
+  down_method <- switch(settings$trap_method,
+                        "linear"  = "Linear",
+                        "log"     = "Log",
+                        "Linear")
+  
+  # CRITICAL: in crossover and replicate studies each subject has several
+  # profiles. NonCompart::tblNCA groups by `key`, so the key must identify one
+  # profile: subject + treatment + period (profile_key()). Without Period a
+  # replicate design's two administrations of a treatment are merged into one
+  # interleaved profile.
+  pk <- profile_key(data, col_map)
+  use_composite_key <- length(pk$cols) > 1
+
+  if (use_composite_key) {
+    data$.nca_key <- pk$key
+    key_parts <- unique(cbind(.nca_key = pk$key, pk$parts))
+    nca_key <- ".nca_key"
+  } else {
+    nca_key <- col_map$subject
+  }
+  
+  # Force numeric time/concentration BEFORE sorting and filtering. As of
+  # NonCompart 0.8.0, sNCA() hard-stops with "Check input types!" on non-numeric
+  # input, and a character time column would also sort lexicographically
+  # ("10" before "2"), breaking tblNCA's monotonic-time requirement. Coercing
+  # here makes the NCA robust to a stray character column regardless of upload
+  # path, locale, or NonCompart version. Numeric input is unaffected.
+  data[[col_map$time]] <- suppressWarnings(as.numeric(as.character(data[[col_map$time]])))
+  data[[col_map$conc]] <- suppressWarnings(as.numeric(as.character(data[[col_map$conc]])))
+
+  # Ensure data is sorted by key and time
+  data <- data[order(data[[nca_key]], data[[col_map$time]]), ]
+  
+  # Degenerate profile filter: remove profiles with < 2 non-zero, non-NA
+  # concentration values before passing to tblNCA. At least 2 positive
+  # values are needed to compute Cmax, Tmax, and AUClast. Profiles with
+  # exactly 2 positive values are valid sparse profiles — tblNCA handles
+  # them correctly, returning NA for lambda-z-dependent parameters (half-life,
+  # AUC∞, CL/F, Vz/F) which require ≥ 3 points for regression. Profiles with
+  # only 1 positive value produce no meaningful NCA output and are excluded.
+  # Excluded profiles are reported via warning so callers can surface them.
+  all_keys   <- unique(data[[nca_key]])
+  good_keys  <- character(0)
+  bad_keys   <- character(0)
+  for (k in all_keys) {
+    k_conc <- data[[col_map$conc]][data[[nca_key]] == k]
+    k_conc_num <- suppressWarnings(as.numeric(k_conc))
+    n_valid <- sum(!is.na(k_conc_num) & k_conc_num > 0)
+    if (n_valid >= 2) good_keys <- c(good_keys, k)
+    else              bad_keys  <- c(bad_keys,  k)
+  }
+  
+  if (length(bad_keys) > 0) {
+    warning(paste0("Excluded ", length(bad_keys), " profile(s) with fewer than 2 ",
+                   "positive concentration values (no meaningful NCA output possible): ",
+                   paste(head(bad_keys, 5), collapse = ", "),
+                   if (length(bad_keys) > 5) " ..." else ""))
+    data <- data[data[[nca_key]] %in% good_keys, ]
+  }
+  
+  # Abort cleanly if no valid profiles remain
+  if (nrow(data) == 0 || length(good_keys) == 0) return(NULL)
+
+  # Resolve one dose per profile, in the exact order tblNCA will see the
+  # profiles. tblNCA indexes `dose` POSITIONALLY against unique(key), so a
+  # vector built in any other order (e.g. grouped by subject, while the key is
+  # sorted lexicographically) silently gives each subject someone else's dose:
+  # CL/F, Vz/F and the dose-normalised parameters are then wrong while Cmax,
+  # AUC and half-life look perfectly normal. Callers therefore pass either a
+  # single dose or a vector NAMED by subject ID, and names are matched here.
+  # Matching by name is also what makes per-subject dosing work in a crossover,
+  # where one subject contributes several profiles.
+  final_keys  <- unique(data[[nca_key]])
+  subj_by_key <- as.character(data[[col_map$subject]][match(final_keys, data[[nca_key]])])
+  dose_in <- settings$dose
+
+  if (length(dose_in) <= 1) {
+    dose_num <- suppressWarnings(as.numeric(dose_in))
+  } else if (!is.null(names(dose_in))) {
+    dose_num <- suppressWarnings(as.numeric(dose_in[subj_by_key]))
+    if (anyNA(dose_num)) {
+      warning("No dose value for subject(s): ",
+              paste(unique(subj_by_key[is.na(dose_num)]), collapse = ", "),
+              ". Check the Dose column.")
+      return(NULL)
+    }
+  } else {
+    warning("Per-subject doses must be supplied as a vector named by subject ID. ",
+            "The analysis was stopped rather than risk assigning doses to the ",
+            "wrong subjects.")
+    return(NULL)
+  }
+  dur_in   <- if (is.null(settings$infusion_duration)) 0 else settings$infusion_duration
+  dur_num  <- suppressWarnings(as.numeric(dur_in))
+  if (length(dur_num) == 0 || is.na(dur_num)) dur_num <- 0
+  mw_in    <- if (is.null(settings$mw)) 0 else settings$mw
+  mw_num   <- suppressWarnings(as.numeric(mw_in))
+  if (length(mw_num) == 0 || is.na(mw_num)) mw_num <- 0
+
+  # Run NCA via NonCompart
+  result <- tryCatch({
+    tblNCA(
+      concData  = data,
+      key       = nca_key,
+      colTime   = col_map$time,
+      colConc   = col_map$conc,
+      dose      = dose_num,
+      adm       = adm,
+      dur       = dur_num,
+      doseUnit  = settings$dose_unit,
+      timeUnit  = settings$time_unit,
+      concUnit  = settings$conc_unit,
+      down      = down_method,
+      # R2ADJ = 0 (NOT the user threshold). When R2ADJ > 0, NonCompart::sNCA
+      # falls into the INTERACTIVE base-graphics picker DetSlope() ("Choose points
+      # for terminal slope", via identify()) for any profile whose automatic fit
+      # is below the threshold — which BLOCKS the whole app in an interactive R
+      # session (e.g. RStudio runApp). With R2ADJ = 0 the automatic best-adjusted-R²
+      # slope is always used; the user's R² threshold is applied by the app's own
+      # half-life review (estimate_lambda_z) and the R²adj column is shown for
+      # inspection. Verified: identical results to the threshold for well-behaved
+      # profiles (DetSlope only ever fires below threshold).
+      R2ADJ     = 0,
+      MW        = mw_num,
+      SS        = settings$is_steady_state,
+      iAUC      = iAUC_df
+    )
+  }, error = function(e) {
+    msg <- conditionMessage(e)
+    # A "lazy-load database ... is corrupt" error is not an analysis problem: the
+    # R session holds a stale handle to NonCompart (typically because the package
+    # was updated while this session had it loaded). Tell the user how to fix it
+    # instead of the misleading generic "check settings".
+    if (grepl("lazy-load|lazy load", msg, ignore.case = TRUE)) {
+      warning("The NonCompart engine could not load (", msg, "). This usually means ",
+              "the R session has a stale package handle — restart R (in RStudio: ",
+              "Session → Restart R) and relaunch the app. No reinstall is normally needed.")
+    } else {
+      warning("NCA calculation failed: ", msg)
+    }
+    NULL
+  })
+  
+  # If a composite key was used, restore its parts (Subject, Treatment,
+  # Period) by matching the key, never by splitting the string: a separator
+  # inside a treatment name can then not corrupt the columns.
+  if (!is.null(result) && use_composite_key) {
+    idx <- match(as.character(result[[1]]), key_parts$.nca_key)
+    first_col <- names(result)[1]
+    result[[first_col]] <- NULL
+    for (cc in pk$cols) result[[cc]] <- key_parts[[cc]][idx]
+    result <- result[, c(pk$cols, setdiff(names(result), pk$cols))]
+  }
+  
+  result
+}
+
+#' Detect study design from data structure
+#' @param data Data frame with mapped columns
+#' @param col_map Named list of column mappings
+#' @return List with design type, number of periods, sequences, etc.
+detect_study_design <- function(data, col_map) {
+  design <- list(
+    type        = "unknown",
+    n_subjects  = length(unique(data[[col_map$subject]])),
+    n_periods   = 1,
+    n_sequences = 1,
+    n_treatments = 1,
+    is_crossover = FALSE,
+    is_steady_state = FALSE
+  )
+  
+  if (!is.null(col_map$period) && col_map$period %in% names(data)) {
+    design$n_periods <- length(unique(data[[col_map$period]]))
+  }
+  if (!is.null(col_map$sequence) && col_map$sequence %in% names(data)) {
+    design$n_sequences <- length(unique(data[[col_map$sequence]]))
+  }
+  if (!is.null(col_map$treatment) && col_map$treatment %in% names(data)) {
+    design$n_treatments <- length(unique(data[[col_map$treatment]]))
+  }
+  
+  # Crossover detection: >1 period or >1 sequence
+
+  if (design$n_periods > 1 || design$n_sequences > 1) {
+    design$is_crossover <- TRUE
+    design$type <- paste0(design$n_treatments, "x",
+                          design$n_sequences, "x",
+                          design$n_periods)
+  } else if (design$n_treatments > 1) {
+    design$type <- "parallel"
+  } else {
+    design$type <- "single_arm"
+  }
+  
+  design
+}

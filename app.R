@@ -44,6 +44,12 @@ library(openxlsx)
 library(nlme)
 
 # --- Source all modules ------------------------------------------------------
+source("R/pipeline.R")
+# Fingerprint of the pipeline code, recorded with every dataset and record
+PIPELINE_SHA256 <- if (requireNamespace("digest", quietly = TRUE))
+  digest::digest(file = "R/pipeline.R", algo = "sha256") else NA_character_
+# Modules are sourced into the global environment (see APP_VERSION above)
+assign("PIPELINE_SHA256", PIPELINE_SHA256, envir = globalenv())
 source("R/utils.R")
 source("R/nca_helpers.R")
 source("R/data_quality.R")

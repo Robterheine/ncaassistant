@@ -250,46 +250,6 @@ rename_be_columns <- function(df) {
   df
 }
 
-#' Detect study design from data structure
-#' @param data Data frame with mapped columns
-#' @param col_map Named list of column mappings
-#' @return List with design type, number of periods, sequences, etc.
-detect_study_design <- function(data, col_map) {
-  design <- list(
-    type        = "unknown",
-    n_subjects  = length(unique(data[[col_map$subject]])),
-    n_periods   = 1,
-    n_sequences = 1,
-    n_treatments = 1,
-    is_crossover = FALSE,
-    is_steady_state = FALSE
-  )
-  
-  if (!is.null(col_map$period) && col_map$period %in% names(data)) {
-    design$n_periods <- length(unique(data[[col_map$period]]))
-  }
-  if (!is.null(col_map$sequence) && col_map$sequence %in% names(data)) {
-    design$n_sequences <- length(unique(data[[col_map$sequence]]))
-  }
-  if (!is.null(col_map$treatment) && col_map$treatment %in% names(data)) {
-    design$n_treatments <- length(unique(data[[col_map$treatment]]))
-  }
-  
-  # Crossover detection: >1 period or >1 sequence
-
-  if (design$n_periods > 1 || design$n_sequences > 1) {
-    design$is_crossover <- TRUE
-    design$type <- paste0(design$n_treatments, "x",
-                          design$n_sequences, "x",
-                          design$n_periods)
-  } else if (design$n_treatments > 1) {
-    design$type <- "parallel"
-  } else {
-    design$type <- "single_arm"
-  }
-  
-  design
-}
 
 #' Format numeric values for display with appropriate precision
 #' @param x Numeric vector

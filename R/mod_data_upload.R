@@ -189,20 +189,22 @@ data_upload_server <- function(id, shared) {
       shared$nca_settings <- NULL
       shared$raw_data     <- NULL
       shared$study_info   <- NULL
+      shared$pk_dataset   <- NULL
     }, priority = 10)  # high priority: runs before raw_data() updates
     
+    # How the file is read; recorded so the reproduction reads it the same way
+    read_args <- reactive({
+      if (file_ext() %in% c("xlsx", "xls")) list(sheet = input$excel_sheet)
+      else list(sep = input$csv_sep, dec = input$csv_dec)
+    })
+
     # Read raw data
     raw_data <- reactive({
       req(input$file_upload)
       ext <- file_ext()
       path <- input$file_upload$datapath
       tryCatch({
-        if (ext %in% c("xlsx", "xls")) {
-          readxl::read_excel(path, sheet = input$excel_sheet)
-        } else {
-          read.csv(path, sep = input$csv_sep, dec = input$csv_dec,
-                   stringsAsFactors = FALSE)
-        }
+        read_pk_file(path, read_args(), ext = ext)
       }, error = function(e) {
         showNotification(paste("Error reading file:", e$message),
                          type = "error", duration = 8)
@@ -279,20 +281,11 @@ data_upload_server <- function(id, shared) {
       shared$qc_result <- qc
       
       # Auto-detect LLOQ from BLQ text entries if not set
-      conc_raw_upload <- as.character(raw_data()[[col_map$conc]])
-      n_blq_text <- sum(grepl("^(BLQ|BQL|<|BLOQ|NS|ND|NQ)", conc_raw_upload,
-                               ignore.case = TRUE))
-      
+      blq_txt <- blq_text_summary(raw_data()[[col_map$conc]])
+      n_blq_text <- blq_txt$n_blq_text
+
       if (input$lloq <= 0 && n_blq_text > 0) {
-        detected_lloq <- NULL
-        lt_vals <- conc_raw_upload[grepl("^<", conc_raw_upload)]
-        if (length(lt_vals) > 0) {
-          lt_nums_str <- gsub("^<\\s*", "", lt_vals)
-          lt_nums_str <- gsub(",", ".", lt_nums_str)  # handle European decimal comma
-          lt_nums <- suppressWarnings(as.numeric(lt_nums_str))
-          lt_nums <- lt_nums[!is.na(lt_nums)]
-          if (length(lt_nums) > 0) detected_lloq <- min(lt_nums)
-        }
+        detected_lloq <- blq_txt$suggested_lloq
         # Store suggestion so the "Apply and continue" button can use it
         lloq_suggestion(detected_lloq)
         # Hard stop: BLQ text present but no LLOQ — show persistent apply button
@@ -316,42 +309,17 @@ data_upload_server <- function(id, shared) {
         return()
       }
       
-      # Process
-      data <- raw_data()
-      data[[col_map$time]] <- suppressWarnings(as.numeric(data[[col_map$time]]))
-
-      # Pre-process BLQ text entries before numeric conversion.
-      # Values like "<0,195" (European decimal) or "<0.1" become NA after
-      # as.numeric(), so apply_blq_rules never sees them as BLQ (it checks
-      # !is.na(x) & x < lloq). Setting them to 0 ensures .is_blq = TRUE,
-      # and apply_blq_rules then handles them correctly per the selected rule.
-      if (input$lloq > 0) {
-        conc_raw_chr <- as.character(data[[col_map$conc]])
-        blq_text_mask <- grepl("^<", conc_raw_chr) &
-                         is.na(suppressWarnings(as.numeric(conc_raw_chr)))
-        if (any(blq_text_mask)) {
-          conc_raw_chr[blq_text_mask] <- "0"  # placeholder: 0 < lloq -> .is_blq = TRUE
-        }
-        data[[col_map$conc]] <- suppressWarnings(as.numeric(conc_raw_chr))
-      } else {
-        data[[col_map$conc]] <- suppressWarnings(as.numeric(data[[col_map$conc]]))
-      }
-
-      # Drop unusable rows and sort BEFORE applying the BLQ rules. Rules 1, 5
-      # and 6 are positional ("first quantifiable", "post-Cmax"), so running
-      # them on file order rather than time order imputes the wrong samples
-      # whenever the upload is not already sorted.
-      data <- data[!is.na(data[[col_map$time]]), ]
-      data <- data[order(data[[col_map$subject]], data[[col_map$time]]), ]
-
-      if (input$lloq > 0) {
-        data <- apply_blq_rules(data, col_map, rule = input$blq_rule,
-                                lloq = input$lloq)
-      }
-      
-      design <- detect_study_design(data, col_map)
+      # Process: one Shiny-free implementation (R/pipeline.R), shared with the
+      # validation suite and the reproduction script
+      ds <- prepare_pk_dataset(raw_data(), col_map, list(
+        lloq = input$lloq, blq_rule = input$blq_rule, door = "flat",
+        file_name = input$file_upload$name, file_path = input$file_upload$datapath,
+        read_args = read_args(), pipeline_sha256 = PIPELINE_SHA256, qc = qc))
+      data   <- ds$data
+      design <- ds$design
       
       shared$raw_data   <- raw_data()
+      shared$pk_dataset <- ds
       shared$pk_data    <- data
       shared$col_map    <- col_map
       shared$data_ready <- TRUE
@@ -360,7 +328,8 @@ data_upload_server <- function(id, shared) {
         lloq      = input$lloq,
         blq_rule  = input$blq_rule,
         file_name = input$file_upload$name,
-        file_path = input$file_upload$datapath
+        file_path = input$file_upload$datapath,
+        read_args = read_args()
       )
       
       showNotification(
@@ -393,37 +362,3 @@ data_upload_server <- function(id, shared) {
   })
 }
 
-# Column auto-detection (same as v1, with extended patterns)
-auto_detect_columns <- function(cols) {
-  cols_lower <- tolower(cols)
-  
-  detect <- function(patterns, fallback_idx = 1) {
-    for (p in patterns) {
-      match <- grep(p, cols_lower, value = FALSE)
-      if (length(match) > 0) return(cols[match[1]])
-    }
-    return(cols[min(fallback_idx, length(cols))])
-  }
-  
-  detect_optional <- function(patterns) {
-    for (p in patterns) {
-      match <- grep(p, cols_lower, value = FALSE)
-      if (length(match) > 0) return(cols[match[1]])
-    }
-    return("")
-  }
-  
-  list(
-    subject   = detect(c("^subj", "^id$", "^subject", "^usubjid", "^patid",
-                          "^pat$", "^proband", "^teilnehmer"), 1),
-    time      = detect(c("^time", "^tpt", "^hours?$", "^hour", "^apts",
-                          "^ntim", "^zeit", "^tid"), 2),
-    conc      = detect(c("^conc", "^dv$", "^cp[^a-z]", "^cp$", "^concentration",
-                          "^result", "^konz", "^plasma", "ug.l", "ng.ml"), 3),
-    treatment = detect_optional(c("^trt", "^treat", "^form", "^drug", "^arm",
-                                   "^behandl")),
-    period    = detect_optional(c("^per", "^period", "^prd", "^phase")),
-    sequence  = detect_optional(c("^seq", "^grp", "^sequence")),
-    dose      = detect_optional(c("^dose", "^amt$", "^amount", "^dosis"))
-  )
-}
