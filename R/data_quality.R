@@ -16,9 +16,10 @@
 #' @param data Data frame (raw, before BLQ processing)
 #' @param col_map Named list with subject, time, conc, and optional columns
 #' @param lloq Numeric LLOQ value (0 = not set)
+#' @param dec Decimal mark chosen at upload ("." or ",")
 #' @return List with $findings (data frame), $n_errors, $n_warnings, $n_info,
 #'         $pass (logical: TRUE if no errors)
-run_data_quality_check <- function(data, col_map, lloq = 0) {
+run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
   
   findings <- list()
   add <- function(severity, category, message, detail = "", action = "") {
@@ -34,6 +35,12 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
   
   n_rows <- nrow(data)
   n_cols <- ncol(data)
+  raw_data <- data
+  # Decimal-comma numbers stored as text are read exactly as the pipeline will
+  # read them (see normalise_decimal_comma() in R/pipeline.R)
+  for (cc in unique(c(col_map$time, col_map$conc))) {
+    if (!is.null(cc) && cc %in% names(data)) data[[cc]] <- normalise_decimal_comma(data[[cc]], dec)
+  }
   
   # ===========================================================================
   # 1. BASIC STRUCTURE CHECKS
@@ -54,6 +61,12 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
   } else {
     add("OK", "Structure", paste(n_rows, "rows ×", n_cols, "columns loaded"))
   }
+
+  # Interlocks that need no column mapping (file shape, units): R/interlocks.R
+  add_interlocks <- function(f) {
+    for (i in seq_len(nrow(f))) findings[[length(findings) + 1]] <<- f[i, , drop = FALSE]
+  }
+  add_interlocks(run_interlocks(data, col_map, scope = "file"))
   
   # ===========================================================================
   # 2. COLUMN EXISTENCE & TYPE CHECKS
@@ -376,59 +389,11 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
   # 6. TIME ORDERING & DUPLICATES
   # ===========================================================================
   
-  # Check for duplicate time points within each profile. A profile is one
-  # subject under one treatment in one period, so group by whichever of
-  # Treatment and Period are mapped: the same nominal time is expected to recur
-  # across periods and treatments.
+  # Duplicate times within a profile (stacked profiles) are checked by
+  # interlock_stacked_profiles() in R/interlocks.R, run at the end.
   has_trt <- !is.null(col_map$treatment) && col_map$treatment %in% names(data)
   has_per <- !is.null(col_map$period) && col_map$period %in% names(data)
-  prof_group <- if (has_trt && has_per) {
-    paste(data[[col_map$treatment]], data[[col_map$period]], sep = "||")
-  } else if (has_trt) {
-    as.character(data[[col_map$treatment]])
-  } else if (has_per) {
-    as.character(data[[col_map$period]])
-  } else {
-    rep("", nrow(data))
-  }
 
-  dup_count <- 0
-  dup_subjects <- c()
-  for (s in subjects) {
-    s_idx <- data[[subj_col]] == s & !is.na(time_num)
-    for (g in unique(prof_group[s_idx])) {
-      g_times <- time_num[s_idx & prof_group == g]
-      if (any(duplicated(g_times))) {
-        dup_count <- dup_count + sum(duplicated(g_times))
-        dup_subjects <- c(dup_subjects, s)
-      }
-    }
-  }
-  dup_subjects <- unique(dup_subjects)
-
-  if (dup_count > 0) {
-    unmapped <- c(if (!has_trt) "Treatment", if (!has_per) "Period")
-    add("ERROR", "Time",
-        paste(dup_count, "duplicate time points across",
-              length(dup_subjects), "subjects"),
-        paste0("Subjects: ", paste(head(dup_subjects, 5), collapse = ", ")),
-        if (length(unmapped) == 0) {
-          paste0("Duplicate times within one subject, treatment and period usually mean ",
-                 "several profiles are stacked in one column: more than one analyte or ",
-                 "matrix, or repeated rows. Filter the file so each subject contributes one ",
-                 "profile per treatment and period. Only average duplicates when they are ",
-                 "genuine replicate measurements of the same sample.")
-        } else {
-          paste0("Duplicate times usually mean several profiles are stacked in one ",
-                 "column: more than one analyte, matrix, period or treatment. If your file ",
-                 "has a ", paste(unmapped, collapse = " or "), " column, map it; otherwise ",
-                 "split or filter the file so each subject contributes one profile. Only ",
-                 "average duplicates when they are genuine replicate measurements of the ",
-                 "same sample.")
-        })
-  }
-
-  
   # ===========================================================================
   # 7. CROSSOVER DESIGN CHECKS (if treatment column mapped)
   # ===========================================================================
@@ -520,6 +485,10 @@ run_data_quality_check <- function(data, col_map, lloq = 0) {
     }
   }
   
+  # Interlocks that need the column mapping (time format, profile start,
+  # stacked profiles): R/interlocks.R
+  add_interlocks(run_interlocks(data, col_map, scope = "mapped"))
+
   compile_findings(findings)
 }
 

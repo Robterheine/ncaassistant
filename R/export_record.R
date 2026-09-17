@@ -883,7 +883,7 @@ verify_file_hash(rec$input_file, rec$data_sha256, "Data file")
 # 2. Read and prepare the data exactly as the app did
 raw <- read_pk_file(rec$input_file, rec$read_args)
 ds  <- prepare_pk_dataset(raw, rec$column_mapping,
-                          list(lloq = rec$lloq, blq_rule = rec$blq_rule))
+                          list(lloq = rec$lloq, blq_rule = rec$blq_rule, read_args = rec$read_args))
 
 # 3. NCA with the recorded settings and half-life overrides
 result <- run_nca(ds$data, ds$col_map, record_nca_settings(rec, ds$data, ds$col_map),
@@ -918,7 +918,8 @@ verify_file_hash(rec$input_file, rec$data_sha256, "Data file")
 # The profile: from the uploaded file (prepared as in the app) or manual entry
 if (identical(rec$data_source, "uploaded_file")) {
   raw  <- read_pk_file(rec$input_file, rec$read_args)
-  ds   <- prepare_pk_dataset(raw, rec$column_mapping, list(lloq = rec$lloq, blq_rule = rec$blq_rule))
+  ds   <- prepare_pk_dataset(raw, rec$column_mapping,
+                             list(lloq = rec$lloq, blq_rule = rec$blq_rule, read_args = rec$read_args))
   rows <- profile_data_rows(ds$data, ds$col_map, rec$subject)
   time <- ds$data[[ds$col_map$time]][rows]
   conc <- ds$data[[ds$col_map$conc]][rows]
@@ -1124,7 +1125,7 @@ source("nca_pipeline.R")
 verify_file_hash(rec$input_file, rec$data_sha256, "Data file")
 raw <- read_pk_file(rec$input_file, rec$read_args)
 ds  <- prepare_pk_dataset(raw, rec$column_mapping,
-                          list(lloq = rec$lloq, blq_rule = rec$blq_rule))
+                          list(lloq = rec$lloq, blq_rule = rec$blq_rule, read_args = rec$read_args))
 
 
 # --- Step 3: Assemble plotting frame ----------------------------------------

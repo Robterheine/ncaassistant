@@ -277,7 +277,8 @@ data_upload_server <- function(id, shared) {
       }
       
       # Quality check
-      qc <- run_data_quality_check(raw_data(), col_map, lloq = input$lloq)
+      qc <- run_data_quality_check(raw_data(), col_map, lloq = input$lloq,
+                                   dec = if (is.null(read_args()$dec)) "." else read_args()$dec)
       shared$qc_result <- qc
       
       # Auto-detect LLOQ from BLQ text entries if not set
@@ -314,7 +315,8 @@ data_upload_server <- function(id, shared) {
       ds <- prepare_pk_dataset(raw_data(), col_map, list(
         lloq = input$lloq, blq_rule = input$blq_rule, door = "flat",
         file_name = input$file_upload$name, file_path = input$file_upload$datapath,
-        read_args = read_args(), pipeline_sha256 = PIPELINE_SHA256, qc = qc))
+        read_args = read_args(), pipeline_sha256 = PIPELINE_SHA256, qc = qc,
+        interlocks = run_interlocks(raw_data(), col_map)))
       data   <- ds$data
       design <- ds$design
       

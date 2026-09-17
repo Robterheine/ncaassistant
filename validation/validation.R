@@ -34,7 +34,7 @@ if (length(missing) > 0) {
 }
 library(NonCompart); library(PowerTOST); library(nlme); library(digest)
 
-for (f in c("R/pipeline.R", "R/utils.R", "R/nca_helpers.R", "R/data_quality.R",
+for (f in c("R/pipeline.R", "R/utils.R", "R/nca_helpers.R", "R/interlocks.R", "R/data_quality.R",
            "R/export_record.R", "R/designs.R", "R/be_analysis.R")) {
   tryCatch(source(f, local = TRUE), error = function(e) NULL)
 }
@@ -53,7 +53,7 @@ APP_VERSION <- tryCatch({
 
 source_files <- c("R/utils.R", "R/nca_helpers.R", "R/data_quality.R",
                   "R/export_record.R", "R/mod_data_upload.R", "R/designs.R", "R/be_analysis.R",
-                  "R/pipeline.R")
+                  "R/pipeline.R", "R/interlocks.R")
 hash_files <- c("validation/validation.R", source_files)
 file_hashes <- sapply(hash_files, function(f) {
   if (file.exists(f)) digest(file = f, algo = "sha256") else "FILE_NOT_FOUND"
@@ -331,6 +331,120 @@ check("DAT-PREP-09", "The pipeline is Shiny-free and the upload module uses it",
   }, error = function(e) FALSE),
   "URS-GEN-01", critical = FALSE, method = "source inspection",
   expected = "no Shiny calls in pipeline.R; module calls prepare_pk_dataset; no brace counting in validation.R")
+
+# --- IL: interlocks (R/interlocks.R), run by the data quality check ----------
+il_fix <- function(f) read.csv(file.path("validation", "fixtures", f), stringsAsFactors = FALSE)
+il_err <- function(qc, pattern) {
+  f <- if (is.data.frame(qc)) qc else qc$findings
+  any(f$Severity == "ERROR" & grepl(pattern, paste(f$Message, f$Detail, f$Action), ignore.case = TRUE))
+}
+il_adnca_cm <- list(subject = "USUBJID", time = "NRRLT", conc = "AVAL", treatment = "TRTP", period = "APERIOD")
+il_flat_cm  <- list(subject = "Subject", time = "Time", conc = "Conc", treatment = "Treatment", period = "Period")
+
+check("IL-SNIFF-01", "ADNCA-shaped files are refused at the flat upload (F1, F3-F9)",
+  tryCatch({
+    fx <- c("adnca_clean.csv", "adnca_dtype.csv", "adnca_anl01fl.csv", "adnca_multi_analyte.csv",
+            "adnca_afrlt.csv", "adnca_datetime.csv", "adnca_units_mixed.csv", "adnca_multi_ex.csv")
+    all(sapply(fx, function(f) {
+      d <- il_fix(f); cm <- il_adnca_cm
+      if (!"NRRLT" %in% names(d)) cm$time <- "PCDTC"
+      il_err(run_data_quality_check(d, cm, lloq = 0.5), "CDISC|ADNCA")
+    }))
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "run_data_quality_check on 8 ADNCA-shaped fixtures",
+  expected = "ERROR naming the CDISC/ADNCA shape for every fixture")
+check("IL-SNIFF-02", "Flat files are not mistaken for ADNCA",
+  tryCatch({
+    d1 <- il_fix("flat_equivalent.csv")
+    d2 <- read.csv("data/example_be_crossover.csv", stringsAsFactors = FALSE)
+    d3 <- data.frame(USUBJID = 1:2, Time = c(0, 1), Conc = c(0, 5))   # USUBJID alone is not ADNCA
+    !il_err(run_data_quality_check(d1, il_flat_cm, lloq = 0.5), "CDISC|ADNCA") &&
+      !il_err(run_data_quality_check(d2, list(subject = "Subject", time = "Time", conc = "Concentration",
+                                              treatment = "Treatment", period = "Period"), 0), "CDISC|ADNCA") &&
+      !il_err(run_data_quality_check(d3, list(subject = "USUBJID", time = "Time", conc = "Conc"), 0), "CDISC|ADNCA")
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "F2, BE example, file with only a USUBJID column",
+  expected = "no ADNCA refusal")
+check("IL-UNIT-01", "More than one concentration unit is refused, even if numerically equivalent",
+  tryCatch({
+    d8 <- il_fix("adnca_units_mixed.csv"); d1 <- il_fix("adnca_clean.csv")
+    flat <- data.frame(Subject = rep(1:2, each = 3), Time = rep(c(0, 1, 2), 2), Conc = c(0, 5, 4, 0, 6, 5),
+                       Unit = c(rep("ng/mL", 3), rep("mg/L", 3)))
+    flat1 <- transform(flat, Unit = "ng/mL")
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc")
+    il_err(run_interlocks(d8, il_adnca_cm), "unit") && !il_err(run_interlocks(d1, il_adnca_cm), "unit") &&
+      il_err(run_data_quality_check(flat, cm, 0), "unit") && !il_err(run_data_quality_check(flat1, cm, 0), "unit")
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "F8 (ng/mL and ug/L), F1, flat file with a Unit column",
+  expected = "ERROR only when a unit column has more than one value")
+check("IL-TIME-01", "Date-time time columns are refused (Excel datetimes, ISO datetimes, durations, clock times)",
+  tryCatch({
+    cm <- list(subject = "S", time = "T", conc = "C")
+    base <- data.frame(S = 1, C = c(0, 5, 3))
+    posix <- transform(base, T = as.POSIXct("2026-01-01 08:00", tz = "UTC") + c(0, 3600, 7200))
+    iso   <- transform(base, T = c("2026-01-01T08:00", "2026-01-01T09:00", "2026-01-01T10:00"))
+    dur   <- transform(base, T = c("PT0H", "PT1H", "PT1H30M"))
+    clock <- transform(base, T = c("08:00", "09:00", "10:30"))
+    ok    <- transform(base, T = c(0, 1, 2))
+    all(sapply(list(posix, iso, dur, clock), function(d) il_err(run_interlocks(d, cm), "date|time format|duration|clock"))) &&
+      nrow(run_interlocks(ok, cm)[run_interlocks(ok, cm)$Severity == "ERROR", ]) == 0
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "POSIXct, ISO 8601 datetime, ISO duration, clock time vs numeric",
+  expected = "ERROR for the four date/time forms, none for numbers")
+check("IL-T0-01", "Profiles that do not start near time zero are refused (time since first dose)",
+  tryCatch({
+    d6 <- il_fix("adnca_afrlt.csv")
+    flat6 <- data.frame(Subject = d6$SUBJID, Treatment = d6$TRTP, Period = d6$APERIOD, Time = d6$ARRLT, Conc = d6$AVAL)
+    flat2 <- il_fix("flat_equivalent.csv")
+    il_err(run_interlocks(flat6, il_flat_cm), "time zero|first dose") &&
+      !il_err(run_interlocks(flat2, il_flat_cm), "time zero|first dose")
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "flat file built from F6 (period 2 from ~168 h) vs F2",
+  expected = "ERROR for F6 only")
+check("IL-T0-02", "Epoch-second times refused; a sparse profile only warns",
+  tryCatch({
+    cm <- list(subject = "S", time = "T", conc = "C")
+    epoch <- data.frame(S = 1, T = 1.77e9 + c(0, 3600, 7200, 14400), C = c(1, 5, 4, 2))
+    sparse <- data.frame(S = c(1, 1, 2, 2, 2), T = c(1, 2, 0, 1, 2), C = c(5, 3, 0, 5, 3))
+    f <- run_interlocks(sparse, cm)
+    il_err(run_interlocks(epoch, cm), "time zero|first dose|date") &&
+      !any(f$Severity == "ERROR") && any(f$Severity == "WARNING" & grepl("time zero", f$Message))
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "epoch seconds; subject 1 with two samples at 1 and 2 h",
+  expected = "ERROR for epoch times; WARNING (not ERROR) for the sparse profile")
+check("IL-STACK-01", "Stacked profiles (duplicate times within a profile) are an interlock",
+  tryCatch({
+    d <- rbind(il_fix("flat_equivalent.csv"), il_fix("flat_equivalent.csv")[1:5, ])
+    il_err(run_interlocks(d, il_flat_cm), "duplicate") &&
+      !il_err(run_interlocks(il_fix("flat_equivalent.csv"), il_flat_cm), "duplicate")
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "F2 with five rows repeated vs F2", expected = "ERROR only when stacked")
+check("IL-DEC-01", "Decimal-comma concentrations with BLQ text are read when the decimal mark is a comma",
+  tryCatch({
+    f <- tempfile(fileext = ".csv")
+    writeLines(c("Subject;Time;Conc", "1;0;<0,5", "1;1;4,25", "1;2;3,5", "1;4;2", "1;8;0,75"), f)
+    raw <- read_pk_file(f, list(sep = ";", dec = ","))
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc")
+    qc <- run_data_quality_check(raw, cm, lloq = 0.5, dec = ",")
+    ds <- prepare_pk_dataset(raw, cm, list(lloq = 0.5, blq_rule = "rule1", read_args = list(sep = ";", dec = ",")))
+    !il_err(qc, "unrecognized") && identical(ds$data$Conc, c(0, 4.25, 3.5, 2, 0.75))
+  }, error = function(e) FALSE),
+  "URS-DAT-04", critical = TRUE, method = "'<0,5', '4,25', '3,5' with dec = ','", expected = "no text error; 4.25, 3.5, 0.75")
+check("IL-DEC-02", "With a point decimal mark, comma values are still refused",
+  tryCatch({
+    raw <- data.frame(Subject = 1, Time = c(0, 1, 2), Conc = c("0", "4,25", "3,5"))
+    !is.null(raw) && il_err(run_data_quality_check(raw, list(subject = "Subject", time = "Time", conc = "Conc"), 0, dec = "."), "unrecognized")
+  }, error = function(e) FALSE),
+  "URS-DAT-04", critical = TRUE, method = "'4,25' with dec = '.'", expected = "ERROR: unrecognized text")
+check("IL-LIB-01", "Interlocks return the quality-report finding shape and run in the quality check",
+  tryCatch({
+    f <- run_interlocks(il_fix("adnca_clean.csv"), il_adnca_cm)
+    qc <- run_data_quality_check(il_fix("adnca_clean.csv"), il_adnca_cm, lloq = 0.5)
+    identical(names(f), c("Severity", "Category", "Message", "Detail", "Action")) &&
+      all(f$Message %in% qc$findings$Message) && !qc$pass
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = FALSE, method = "run_interlocks() vs run_data_quality_check()",
+  expected = "same columns as findings; included in QC; QC does not pass")
 
 end_section("DAT")
 
@@ -1892,7 +2006,7 @@ rec_build <- function(raw_csv_lines = NULL, df = NULL, cm, st, lloq = 0, rule = 
   wd <- file.path(tempdir(), paste0("recb", as.integer(runif(1, 1, 1e7)))); dir.create(wd)
   f <- file.path(wd, "input.csv")
   if (!is.null(raw_csv_lines)) writeLines(raw_csv_lines, f) else write.csv(df, f, row.names = FALSE)
-  ds <- prepare_pk_dataset(read_pk_file(f, read_args), cm, list(lloq = lloq, blq_rule = rule))
+  ds <- prepare_pk_dataset(read_pk_file(f, read_args), cm, list(lloq = lloq, blq_rule = rule, read_args = read_args))
   res <- suppressWarnings(run_nca(ds$data, cm, st, lz_overrides = overrides))
   zp <- file.path(wd, "rec.zip")
   out <- suppressWarnings(create_analysis_record(zp, res, st, cm, f, "input.csv", blq_rule = rule,
@@ -1927,15 +2041,15 @@ check("REC-02", "Molar units: the reproduction uses the recorded molecular weigh
   expected = "MATCH (the previous script omitted MW)")
 check("REC-03", "Semicolon / decimal-comma file with BLQ text reproduces",
   tryCatch({
-    # Semicolon-separated, decimal comma in Time (fully numeric column), '<0.1' BLQ text
-    lines <- c("Subject;Time;Conc", "1;0;<0.1", "1;0,5;4.2", "1;1;6.1", "1;2;5.0", "1;4;3.1", "1;8;1.2", "1;12;0.5",
-               "2;0;<0.1", "2;0,5;3.9", "2;1;6.6", "2;2;5.4", "2;4;3.0", "2;8;1.4", "2;12;0.6")
+    # Semicolon-separated, decimal commas throughout, '<0,1' BLQ text in the Conc column
+    lines <- c("Subject;Time;Conc", "1;0;<0,1", "1;0,5;4,2", "1;1;6,1", "1;2;5,0", "1;4;3,1", "1;8;1,2", "1;12;0,5",
+               "2;0;<0,1", "2;0,5;3,9", "2;1;6,6", "2;2;5,4", "2;4;3,0", "2;8;1,4", "2;12;0,6")
     cm <- list(subject = "Subject", time = "Time", conc = "Conc")
     r <- rec_build(raw_csv_lines = lines, cm = cm, st = theoph_settings, lloq = 0.1, rule = "rule1",
                    read_args = list(sep = ";", dec = ","))
     grepl("Result: MATCH", rec_check_text(r$ex)) && nrow(r$result) == 2
   }, error = function(e) FALSE),
-  "URS-EXP-04", critical = TRUE, method = "sep ';', dec ',' (Time 0,5), '<0.1' text, LLOQ 0.1",
+  "URS-EXP-04", critical = TRUE, method = "sep ';', dec ',', '<0,1' text in a decimal-comma Conc column, LLOQ 0.1",
   expected = "MATCH (the previous script read every file as comma-separated)")
 check("REC-04", "Replicate BE record with per-subject doses and an override reproduces",
   tryCatch({

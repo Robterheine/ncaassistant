@@ -33,6 +33,23 @@ read_pk_file <- function(path, read_args = list(), ext = tools::file_ext(path)) 
   }
 }
 
+#' Read decimal-comma numbers stored as text when the file uses a decimal comma
+#'
+#' read.csv(dec = ",") converts a column only when every value is a number.
+#' A concentration column that also holds BLQ text ("<0,5") stays text, and
+#' values such as "4,25" would become missing. When the upload's decimal mark
+#' is a comma, values that are plain decimal-comma numbers are rewritten with
+#' a point; anything else (BLQ text, other text) is left unchanged.
+#' @param x Column as read
+#' @param dec Decimal mark chosen at upload
+normalise_decimal_comma <- function(x, dec) {
+  if (!identical(dec, ",") || !(is.character(x) || is.factor(x))) return(x)
+  x <- as.character(x)
+  num_comma <- grepl("^\\s*-?\\d+,\\d+\\s*$", x)
+  x[num_comma] <- sub(",", ".", trimws(x[num_comma]), fixed = TRUE)
+  x
+}
+
 #' Count BLQ text entries and suggest an LLOQ from "<x" values
 #'
 #' @param conc_raw Concentration column as uploaded
@@ -62,7 +79,8 @@ blq_text_summary <- function(conc_raw) {
 #' @param col_map Column mapping (subject, time, conc and optional
 #'   treatment, period, sequence, dose)
 #' @param opts list(lloq, blq_rule, door, file_name, file_path, read_args,
-#'   pipeline_sha256, qc)
+#'   pipeline_sha256, qc, interlocks). read_args$dec = "," also reads
+#'   decimal-comma numbers stored as text (normalise_decimal_comma()).
 #' @return pk_dataset: list(data, col_map, design, provenance, analyte, units,
 #'   time_basis, blq, flags, interlocks, qc)
 prepare_pk_dataset <- function(raw, col_map, opts = list()) {
@@ -70,6 +88,9 @@ prepare_pk_dataset <- function(raw, col_map, opts = list()) {
   rule <- if (is.null(opts$blq_rule)) "rule1" else opts$blq_rule
 
   data <- raw
+  dec <- opts$read_args$dec
+  data[[col_map$time]] <- normalise_decimal_comma(data[[col_map$time]], dec)
+  data[[col_map$conc]] <- normalise_decimal_comma(data[[col_map$conc]], dec)
   data[[col_map$time]] <- suppressWarnings(as.numeric(data[[col_map$time]]))
 
   # Pre-process BLQ text entries before numeric conversion. Values like
@@ -129,7 +150,8 @@ prepare_pk_dataset <- function(raw, col_map, opts = list()) {
                       na_policy = "missing"),
     flags      = list(anl01fl_applied = FALSE, dtype_present = FALSE,
                       n_rows_dropped = n_dropped),
-    interlocks = data.frame(Severity = character(0), Category = character(0),
+    interlocks = if (!is.null(opts$interlocks)) opts$interlocks else
+                 data.frame(Severity = character(0), Category = character(0),
                             Message = character(0), Detail = character(0),
                             Action = character(0), stringsAsFactors = FALSE),
     qc         = opts$qc
