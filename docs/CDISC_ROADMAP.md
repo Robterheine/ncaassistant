@@ -12,7 +12,7 @@ refusals that look like omissions.
 | Part | Workstream | Status |
 |---|---|---|
 | **A** (§1–9) | CDISC / SDTM interoperability | Phase 0 shipped in v1.3.0 (`58d6f5b`). Phases 1–5 pending. |
-| **B** (§10–15) | Bioequivalence design coverage — replicate designs | Reviewed and decided. **This is the next version.** Verified against the code on 2026-09-17 (§10.5). **Tier 0 shipped** (`a85936b`, `7faf9bf`, `5a73794`); B1–B6 pending. |
+| **B** (§10–15) | Bioequivalence design coverage — replicate designs | Reviewed and decided. **This is the next version.** Verified against the code on 2026-09-17 (§10.5). **Tier 0 and B1–B6 shipped** (Tier 0: `a85936b`, `7faf9bf`, `5a73794`; Part B: `0ad844b`, `138ea3d`, `e277f37`, `37a2a12`, `c47dbfc`, `193da3d`). README and user manual update pending. |
 
 The two interact: Part B's implementation is cheaper and cleaner if Part A's
 Phase 1 (extract `R/pipeline.R`) is done first. See §14.
@@ -540,7 +540,12 @@ combined order at the end of §15.
 
 **Decision: this is the next version.** Reviewed September 2026 by a senior
 biostatistician, a senior clinical pharmacologist and an R/Shiny engineer.
-Nothing below has been built yet.
+
+> **Status (2026-09-17): built.** Tier 0 and B1–B6 are implemented; see
+> §12.1 for what was done and the decisions taken while implementing.
+> Outstanding: the README and the PDF user manual (deliberately left to one
+> pass at the end), the URS (new requirement URS-BE-09), and the §6
+> documentation overclaims.
 
 ---
 
@@ -907,6 +912,36 @@ first, otherwise none of the fixes below can be regression-tested (D10).
 
 Each of 2–8 gets a regression test through the function from step 1, written to
 fail before the fix.
+
+### 12.1 Implementation record (2026-09-17)
+
+Validation grew from 191 to 236 automated checks; every new check was
+written to fail before its fix, except guards that protect existing behaviour.
+
+| Phase | Commit | Delivered |
+|---|---|---|
+| B1 + B2 | `0ad844b` | `profile_key()` (Subject × Treatment × Period) used by `run_nca()`, `apply_blq_rules()` and — embedded verbatim — the reproduction script; key parts restored by `match()`. `build_be_data()` merges on all three keys, coerces types, and stops if the row count would change. CI table distinguishes subjects (N) from profiles (Obs). `nca_profile_key` in the settings JSON; schema 1.3.0. Interim replicate refusal removed. Fixtures in `validation/fixtures/`. |
+| B3 | `138ea3d` | Profile helpers replace every `strsplit()` label lookup in the BE, batch and single-subject modules; half-life overrides write back to exactly one administration and are replayed per period by the script; replicate note on batch summary statistics. |
+| B4 | `e277f37` | `be_variability_diagnostic()`: swR/CVwR, swT/CVwT (or "not estimable" for partial replicates), ratio, EMA ABEL limits with cap, PE vs 80–125%; shown under the CI table with the no-verdict statement and a pooled-variance note for 2×3×3; exported to Excel and the record. |
+| B5 | `37a2a12` | `R/designs.R` registry drives the planner menus, the analysis menu, the scaled-analysis note and the About page; data-vs-selection check; legacy codes still accepted. Fixed "Williams design" mislabels in the Data Guide and Methods page. |
+| B6 | `c47dbfc` | `REP-RBE-01`: agreement with `replicateBE::method.A` on all 30 reference data sets (DF identical; PE, CI, CVwR, CVwT, ABEL limits within 1e-8; observed ≤ 2e-12). |
+| — | `193da3d` | Visualize legend notes pooled administrations for replicate designs. |
+
+**Decisions taken while implementing** (reversals of §11–§13 recorded here):
+
+- **Period column only when Period is mapped.** §13 proposed emitting it
+  always. A column of NA for files without a period adds nothing; the grain is
+  stated instead by `nca_profile_key` in every record.
+- **Committed reference values plus a live check.** `make_reference_values.R`
+  stores `replicateBE` results for the fixtures, so those checks need no extra
+  package; `REP-RBE-01` additionally runs `replicateBE` on its 30 data sets.
+  `replicateBE` is therefore a validation-only dependency, auto-installed by
+  `validation.R` and never loaded by the app.
+- **ABEL limits only (EMA).** The diagnostic shows EMA expanded limits; FDA
+  RSABE quantities are not shown. No scaled verdict of any kind (§11.3 holds).
+- **Design codes changed** to the registry codes (`2x2x2`, `2x2x3`, `2x3x3`,
+  `2x2x4`, `parallel`, `paired`). Records written by the Tier 0 build use the
+  old codes; `be_design_model()` still maps them.
 
 ### Phase B1 — Period-aware profile key (0.5 d)
 
