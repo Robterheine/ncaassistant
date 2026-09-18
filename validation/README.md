@@ -30,13 +30,37 @@ Or from within R:
 source("validation/validation.R")
 ```
 
-The script installs any missing packages automatically. Required packages: `NonCompart`, `PowerTOST`, `nlme`, `digest`, `openxlsx`, `jsonlite`, `readxl`, `dplyr`, `replicateBE`. The interface packages the app loads (shiny, bslib, shinyWidgets, DT, plotly, ggplot2, htmltools, tidyr) are checked but not installed by the script. `replicateBE` is needed only for validation: it is the reference implementation that the replicate-design checks compare against (section REP); the app itself does not use it.
+### What the script needs
 
-CDISC parameter codes come from one pinned release of CDISC SDTM Controlled Terminology (`cdisc/ct_release.dcf`, `cdisc/pk_parameter_terms.csv`, extracted by `cdisc/extract_pk_terms.R`); checks EXP-CD-01..03 and REC-09 verify it.
+**R.** Version 4.1.0 or newer (checked by IQ-01).
 
-Test data for crossover and replicate designs live in `validation/fixtures/`, not `data/`. `make_fixtures.R` (crossover/replicate designs) and `make_adnca_fixtures.R` (ADNCA-shaped data, roadmap fixtures F1–F9) generate them deterministically and `make_reference_values.R` records the matching `replicateBE::method.A` results; both the generators and their outputs are committed.
+**R packages.** The script installs any that are missing:
 
-On completion the script prints a results summary to the console and writes `validation/validation_results.csv`.
+| Package | Used for |
+|---|---|
+| `NonCompart` | the NCA itself |
+| `PowerTOST` | sample size and power |
+| `nlme` | mixed-effects bioequivalence models |
+| `digest` | SHA-256 hashes |
+| `openxlsx`, `jsonlite`, `readxl` | reading and writing record files |
+| `dplyr` | data handling in the figure checks |
+| `replicateBE` | validation only: the reference implementation the replicate-design and partial AUC checks compare against (sections REP and PAUC). The app never uses it |
+
+The interface packages the app loads (shiny, bslib, shinyWidgets, DT, plotly, ggplot2, htmltools, tidyr) are checked but not installed by the script.
+
+**Files.** Run the script from the project root: it reads the repository by relative path and does not copy anything into a temporary folder first. It needs
+
+- `R/*.R` and `app.R` — the code under test, sourced directly, plus `APP_VERSION`;
+- `converters/adnca_to_flat.R` — the standalone ADNCA converter (section CONV);
+- `cdisc/ct_release.dcf` and `cdisc/pk_parameter_terms.csv` — the pinned CDISC release the parameter codes come from (checks EXP-CD-01..03 and REC-09);
+- `data/example_theoph.csv` and `data/example_be_crossover.csv` — example datasets used by the NCA and record checks;
+- **`validation/fixtures/`** — required. Crossover, replicate and ADNCA-shaped test data, plus `replicateBE_reference.csv` with the committed `replicateBE::method.A` values. These files are read at the top level of the script, so a missing fixture stops the run with `cannot open file ...` rather than failing a single test: without the folder the run aborts partway and produces no results file.
+
+Test data for crossover and replicate designs live in `validation/fixtures/`, not in `data/`. `make_fixtures.R` (crossover and replicate designs) and `make_adnca_fixtures.R` (ADNCA-shaped data) generate them deterministically, and `make_reference_values.R` records the matching `replicateBE::method.A` results; the generators and their outputs are both committed, so the suite runs without regenerating anything.
+
+**Nothing else is needed to run the suite.** `make_iqoqpq.py` is only for regenerating the IQ/OQ/PQ protocol afterwards and needs Python with `python-docx`; the app's own runtime (a browser, a Shiny server) is not involved, because the script tests the code, not a running app.
+
+On completion the script prints a results summary to the console and writes `validation/validation_results.csv`. That file is deliberately not committed: it is regenerated on every run and records the machine and environment of that run. The IQ/OQ/PQ protocol holds the committed record of a passing run.
 
 ---
 
