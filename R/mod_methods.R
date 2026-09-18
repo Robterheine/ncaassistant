@@ -209,7 +209,11 @@ methods_ui <- function() {
                "If exposure does not scale proportionally with dose, dose-normalized ",
                "parameters should be interpreted with caution."),
         
-        tags$h6(class = "fw-semibold mt-3", "Descriptive Statistics"),
+                tags$p(class = "small",
+               "Partial AUCs and the maximum concentration within an interval were normalised in the same way; ",
+               "the time of that maximum was not."),
+
+tags$h6(class = "fw-semibold mt-3", "Descriptive Statistics"),
         tags$p(class = "small",
                "Summary statistics were computed for each PK parameter across subjects. ",
                "Arithmetic mean, standard deviation (SD), and coefficient of variation ",

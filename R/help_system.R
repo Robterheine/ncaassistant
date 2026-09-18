@@ -281,7 +281,10 @@ help_dose_norm <- info_btn("help_dose_norm", "What is dose normalization?",
   values (0.50 and 0.475) let you check whether the drug behaves proportionally 
   to dose.
   <br><br>
-  <em>Enable this if your study includes multiple dose levels.</em>")
+  <em>Enable this if your study includes multiple dose levels.</em>
+  <br><br>
+  Partial AUCs and the Cmax within an interval are normalised too; Tmax is not,
+  because it is a time.")
 
 
 # --- BE / STATISTICS -------------------------------------------------------

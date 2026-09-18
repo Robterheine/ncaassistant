@@ -804,7 +804,7 @@ server <- function(input, output, session) {
                       "listed with the CDISC code AUCINT"),
               tags$li(tags$strong("Fix: "), "the reproduction script of a Figure Record for a summary plot stopped ",
                       "with an error, so that figure was never rebuilt"),
-              tags$li("Validation: 360 automated and 49 manual tests (was 338 and 44), with a new section for ",
+              tags$li("Validation: 361 automated and 49 manual tests (was 338 and 44), with a new section for ",
                       "partial AUCs; 62 user requirements (was 58)")
             )
           ),

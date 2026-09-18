@@ -72,3 +72,5 @@ SWING,any,any,SWING,
 AUC_T1_T2,any,any,AUCINT,"Partial AUC columns (AUC_start_end). The interval start and end belong in PPSTINT and PPENINT"
 CMAX_T1_T2,any,any,,"No code for the maximum concentration within an interval in this release"
 TMAX_T1_T2,any,any,,"No code for the time of the maximum concentration within an interval in this release"
+AUC_T1_T2_DN,any,any,AUCINTD,"Dose-normalised partial AUC. The interval start and end belong in PPSTINT and PPENINT"
+CMAX_T1_T2_DN,any,any,,"No code for the maximum concentration within an interval in this release"

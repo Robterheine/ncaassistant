@@ -5,6 +5,7 @@
 "AUCIFP","AUC Infinity Pred","C85785","The area under the curve (AUC) extrapolated to infinity, calculated using the predicted value of the last non-zero concentration."
 "AUCIFPD","AUC Infinity Pred Norm by Dose","C85786","The area under the curve (AUC) extrapolated to infinity, calculated using the predicted value of the last non-zero concentration, divided by the dose."
 "AUCINT","AUC from T1 to T2","C85566","The area under the curve (AUC) over the interval from T1 to T2."
+"AUCINTD","AUC from T1 to T2 Norm by Dose","C92313","The area under the curve (AUC) over the interval from T1 to T2 divided by the dose."
 "AUCLST","AUC to Last Nonzero Conc","C85565","The area under the curve (AUC) from the time of dosing to the last measurable concentration."
 "AUCLSTD","AUC to Last Nonzero Conc Norm by Dose","C92310","The area under the curve (AUC) from the time of dosing to the last measurable concentration divided by the dose."
 "AUCPBEO","AUC %Back Extrapolation Obs","C85763","Applies only for intravascular bolus dosing. The area under the curve (AUC) from the first measured concentration value back extrapolated to the concentration value at time zero as a percentage of the area under the curve extrapolated to infinity using the observed value of the last non-zero concentration."

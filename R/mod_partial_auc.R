@@ -65,9 +65,6 @@ partial_auc_server <- function(id, show_role = FALSE) {
   })
 }
 
-#' Partial AUC, Cmax-in-interval and Tmax-in-interval columns among names
-partial_auc_cols <- function(x) grep(PARTIAL_AUC_PATTERN, x, value = TRUE)
-
 #' Alert listing the notes about partial AUCs from the last run
 partial_auc_notes_ui <- function(notes) {
   if (length(notes) == 0) return(NULL)

@@ -3388,6 +3388,31 @@ check("PAUC-21", "Bioequivalence reports profiles that rest mainly on BLQ-derive
   expected = paste("rule 1 gives a zero and no estimate; rule 6 keeps the estimate but reports one",
                    "Test profile as mostly BLQ, and Cmax in the interval inherits that flag"))
 
+check("PAUC-22", "Dose normalisation covers partial AUCs and Cmax within an interval",
+  tryCatch({
+    iv <- pa_iv(c(0, 4), c("1", "t"), cmax = c(TRUE, FALSE))
+    r <- suppressWarnings(run_nca(pa_be, pa_be_cm, pa_st(iv, trap = "log")))
+    dn <- add_dose_normalized(as.data.frame(r), 100)
+    dv <- stats::setNames(rep(c(50, 100), each = 6), as.character(1:12))
+    dn2 <- add_dose_normalized(as.data.frame(r), dv)
+    codes <- cdisc_pk_codes(c("AUC_0_1_DN", "CMAX_0_1_DN"))
+    same <- function(a, b) length(a) == length(b) && all(enc2utf8(a) == enc2utf8(b))
+    all(c("AUC_0_1_DN", "AUC_4_t_DN", "CMAX_0_1_DN") %in% names(dn)) &&
+      !("TMAX_0_1_DN" %in% names(dn)) &&
+      isTRUE(all.equal(as.numeric(dn$AUC_0_1_DN), as.numeric(dn$AUC_0_1) / 100)) &&
+      # a per-subject dose vector is matched by subject, not by position
+      isTRUE(all.equal(as.numeric(dn2$CMAX_0_1_DN),
+                       as.numeric(dn2$CMAX_0_1) / as.numeric(dv[as.character(dn2$Subject)]))) &&
+      same(unname(friendly_name("AUC_0_1_DN")), "Dose-Normalised Partial AUC 0\u20131") &&
+      # the label must not pick up a concentration unit meant for the plain metric
+      same(unname(add_units_to_labels(unname(friendly_name("AUC_0_1_DN")), conc_unit = "ng/mL")),
+           "Dose-Normalised Partial AUC 0\u20131") &&
+      identical(codes$PPTESTCD, c("AUCINTD", "")) && codes$PPTEST[1] == "AUC from T1 to T2 Norm by Dose"
+  }, error = function(e) FALSE),
+  "URS-NCA-08", critical = FALSE,
+  method = "add_dose_normalized() on a result with two intervals, single and per-subject doses",
+  expected = "DN columns for the interval AUC and Cmax but not Tmax; doses matched by subject; AUCINTD code")
+
 check("PAUC-18", "Methods page, help and Data Guide describe partial AUCs as implemented",
   tryCatch({
     has <- function(f, keys) { m <- paste(rev3_code(f), collapse = " "); all(vapply(keys, grepl, logical(1), m, fixed = TRUE)) }

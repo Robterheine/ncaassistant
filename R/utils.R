@@ -174,10 +174,16 @@ friendly_name <- function(name) {
 #' "AUC_0_0.5" -> "Partial AUC 0\u20130.5"; "CMAX_168_t" -> "Cmax 168\u2013t";
 #' NA for any other name. Times are in the time unit of the data.
 partial_auc_label <- function(name) {
-  m <- regmatches(name, regexec(PARTIAL_AUC_PATTERN, name))
-  vapply(m, function(x) if (length(x) == 0) NA_character_ else
-    paste0(switch(x[2], AUC = "Partial AUC ", CMAX = "Cmax ", TMAX = "Tmax "), x[3], "\u2013", x[4]),
-    character(1))
+  dn <- grepl("_DN$", name)
+  base <- sub("_DN$", "", name)
+  m <- regmatches(base, regexec(PARTIAL_AUC_PATTERN, base))
+  vapply(seq_along(m), function(i) {
+    x <- m[[i]]
+    if (length(x) == 0) return(NA_character_)
+    lab <- paste0(switch(x[2], AUC = "Partial AUC ", CMAX = "Cmax ", TMAX = "Tmax "), x[3], "\u2013", x[4])
+    # "Dose-Normalised ..." first, so no concentration unit is appended later
+    if (dn[i]) paste0("Dose-Normalised ", lab) else lab
+  }, character(1))
 }
 
 #' Rename columns of an NCA result data frame to friendly names

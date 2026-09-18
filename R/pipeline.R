@@ -673,6 +673,10 @@ partial_auc_names <- function(spec) {
 #' Pattern of partial AUC, Cmax-in-interval and Tmax-in-interval column names
 PARTIAL_AUC_PATTERN <- "^(AUC|CMAX|TMAX)_([0-9.]+)_([0-9.]+|t)$"
 
+#' Those columns among a set of names (used by the app, the exports and the
+#' dose-normalisation helper, so it lives with the pattern, not in a module)
+partial_auc_cols <- function(x) grep(PARTIAL_AUC_PATTERN, x, value = TRUE)
+
 #' NonCompart iAUC rows for the intervals
 #'
 #' A fixed end is NonCompart's partial AUC from start to end. For an end at the

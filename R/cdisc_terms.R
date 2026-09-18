@@ -44,8 +44,9 @@ cdisc_pk_codes <- function(params, admin_route = "extravascular", is_ss = FALSE)
   ss <- if (isTRUE(is_ss)) "yes" else "no"
   rows <- lapply(params, function(p) {
     # Partial AUC columns share one map row per kind (AUC_T1_T2, CMAX_T1_T2, TMAX_T1_T2)
-    iv <- regmatches(p, regexec(PARTIAL_AUC_PATTERN, p))[[1]]
-    key <- if (length(iv) > 0) paste0(iv[2], "_T1_T2") else p
+    dn <- grepl("_DN$", p)
+    iv <- regmatches(sub("_DN$", "", p), regexec(PARTIAL_AUC_PATTERN, sub("_DN$", "", p)))[[1]]
+    key <- if (length(iv) > 0) paste0(iv[2], "_T1_T2", if (dn) "_DN" else "") else p
     cand <- map[map$app_parameter == key &
                 map$route %in% c(admin_route, "any") &
                 map$steady_state %in% c(ss, "any"), , drop = FALSE]

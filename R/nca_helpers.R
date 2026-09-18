@@ -89,9 +89,12 @@ add_dose_normalized <- function(nca_result, dose) {
     key <- if (length(cols) > 1) do.call(paste, c(lapply(nca_result[cols], as.character), sep = "||")) else as.character(subj)
     dose <- as.numeric(if (all(key %in% names(dose))) dose[key] else dose[as.character(subj)])
   }
-  # Parameters that should be dose-normalized
+  # Parameters that should be dose-normalized. Partial AUCs and the maximum
+  # concentration within an interval are exposure metrics like the others, so
+  # they are normalised as well; Tmax within an interval is a time.
   dn_params <- c("CMAX", "AUCLST", "AUCIFO", "AUCIFP",
-                  "AUMCLST", "AUMCIFO", "AUMCIFP")
+                  "AUMCLST", "AUMCIFO", "AUMCIFP",
+                  grep("^(AUC|CMAX)_", partial_auc_cols(names(nca_result)), value = TRUE))
   
   for (p in dn_params) {
     if (p %in% names(nca_result)) {
