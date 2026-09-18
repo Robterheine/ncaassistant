@@ -268,7 +268,7 @@ help_partial_auc <- info_btn("help_partial_auc", "What is a partial AUC?",
   confidence interval only.
   <br><br>
   <b>Cmax and Tmax in an interval:</b> both are reported in the results table, and Cmax
-  can be compared in bioequivalence (the EMA asks for it for some long-acting products).
+  can be compared in bioequivalence when your protocol asks for the peak inside a window.
   Tmax within an interval is not offered there, because a window holds only a few
   sampling times, so a confidence interval on it would not mean much. Tmax over the whole
   profile can be compared, with the warning that it needs a non-parametric analysis.")

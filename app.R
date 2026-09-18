@@ -787,7 +787,7 @@ server <- function(input, output, session) {
                       "A cutoff between two samples is interpolated, which the app also reports"),
               tags$li(tags$strong("New: Cmax and Tmax within an interval. "),
                       "Both are observed values, without interpolation, and Cmax can be compared in ",
-                      "Bioequivalence (the EMA asks for it for some long-acting products)"),
+                      "Bioequivalence when the protocol asks for the peak inside a window"),
               tags$li(tags$strong("New: pivotal and supportive metrics. "),
                       "A pivotal interval receives a bioequivalence verdict, a supportive interval only its ratio ",
                       "and confidence interval. A metric with a value of zero in any profile receives no estimate ",

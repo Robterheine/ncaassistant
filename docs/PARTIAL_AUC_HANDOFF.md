@@ -12,6 +12,8 @@
 - The interval editor allows up to 6 intervals. Tmax in an interval is reported but not offered in Bioequivalence.
 - D5 shades the intervals of the last analysis on the Visualize summary plot; an end at t is drawn to the last time shown.
 - The EMA modified-release guideline (EMA/CHMP/EWP/280/96 Rev1, 20 November 2014, effective 1 June 2015) was verified on 2026-09-18 and is now cited on the Methods page and in the manual. Its §6.8.2.2 states that the widening used for Cmax of a highly variable product "can be used for widening the acceptance criteria for Cmax,ss, Cτ,ss, and partialAUC", so the informational CVwR and implied EMA limits the app already shows for partial AUCs are consistent with it. The app still scales nothing itself.
+- The app stays generic: no product-specific behaviour or claims. Cmax within an interval (D9) is offered as a plain
+  option for any window, and the app text no longer says which products a regulator asks it for.
 - Fixed on the way: the summary-plot Figure Record script used `%>%` without loading dplyr and failed to reproduce.
 
 Review team: statistician, clinical pharmacologist, R/Shiny engineer.
@@ -222,7 +224,7 @@ Decided by the owner on 2026-09-18.
 | D5 | Shading intervals in Visualize Data | **Include**, phase 5 (last, after the core feature is stable) |
 | D6 | Paths that get partial AUCs | **All Subjects, One Subject at a Time, Bioequivalence** (not Plan a Study, which only needs a CV) |
 | D7 | Data-driven cutoff selection (Periyasamy 2026) | **Do not offer** (Tsakiridou 2025 supports this, section 4.6 #8) |
-| D8 | Per-subject Reference-Tmax cutoffs (Health Canada) | **Not in the first release**; design the interval fields so it can be added later without a redesign |
+| D8 | Per-subject Reference-Tmax cutoffs (Health Canada) | **Out of scope (2026-09-18).** A jurisdiction-specific convention that needs the Reference arm and a cutoff per subject; the app stays generic, and a median Tmax can already be typed as a fixed number. The interval fields still accept per-profile ends if this is ever reconsidered |
 | D9 | "Cmax in interval" per interval (EMA exenatide, octreotide) | **Include**, as an optional column: observed maximum in the interval and its time, no interpolation, compared in Bioequivalence like other metrics. This is a second per-interval metric, not just pAUC — plan for it in Phase 1 (calculation) and Phase 3 (BE comparison), not as a bolt-on |
 | D10 | Expanded EMA limits for highly variable partial AUCs (information only) | **Resolved 2026-09-18.** EMA/CHMP/EWP/280/96 Rev1 §6.8.2.2 allows the Cmax widening approach for Cmax,ss, Cτ,ss and partial AUC, so the variability table keeps CVᵥᵣ and the limits it would imply, for information; the app applies only the limits the analyst enters and issues no scaled verdict |
 | D11 | Warning when an interval depends mainly on BLQ-derived values | **Include.** Remove the `data$.is_blq <- NULL` line in `apply_blq_rules()` so the BLQ flag survives through the pipeline. This touches shared code used by every analysis path, not just pAUC — treat it as its own small, tested change within Phase 1 |
@@ -454,7 +456,7 @@ Then a factual audit of all new text against the code, as before the v1.4.0 merg
 - **Model-based partial AUCs** (population PK, NONMEM), mentioned in Periyasamy 2026.
 - **Sparse-sampling designs** where FDA computes partial AUCs from mean profiles with bootstrap or Bailer's method (FDA 2026 statistical guidance): a different analysis altogether.
 - **Automatic or data-driven cutoff selection** (D7).
-- **Tmax-based cutoffs computed by the app** (D8): the reference product's median Tmax, per-subject reference Tmax, or the earlier Tmax. A median Tmax can already be typed as a fixed number.
+- **Tmax-based cutoffs computed by the app** (D8, out of scope 2026-09-18): the reference product's median Tmax, per-subject reference Tmax, or the earlier Tmax. A median Tmax can already be typed as a fixed number.
 - **Cτ after a single dose** and concentrations at other stated times (section 4.6 #3).
 - **AUC from a cutoff to infinity** (for example AUC τ/2–∞ in Boily's post-hoc analysis): this needs extrapolation, which conflicts with D1.
 - **PK/PD-model-based selection of sensitive windows** (exenatide, paliperidone in Tsakiridou 2025).
@@ -466,6 +468,6 @@ Then a factual audit of all new text against the code, as before the v1.4.0 merg
 - **AUCINT:** present in CDISC SDTM CT release 2026-03-27 (codelists C85839/C85493), and the exact PPSTINT/PPENINT conventions.
 - **EMA modified-release guideline:** verified 2026-09-18. §6.1.1.2: "An early partialAUC (0 – cut-off t) and a terminal partialAUC (cut-off t - tlast), separated by a predefined cut-off time point, e.g. the half of the dosage interval are recommended, unless otherwise scientifically justified", for a single-dose study replacing a multiple-dose study. §6.8.2.2 allows the Cmax widening approach for Cmax,ss, Cτ,ss and partial AUC.
 - **FDA PSGs:** confirm "t" is the last measurable time point and not the last sampling time, in a sample of the PSGs listed in Hopefl 2025 (leuprolide PSG_021731, budesonide PSG_215935).
-- **EMA modified-release guideline, for D9:** the exact wording for Cmax per phase (§6.8.1.1 asks for partialAUC, Cmax and tmax in all phases of a multiphasic product; the per-phase Cmax wording for exenatide and octreotide in Tsakiridou 2025 is not from this guideline).
+- **Cmax per phase (D9): closed 2026-09-18.** The app keeps a generic option (the observed maximum and its time within any interval the user defines) and makes no product-specific claim, so the exenatide and octreotide wording in Tsakiridou 2025 does not need to be traced to a guideline.
 - **Health Canada:** whether current guidance still requires AUCRefTmax (Tsakiridou 2025 cites a 1992 report). Only needed if D8 is taken up.
 - **NonCompart `IntAUC` behaviour** at a cutoff before the first sample after IV bolus (C0 back-extrapolation), and whether Rule 1's pre-first-quantifiable zeros give the expected early partial AUC.
