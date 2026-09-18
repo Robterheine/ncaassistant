@@ -699,6 +699,18 @@ path_be_server <- function(id, shared) {
         
         ci_df <- do.call(rbind, ci_results)
 
+        # How many profiles of each treatment rest mainly on BLQ-derived values
+        # for that metric. A ratio can be driven by such a profile without any
+        # value being exactly zero, which the zero columns would not show.
+        blq_counts <- partial_auc_blq_counts(attr(nca_res, "partial_auc_blq"), be_data,
+                                             if (is.null(ci_df)) character(0) else ci_df$Parameter,
+                                             trt_col_be, trt_levels)
+        if (!is.null(blq_counts)) {
+          i <- match(ci_df$Parameter, blq_counts$Parameter)
+          ci_df$BLQ_Test <- blq_counts$BLQ_Test[i]
+          ci_df$BLQ_Ref  <- blq_counts$BLQ_Ref[i]
+        }
+
         # Within-subject variability (replicate designs only; informational).
         # Only for log-transformed ratio parameters, never TMAX.
         cv_rows <- list()
@@ -894,7 +906,8 @@ path_be_server <- function(id, shared) {
                             names(display_ci))
       # Profiles that could not enter a comparison are part of the result
       for (cc in c("Profiles missing (Test)", "Profiles missing (Reference)",
-                   "Zero values (Test)", "Zero values (Reference)")) {
+                   "Zero values (Test)", "Zero values (Reference)",
+                   "Mostly BLQ (Test)", "Mostly BLQ (Reference)")) {
         v <- suppressWarnings(as.numeric(display_ci[[cc]]))
         if (!is.null(v) && any(v > 0, na.rm = TRUE))
           key_cols <- append(key_cols, cc, after = match("Bioequivalent?", key_cols) - 1)

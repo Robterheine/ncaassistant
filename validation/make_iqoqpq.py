@@ -41,6 +41,11 @@ def test_rows(sec): return [[r["ID"], r["Test"], r["Method"], r["Expected"], r["
 
 # --- Front matter ---------------------------------------------------------------
 set_text(para("NCA Assistant v"), "NCA Assistant v1.5.0")
+# the running header carries the version too, and drifted to v1.2 once
+for sec in d.sections:
+    for hp in sec.header.paragraphs:
+        if "IQ/OQ/PQ Protocol" in hp.text:
+            set_text(hp, "NCA Assistant v1.5.0 \u2014 IQ/OQ/PQ Protocol")
 set_text(para("This protocol defines"),
   "This protocol defines the IQ, OQ, and PQ procedures for NCA Assistant v1.5.0. Execute: Rscript validation/validation.R "
   "from the project root. The test tables below list every automated test with the method, expected result, URS "

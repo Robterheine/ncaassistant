@@ -50,6 +50,9 @@ normalise_decimal_comma <- function(x, dec) {
   x
 }
 
+#' Name of the column that marks values set by the BLQ rule
+BLQ_FLAG_COLUMN <- "BLQ_flag"
+
 #' Text that means "below the limit of quantification"
 #'
 #' "<x", BLQ, BQL, BLOQ, ND (not detected) and NQ (not quantifiable), in any
@@ -340,20 +343,23 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
     i[order(suppressWarnings(as.numeric(data[[time_col]][i])))]
   }
 
-  # Identify BLQ values
-  data$.is_blq <- !is.na(data[[conc_col]]) & data[[conc_col]] < lloq
+  # Identify BLQ values. The flag stays in the dataset under a readable name:
+  # the partial AUC notes and the bioequivalence table report how much of an
+  # interval rests on values this rule set. A column of this name in the
+  # uploaded file is replaced.
+  data[[BLQ_FLAG_COLUMN]] <- !is.na(data[[conc_col]]) & data[[conc_col]] < lloq
   
   if (rule == "rule2") {
     # All BLQ -> 0
-    data[[conc_col]][data$.is_blq] <- 0
+    data[[conc_col]][data[[BLQ_FLAG_COLUMN]]] <- 0
     
   } else if (rule == "rule3") {
     # All BLQ -> NA
-    data[[conc_col]][data$.is_blq] <- NA
+    data[[conc_col]][data[[BLQ_FLAG_COLUMN]]] <- NA
     
   } else if (rule == "rule4") {
     # All BLQ -> LLOQ/2
-    data[[conc_col]][data$.is_blq] <- lloq / 2
+    data[[conc_col]][data[[BLQ_FLAG_COLUMN]]] <- lloq / 2
     
   } else if (rule == "rule5") {
     # Pre-Cmax BLQ -> 0; post-Cmax BLQ -> NA
@@ -369,8 +375,8 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
       pre_cmax  <- idx[1:tmax_idx]
       post_cmax <- if (tmax_idx < length(idx)) idx[(tmax_idx + 1):length(idx)] else integer(0)
       
-      data[[conc_col]][intersect(pre_cmax,  which(data$.is_blq))] <- 0
-      data[[conc_col]][intersect(post_cmax, which(data$.is_blq))] <- NA
+      data[[conc_col]][intersect(pre_cmax,  which(data[[BLQ_FLAG_COLUMN]]))] <- 0
+      data[[conc_col]][intersect(post_cmax, which(data[[BLQ_FLAG_COLUMN]]))] <- NA
     }
     
   } else if (rule == "rule6") {
@@ -379,10 +385,10 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
     for (s in unique(prof_key)) {
       idx <- profile_idx(s)
       sub <- data[idx, ]
-      quant_idx <- which(!sub$.is_blq & !is.na(sub[[conc_col]]))
+      quant_idx <- which(!sub[[BLQ_FLAG_COLUMN]] & !is.na(sub[[conc_col]]))
       
       if (length(quant_idx) == 0) {
-        data[[conc_col]][idx[data$.is_blq[idx]]] <- lloq / 2
+        data[[conc_col]][idx[data[[BLQ_FLAG_COLUMN]][idx]]] <- lloq / 2
         next
       }
       
@@ -391,11 +397,11 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
       # Before first quantifiable: set BLQ to LLOQ/2
       if (first_quant > 1) {
         pre <- idx[1:(first_quant - 1)]
-        data[[conc_col]][intersect(pre, which(data$.is_blq))] <- lloq / 2
+        data[[conc_col]][intersect(pre, which(data[[BLQ_FLAG_COLUMN]]))] <- lloq / 2
       }
       # All other BLQ (during and after quantifiable phase): set to 0
       from_quant <- idx[first_quant:length(idx)]
-      data[[conc_col]][intersect(from_quant, which(data$.is_blq))] <- 0
+      data[[conc_col]][intersect(from_quant, which(data[[BLQ_FLAG_COLUMN]]))] <- 0
     }
     
   } else {
@@ -403,10 +409,10 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
     for (s in unique(prof_key)) {
       idx <- profile_idx(s)
       sub <- data[idx, ]
-      quant_idx <- which(!sub$.is_blq & !is.na(sub[[conc_col]]))
+      quant_idx <- which(!sub[[BLQ_FLAG_COLUMN]] & !is.na(sub[[conc_col]]))
       
       if (length(quant_idx) == 0) {
-        data[[conc_col]][idx[data$.is_blq[idx]]] <- NA
+        data[[conc_col]][idx[data[[BLQ_FLAG_COLUMN]][idx]]] <- NA
         next
       }
       
@@ -416,21 +422,19 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
       # Before first quantifiable: set BLQ to 0
       if (first_quant > 1) {
         pre <- idx[1:(first_quant - 1)]
-        data[[conc_col]][intersect(pre, which(data$.is_blq))] <- 0
+        data[[conc_col]][intersect(pre, which(data[[BLQ_FLAG_COLUMN]]))] <- 0
       }
       # After last quantifiable: set BLQ to NA
       if (last_quant < length(idx)) {
         post <- idx[(last_quant + 1):length(idx)]
-        data[[conc_col]][intersect(post, which(data$.is_blq))] <- NA
+        data[[conc_col]][intersect(post, which(data[[BLQ_FLAG_COLUMN]]))] <- NA
       }
       # Between: BLQ to 0 (common convention)
       between <- idx[first_quant:last_quant]
-      data[[conc_col]][intersect(between, which(data$.is_blq))] <- 0
+      data[[conc_col]][intersect(between, which(data[[BLQ_FLAG_COLUMN]]))] <- 0
     }
   }
   
-  # The flag stays: partial AUCs report when an interval rests mainly on
-  # values set by this rule
   data
 }
 
@@ -1044,16 +1048,22 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
       rows <- data[[nca_key]] == result[[1]][i]
       flags[[i]] <- partial_auc_profile(as.list(result[i, , drop = FALSE]), pauc,
                                         data[[col_map$time]][rows], data[[col_map$conc]][rows],
-                                        data$.is_blq[rows], partial_auc_blq_fraction(settings))
+                                        data[[BLQ_FLAG_COLUMN]][rows], partial_auc_blq_fraction(settings))
       vals <- rbind(vals, flags[[i]]$values)
     }
     result <- result[, !grepl("^\\.PAUC", names(result)), drop = FALSE]
     for (n in colnames(vals)) result[[n]] <- unname(vals[, n])
+    # Which profiles rest mainly on BLQ-derived values, per interval. The
+    # bioequivalence table reports these counts, because such a profile can
+    # move a log-scale ratio without being a zero.
+    blq_by_profile <- as.data.frame(do.call(rbind, lapply(flags, function(p) p$blq)))
+    names(blq_by_profile) <- partial_auc_names(pauc)$auc
     keys <- as.character(result[[1]])
     labels <- if (use_composite_key)
       profile_labels(key_parts[match(keys, key_parts$.nca_key), pk$cols, drop = FALSE]) else keys
     for (msg in partial_auc_notes(pauc, flags, labels, settings$trap_method,
                                   partial_auc_blq_fraction(settings))) warning(msg)
+    pauc_blq <- blq_by_profile
   }
 
   # If a composite key was used, restore its parts (Subject, Treatment,
@@ -1066,7 +1076,12 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
     for (cc in pk$cols) result[[cc]] <- key_parts[[cc]][idx]
     result <- result[, c(pk$cols, setdiff(names(result), pk$cols))]
   }
-  
+
+  if (!is.null(result) && exists("pauc_blq", inherits = FALSE)) {
+    key_cols <- intersect(if (use_composite_key) pk$cols else names(result)[1], names(result))
+    attr(result, "partial_auc_blq") <- cbind(result[, key_cols, drop = FALSE], pauc_blq)
+  }
+
   result
 }
 

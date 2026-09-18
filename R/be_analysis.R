@@ -404,6 +404,35 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
 }
 
 
+#' Profiles per treatment whose partial AUC rests mainly on BLQ-derived values
+#'
+#' A ratio can be driven by such a profile without any value being exactly
+#' zero, so the bioequivalence table reports these counts beside the zero and
+#' missing counts. Cmax and Tmax within an interval inherit the flag of their
+#' interval.
+#'
+#' @param blq_tab attr(run_nca(...), "partial_auc_blq"): the profile keys and
+#'   one logical column per interval
+#' @param be_data Data frame at NCA-profile grain (build_be_data()$data)
+#' @param params PK parameters in the comparison
+#' @return data.frame(Parameter, BLQ_Test, BLQ_Ref), or NULL without flags
+partial_auc_blq_counts <- function(blq_tab, be_data, params, trt_col, trt_levels) {
+  if (is.null(blq_tab) || length(params) == 0) return(NULL)
+  keys <- intersect(c("Subject", "Treatment", "Period"), names(blq_tab))
+  if (length(keys) == 0) return(NULL)
+  bd <- merge(be_data[, unique(c(keys, trt_col)), drop = FALSE], blq_tab, by = keys,
+              all.x = TRUE, sort = FALSE)
+  count <- function(param, level) {
+    col <- sub("^(CMAX|TMAX)_", "AUC_", param)
+    if (!col %in% names(bd)) return(NA_integer_)
+    sum(bd[[col]] %in% TRUE & as.character(bd[[trt_col]]) == level)
+  }
+  data.frame(Parameter = params,
+             BLQ_Test = vapply(params, count, integer(1), level = trt_levels[2]),
+             BLQ_Ref  = vapply(params, count, integer(1), level = trt_levels[1]),
+             stringsAsFactors = FALSE)
+}
+
 #' Decide which BE design to analyse, given what the data show
 #'
 #' A study in which every subject received the treatments in the same order

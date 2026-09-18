@@ -3164,16 +3164,19 @@ check("PAUC-10", "Notes for interpolated cutoffs, zero partial AUCs and interval
 
 check("PAUC-11", "The BLQ flag is kept through the pipeline and does not change results",
   tryCatch({
-    fl <- pa_lai_ds$data$.is_blq
-    no_flag <- pa_lai_ds$data; no_flag$.is_blq <- NULL
+    fl <- pa_lai_ds$data[[BLQ_FLAG_COLUMN]]
+    no_flag <- pa_lai_ds$data; no_flag[[BLQ_FLAG_COLUMN]] <- NULL
     iv <- pa_iv(c(0, 3), c("3", "t"), cmax = TRUE)
     r1 <- suppressWarnings(run_nca(pa_lai_ds$data, pa_cm, pa_st(iv)))
     r2 <- suppressWarnings(run_nca(no_flag, pa_cm, pa_st(iv)))
     is.logical(fl) && sum(fl) == 8 &&
       identical(fl, pa_lai$C[order(pa_lai$ID, pa_lai$T)] == "<0.05") &&
-      is.null(prepare_pk_dataset(pa_d, pa_cm)$data$.is_blq) && isTRUE(all.equal(r1, r2))
+      is.null(prepare_pk_dataset(pa_d, pa_cm)$data[[BLQ_FLAG_COLUMN]]) && isTRUE(all.equal(r1, r2)) &&
+      # a readable column name, not an internal one
+      identical(BLQ_FLAG_COLUMN, "BLQ_flag") && !startsWith(BLQ_FLAG_COLUMN, ".")
   }, error = function(e) FALSE),
-  "URS-DAT-04", critical = TRUE, method = "prepare_pk_dataset with LLOQ 0.05 and rule 1; run_nca with and without the flag",
+  "URS-DAT-04", critical = TRUE,
+  method = "prepare_pk_dataset with LLOQ 0.05 and rule 1; run_nca with and without the BLQ_flag column",
   expected = "flag TRUE exactly for the 8 BLQ samples; absent without LLOQ; identical NCA results")
 
 pa_be <- read.csv(file.path("validation", "fixtures", "be_2x2x2_crossover.csv"), stringsAsFactors = FALSE)
@@ -3344,6 +3347,46 @@ check("PAUC-17", "Figures shade the partial AUC intervals, also in the Figure Re
   }, error = function(e) FALSE),
   "URS-VIZ-09", critical = FALSE, method = "partial_auc_shading(); summary figure record with two shaded intervals",
   expected = "0-1.5 and 4-36 (t drawn to the last time); script shades them; figure produced")
+
+check("PAUC-21", "Bioequivalence reports profiles that rest mainly on BLQ-derived values",
+  tryCatch({
+    d <- pa_be
+    # one subject absorbs late, so its 0.5 h sample is below an LLOQ of 0.5
+    d$Conc[d$Subject == 1 & d$Treatment == "Test" & d$Time == 0.5] <- 0.2
+    out <- lapply(c("rule1", "rule6"), function(rule) {
+      ds <- prepare_pk_dataset(d, pa_be_cm, list(lloq = 0.5, blq_rule = rule))
+      r <- suppressWarnings(run_nca(ds$data, pa_be_cm, pa_st(pa_iv(0, "0.5"), trap = "log")))
+      b <- build_be_data(r, ds$data, pa_be_cm, reference = "Reference")
+      f <- fit_be_parameter(b$data, "AUC_0_0.5", design = "2x2x2", trt_col = b$trt_col,
+                            subj_col = b$subj_col, per_col = b$per_col, seq_col = b$seq_col)
+      cnt <- partial_auc_blq_counts(attr(r, "partial_auc_blq"), b$data, "AUC_0_0.5",
+                                    b$trt_col, levels(b$data[[b$trt_col]]))
+      list(f = f, cnt = cnt)
+    })
+    r1 <- out[[1]]; r6 <- out[[2]]
+    # Rule 1 makes the value exactly zero: suppressed, and counted as a zero
+    is.na(r1$f$row$Point_Est) && r1$f$row$Zeros_Test == 1 &&
+      # Rule 6 imputes LLOQ/2, so the metric keeps a verdict; the count is what
+      # tells the reader that one Test profile rests on imputed values
+      is.finite(r6$f$row$Point_Est) && r6$f$row$Zeros_Test == 0 &&
+      r6$cnt$BLQ_Test == 1 && r6$cnt$BLQ_Ref == 0 && r1$cnt$BLQ_Test == 1 &&
+      # Cmax within the interval inherits the flag of its interval
+      identical(partial_auc_blq_counts(attr(suppressWarnings(run_nca(
+        prepare_pk_dataset(d, pa_be_cm, list(lloq = 0.5, blq_rule = "rule6"))$data, pa_be_cm,
+        pa_st(pa_iv(0, "0.5", cmax = TRUE), trap = "log"))), "partial_auc_blq"),
+        build_be_data(suppressWarnings(run_nca(
+          prepare_pk_dataset(d, pa_be_cm, list(lloq = 0.5, blq_rule = "rule6"))$data, pa_be_cm,
+          pa_st(pa_iv(0, "0.5", cmax = TRUE), trap = "log"))),
+          prepare_pk_dataset(d, pa_be_cm, list(lloq = 0.5, blq_rule = "rule6"))$data,
+          pa_be_cm, reference = "Reference")$data,
+        "CMAX_0_0.5", "Treatment", c("Reference", "Test"))$BLQ_Test, 1L) &&
+      all(c("Mostly BLQ (Test)", "Mostly BLQ (Reference)") %in%
+            names(rename_be_columns(data.frame(BLQ_Test = 1, BLQ_Ref = 0))))
+  }, error = function(e) FALSE),
+  "URS-BE-10", critical = TRUE,
+  method = "one late-absorbing profile under BLQ rules 1 and 6; partial_auc_blq_counts()",
+  expected = paste("rule 1 gives a zero and no estimate; rule 6 keeps the estimate but reports one",
+                   "Test profile as mostly BLQ, and Cmax in the interval inherits that flag"))
 
 check("PAUC-18", "Methods page, help and Data Guide describe partial AUCs as implemented",
   tryCatch({

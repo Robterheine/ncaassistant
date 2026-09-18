@@ -64,6 +64,11 @@ path_data_server <- function(id, shared) {
         card(
           card_header("Data Preview (first 200 rows)"),
           card_body(
+            tags$p(class = "text-muted small",
+                   "The data as the app will analyse them: sorted per profile, with the BLQ rule applied. ",
+                   "When you set an LLOQ, the app adds a ", tags$code("BLQ_flag"),
+                   " column marking the values that rule set, which the partial AUC notes and the ",
+                   "bioequivalence table report. A column of that name in your file is replaced."),
             DTOutput(ns("preview_table"))
           )
         ),

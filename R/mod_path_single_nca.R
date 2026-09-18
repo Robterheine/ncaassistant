@@ -384,7 +384,7 @@ path_single_nca_server <- function(id, shared) {
         sub_t <- suppressWarnings(as.numeric(as.character(sub_d[[cm$time]])))
         sub_c <- suppressWarnings(as.numeric(as.character(sub_d[[cm$conc]])))
         ord <- order(sub_t)
-        list(time = sub_t[ord], conc = sub_c[ord], label = sel, is_blq = sub_d$.is_blq[ord])
+        list(time = sub_t[ord], conc = sub_c[ord], label = sel, is_blq = sub_d[[BLQ_FLAG_COLUMN]][ord])
       }
     })
     
