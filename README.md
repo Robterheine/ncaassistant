@@ -85,6 +85,22 @@ Available at [robterheine.shinyapps.io/NCAassistant](https://robterheine.shinyap
 
 ---
 
+## Repository Layout
+
+| Path | What is in it | What it is for |
+|---|---|---|
+| [`app.R`](app.R) | The Shiny app: UI shell, navigation, the About page and `APP_VERSION` | Entry point. `shiny::runApp()` starts here, and it sources everything in `R/` |
+| [`R/`](R/) | 21 files: one module per workflow path (`mod_path_*.R`), the Shiny-free analysis pipeline (`pipeline.R`), bioequivalence statistics (`be_analysis.R`), Analysis Records (`export_record.R`), data checks, help text and the Statistical Methods page | All application code. `pipeline.R` is deliberately free of Shiny, so the validation suite and every Analysis Record can run it outside the app |
+| [`data/`](data/) | Five small example datasets (theophylline, crossover, parallel, replicate, ADNCA) | The example files the Data Preparation Guide offers for download, and the datasets the worked examples in the manual use |
+| [`cdisc/`](cdisc/) | One pinned release of CDISC SDTM Controlled Terminology: the release metadata, the extracted PK parameter terms, the map from app parameters to PPTESTCD, and the extractor script | Lets results, downloads and records state the official CDISC code of each parameter, from one stated release. A code lookup only: the app produces no SDTM PP datasets |
+| [`converters/`](converters/) | `adnca_to_flat.R` and its documentation | Converts a CDISC ADNCA dataset to a flat CSV outside the app, for scripted use. It calls the same conversion code as the app's ADNCA upload, so both give the same result. The app itself never loads this folder |
+| [`validation/`](validation/) | The validation package: the test script, the URS and IQ/OQ/PQ documents, the protocol generator, and `fixtures/` with committed test data and their deterministic generators | Qualification evidence. `fixtures/` is required to run the suite; see [`validation/README.md`](validation/README.md) |
+| [`www/`](www/) | The user manual PDF, the stylesheet and the logo | Files the app serves to the browser. The manual link in the header points here |
+| [`install_and_run.R`](install_and_run.R) | Dependency installation and launch | One-step setup for a new machine |
+| `NCA_Assistant_User_Manual_v1.6.docx` | The manual source | Edited in Word; the PDF in `www/` is exported from it |
+
+---
+
 ## Validation
 
 A consolidated validation package is available in [`validation/`](validation/), following a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles.
