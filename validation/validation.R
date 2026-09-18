@@ -3015,7 +3015,7 @@ check("PAUC-04", "No extrapolation: an interval past Tlast is not reported, what
       is.na(pa_num(r, "Q", "AUC_0_18")) && is.finite(pa_num(r, "P", "AUC_0_18")) &&
       identical(pa_num(r, "P", "AUC_0_18"), pa_num(r_strict, "P", "AUC_0_18")) &&
       # ASCII-only patterns: an en dash in a pattern is locale-dependent
-      any(grepl("is not reported for 1 profile\\(s\\): Q: no measurable concentration after 12", w)) &&
+      any(grepl("is not reported for 1 of 2 profiles: Q: no measurable concentration after 12", w)) &&
       any(grepl("below the limit of quantification does not extend the profile", w)) &&
       any(grepl("not extrapolated", w))
   }, error = function(e) FALSE),
@@ -3119,12 +3119,13 @@ check("PAUC-10", "Notes for interpolated cutoffs, zero partial AUCs and interval
     d0 <- pa_d; d0$C[d0$ID == "P" & d0$T == 0.25] <- 0
     w_zero <- pa_warn(run_nca(d0, pa_cm, pa_st(pa_iv(0, 0.25))))$w
     w_blq <- pa_warn(run_nca(pa_lai_ds$data, pa_cm, pa_st(pa_iv(c(14, 1), c("t", "3")))))$w
-    any(grepl("a cutoff is not a sampling time in 2 profile\\(s\\).*log-linearly", w_off)) &&
-      any(grepl("0.25 is zero in 1 profile\\(s\\): P", w_zero)) &&
-      any(grepl("more than half of the samples in this window were set by the BLQ rule, in 1 profile\\(s\\): L2",
+    any(grepl("a cutoff is not a sampling time in 2 of 2 profiles.*log-linearly", w_off)) &&
+      any(grepl("0.25 is zero in 1 of 2 profiles: P", w_zero)) &&
+      any(grepl("more than half of the samples in this window were set by the BLQ rule, in 1 of 2 profiles: L2",
                 w_blq)) &&
       sum(grepl("more than half of the samples", w_blq)) == 1 &&
-      any(grepl("rests on fewer than three measurable concentrations in 1 profile\\(s\\): L2", w_blq))
+      any(grepl("rests on fewer than three measurable concentrations in 1 of 2 profiles, so the value is imprecise: L2",
+                w_blq))
   }, error = function(e) FALSE),
   "URS-NCA-13", critical = FALSE,
   method = "cutoff 0.75 h; a zero early interval; plateau 14 d-t with BLQ and few measurable samples",

@@ -778,12 +778,14 @@ partial_auc_notes <- function(spec, flags, labels, trap_method = "linear",
     if (is.null(p$tlast) || is.na(p$tlast)) "no measurable concentration at all" else
       paste0("no measurable concentration after ", .pauc_num(p$tlast))
   }, character(1))
-  who <- function(f, i, detail = NULL) {
+  who <- function(f, i, detail = NULL, tail = "") {
     h <- which(vapply(flags, function(p) isTRUE(p[[f]][i]), logical(1)))
     if (length(h) == 0) return(NULL)
     txt <- if (is.null(detail)) labels[h] else paste0(labels[h], ": ", detail[h])
-    if (single) return(if (is.null(detail)) "this profile" else paste0("this profile: ", detail[h]))
-    paste0(length(h), " profile(s): ", paste(head(txt, 5), collapse = "; "),
+    if (single) return(paste0("this profile", tail, if (is.null(detail)) "" else paste0(": ", detail[h])))
+    # The denominator keeps a note that applies to most profiles readable as a
+    # property of the interval, not as a list of exceptions
+    paste0(length(h), " of ", length(flags), " profiles", tail, ": ", paste(head(txt, 5), collapse = "; "),
            if (length(h) > 5) paste0(" and ", length(h) - 5, " more") else "")
   }
   lab <- paste0("Partial AUC ", .pauc_num(spec$start), "\u2013", spec$end)
@@ -806,9 +808,9 @@ partial_auc_notes <- function(spec, flags, labels, trap_method = "linear",
     w <- who("blq", i)
     if (!is.null(w)) out <- c(out, paste0(lab[i], ": more than ", share,
       " of the samples in this window were set by the BLQ rule, in ", w, "."))
-    w <- who("sparse", i)
+    w <- who("sparse", i, tail = ", so the value is imprecise")
     if (!is.null(w)) out <- c(out, paste0(lab[i], " rests on fewer than three measurable concentrations in ",
-      w, ", so the value is imprecise."))
+      w, "."))
   }
   out
 }
