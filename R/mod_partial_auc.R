@@ -34,7 +34,9 @@ partial_auc_ui <- function(id, show_role = FALSE) {
   card(
     card_header(class = "bg-primary text-white", tagList("Partial AUCs (optional)", help_partial_auc)),
     card_body(
-      selectInput(ns("n"), "Number of intervals", choices = 0:PARTIAL_AUC_MAX, selected = 0),
+      # dropdownParent = "body": a card clips a dropdown that opens inside it
+      selectizeInput(ns("n"), "Number of intervals", choices = 0:PARTIAL_AUC_MAX, selected = 0,
+                     options = list(dropdownParent = "body")),
       conditionalPanel(
         condition = sprintf("Number(input['%s']) > 0", ns("n")),
         tags$p(class = "text-muted small mb-2",

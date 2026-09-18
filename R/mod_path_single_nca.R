@@ -84,7 +84,11 @@ path_single_nca_ui <- function(id) {
         card_header("Analysis Settings"),
         card_body(
           layout_columns(
-            col_widths = c(3, 2, 2, 2, 2, 1),
+            # One width per input: a shorter vector is recycled, which squeezed
+            # the concentration unit and the trapezoidal method into one or two
+            # columns and pushed their carets onto the text
+            col_widths = c(4, 2, 2, 2, 2,
+                           4, 4, 4),
             selectInput(ns("admin_route"), tagList("Route of administration", help_admin_route),
                         choices = c("Oral / IM / SC (extravascular)" = "extravascular",
                                     "IV Bolus (injected into vein at once)" = "iv_bolus",
@@ -97,10 +101,9 @@ path_single_nca_ui <- function(id) {
             selectInput(ns("conc_unit"), "Conc", choices = CONC_UNIT_CHOICES, selected = "ng/mL"),
             numericInput(ns("mw"), "Molecular weight (only for molar units)",
                          value = 0, min = 0, step = 1),
-            tags$div(style = "padding-top: 1.7rem;",
-                     selectInput(ns("trap_method"), NULL,
-                                 choices = c("Linear-up / Log-down" = "log",
-                                             "Linear-up / Linear-down" = "linear")))
+            selectInput(ns("trap_method"), tagList("Trapezoidal method", help_trapezoidal),
+                        choices = c("Linear-up / Log-down" = "log",
+                                    "Linear-up / Linear-down" = "linear"))
           ),
           conditionalPanel(
             condition = sprintf("input['%s'] == 'iv_infusion'", ns("admin_route")),
