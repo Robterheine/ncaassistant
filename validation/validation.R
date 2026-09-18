@@ -1055,6 +1055,36 @@ check("UI-HUB-01", "Landing page hub (UI-03)",
       { l<-readLines("app.R",warn=FALSE); any(grepl("hub|landing|workflow|path",l,ignore.case=TRUE)) },
       "URS-UI-03", method="Hub/landing page in app.R", expected="Hub code present", critical=FALSE)
 
+check("UI-COL-01", "Every layout_columns() has one width per input",
+  tryCatch({
+    # A col_widths vector shorter than the number of inputs is recycled by
+    # bslib, which squeezes inputs into one or two columns and puts the
+    # dropdown caret on top of the text
+    bad <- character(0)
+    walk <- function(e, f) {
+      if (!is.call(e)) return(invisible())
+      if (is.name(e[[1]]) && identical(as.character(e[[1]]), "layout_columns")) {
+        args <- as.list(e)[-1]
+        nms <- names(args); if (is.null(nms)) nms <- rep("", length(args))
+        cw <- args[nms == "col_widths"]
+        if (length(cw) == 1) {
+          v <- tryCatch(eval(cw[[1]]), error = function(err) NULL)
+          if (!is.null(v) && length(v) != sum(nms == ""))
+            bad <<- c(bad, paste0(f, ": ", length(v), " widths for ", sum(nms == ""), " inputs"))
+        }
+      }
+      for (a in as.list(e)) if (!missing(a)) tryCatch(walk(a, f), error = function(err) NULL)
+      invisible()
+    }
+    for (f in c(list.files("R", pattern = "[.]R$", full.names = TRUE), "app.R"))
+      for (ex in tryCatch(parse(f), error = function(e) list())) walk(ex, f)
+    if (length(bad) > 0) message("Mismatched layouts: ", paste(bad, collapse = "; "))
+    length(bad) == 0
+  }, error = function(e) FALSE),
+  "URS-UI-01", critical = FALSE,
+  method = "parse every UI file and compare col_widths with the number of inputs",
+  expected = "no layout_columns() where the widths are recycled")
+
 end_section("UI")
 
 # =============================================================================
