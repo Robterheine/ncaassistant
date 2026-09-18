@@ -3320,7 +3320,8 @@ check("PAUC-18", "Methods page, help and Data Guide describe partial AUCs as imp
     has <- function(f, keys) { m <- paste(rev3_code(f), collapse = " "); all(vapply(keys, grepl, logical(1), m, fixed = TRUE)) }
     has("R/mod_methods.R", c("minus the AUC from 0 to the start of the interval", "Partial AUCs were ",
                              "not extrapolated", "intersection-union test", "no estimate and no conclusion",
-                             "more than half of its samples were set by the BLQ rule", "Hopefl R, et al.")) &&
+                             "more than half of its samples were set by the BLQ rule", "Hopefl R, et al.",
+                             "EMA/CHMP/EWP/280/96 Rev1")) &&
       has("R/help_system.R", c("help_partial_auc", "the app does not extrapolate", "Pivotal or supportive")) &&
       has("R/mod_data_guide.R", c("Planning a partial AUC", "A partial AUC cutoff with no sample near it",
                                   "Partial AUC intervals must lie within 0 to")) &&

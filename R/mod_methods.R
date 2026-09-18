@@ -562,6 +562,11 @@ methods_ui <- function() {
                "for multiplicity was made. A metric with a value of zero in any profile of the comparison received ",
                "no estimate and no conclusion, because zero cannot be log-transformed and leaving such profiles out ",
                "would bias the ratio."),
+        tags$p(class = "small",
+               "The EMA allows the acceptance criteria for a partial AUC to be widened in the same way as for C",
+               tags$sub("max"), " of a highly variable product (EMA/CHMP/EWP/280/96 Rev1, section 6.8.2.2). ",
+               "This application does not scale limits: for a replicate design it reports CV", tags$sub("wR"),
+               " and the limits it would imply, and the limits used are the ones entered by the analyst."),
 
         tags$h6(class = "fw-semibold mt-3", "Bioequivalence Conclusion"),
         tags$p(
@@ -595,7 +600,10 @@ methods_ui <- function() {
           "FDA. Statistical Approaches to Establishing Bioequivalence. Guidance for Industry. May 2026.",
           tags$br(),
           "Hopefl R, et al. A 2024 update on US FDA implementation of partial area under the curve into ",
-          "bioavailability and bioequivalence assessments. ", tags$em("Clin Pharmacol Ther"), ". 2025;117:1185\u201393."
+          "bioavailability and bioequivalence assessments. ", tags$em("Clin Pharmacol Ther"), ". 2025;117:1185\u201393.",
+          tags$br(),
+          "EMA. Guideline on the pharmacokinetic and clinical evaluation of modified release dosage forms. ",
+          "EMA/CHMP/EWP/280/96 Rev1. Adopted 20 November 2014, effective 1 June 2015."
         )
       ),
       

@@ -11,7 +11,7 @@
 - D11 "mainly" = more than half of the samples used in the interval.
 - The interval editor allows up to 6 intervals. Tmax in an interval is reported but not offered in Bioequivalence.
 - D5 shades the intervals of the last analysis on the Visualize summary plot; an end at t is drawn to the last time shown.
-- The EMA modified-release guideline is not cited yet (§9, verify first).
+- The EMA modified-release guideline (EMA/CHMP/EWP/280/96 Rev1, 20 November 2014, effective 1 June 2015) was verified on 2026-09-18 and is now cited on the Methods page and in the manual. Its §6.8.2.2 states that the widening used for Cmax of a highly variable product "can be used for widening the acceptance criteria for Cmax,ss, Cτ,ss, and partialAUC", so the informational CVwR and implied EMA limits the app already shows for partial AUCs are consistent with it. The app still scales nothing itself.
 - Fixed on the way: the summary-plot Figure Record script used `%>%` without loading dplyr and failed to reproduce.
 
 Review team: statistician, clinical pharmacologist, R/Shiny engineer.
@@ -224,7 +224,7 @@ Decided by the owner on 2026-09-18.
 | D7 | Data-driven cutoff selection (Periyasamy 2026) | **Do not offer** (Tsakiridou 2025 supports this, section 4.6 #8) |
 | D8 | Per-subject Reference-Tmax cutoffs (Health Canada) | **Not in the first release**; design the interval fields so it can be added later without a redesign |
 | D9 | "Cmax in interval" per interval (EMA exenatide, octreotide) | **Include**, as an optional column: observed maximum in the interval and its time, no interpolation, compared in Bioequivalence like other metrics. This is a second per-interval metric, not just pAUC — plan for it in Phase 1 (calculation) and Phase 3 (BE comparison), not as a bolt-on |
-| D10 | Expanded EMA limits for highly variable partial AUCs (information only) | **Defer.** Show CVwR without implied widened limits in v1; revisit only once someone verifies the EMA modified-release guideline wording (section 9). Do not block Phase 1 on this research |
+| D10 | Expanded EMA limits for highly variable partial AUCs (information only) | **Resolved 2026-09-18.** EMA/CHMP/EWP/280/96 Rev1 §6.8.2.2 allows the Cmax widening approach for Cmax,ss, Cτ,ss and partial AUC, so the variability table keeps CVᵥᵣ and the limits it would imply, for information; the app applies only the limits the analyst enters and issues no scaled verdict |
 | D11 | Warning when an interval depends mainly on BLQ-derived values | **Include.** Remove the `data$.is_blq <- NULL` line in `apply_blq_rules()` so the BLQ flag survives through the pipeline. This touches shared code used by every analysis path, not just pAUC — treat it as its own small, tested change within Phase 1 |
 
 ---
@@ -366,7 +366,7 @@ The tests guarding the Methods page (REV3-10, REV3-13, REV4-07) check specific w
 **Other URS sections:**
 - **FMEA (section 4):** add FM-NCA-13, FM-NCA-14, FM-BE-10 and FM-EXP-08, with the same scoring convention.
 - **Traceability (section 6):** add the new IDs.
-- **Regulatory references (section 8):** Hopefl 2025; EMA Guideline on the pharmacokinetic and clinical evaluation of modified release dosage forms (EMA/CPMP/EWP/280/96 Rev 1); FDA product-specific guidances as a class.
+- **Regulatory references (section 8):** Hopefl 2025; EMA Guideline on the pharmacokinetic and clinical evaluation of modified release dosage forms (EMA/CHMP/EWP/280/96 Rev1); FDA product-specific guidances as a class.
 - **Glossary (section 9):** "Partial AUC", "Pivotal metric", "Supportive metric".
 - **Totals:** the requirement count goes from 58 to 62.
 
@@ -464,8 +464,8 @@ Then a factual audit of all new text against the code, as before the v1.4.0 merg
 ## 9. Facts to verify during implementation
 
 - **AUCINT:** present in CDISC SDTM CT release 2026-03-27 (codelists C85839/C85493), and the exact PPSTINT/PPENINT conventions.
-- **EMA modified-release guideline:** check the current wording of the τ/2 early/terminal split, and whether widened limits are ever allowed for partial AUCs (for example Cmax-like widening in highly variable products).
+- **EMA modified-release guideline:** verified 2026-09-18. §6.1.1.2: "An early partialAUC (0 – cut-off t) and a terminal partialAUC (cut-off t - tlast), separated by a predefined cut-off time point, e.g. the half of the dosage interval are recommended, unless otherwise scientifically justified", for a single-dose study replacing a multiple-dose study. §6.8.2.2 allows the Cmax widening approach for Cmax,ss, Cτ,ss and partial AUC.
 - **FDA PSGs:** confirm "t" is the last measurable time point and not the last sampling time, in a sample of the PSGs listed in Hopefl 2025 (leuprolide PSG_021731, budesonide PSG_215935).
-- **EMA modified-release guideline (EMA/CPMP/EWP/280/96 Rev 1), for D10 and D9:** for which metrics widening is allowed (Cmax, Cτ, partial AUCs?), and the exact wording for Cmax per phase.
+- **EMA modified-release guideline, for D9:** the exact wording for Cmax per phase (§6.8.1.1 asks for partialAUC, Cmax and tmax in all phases of a multiphasic product; the per-phase Cmax wording for exenatide and octreotide in Tsakiridou 2025 is not from this guideline).
 - **Health Canada:** whether current guidance still requires AUCRefTmax (Tsakiridou 2025 cites a 1992 report). Only needed if D8 is taken up.
 - **NonCompart `IntAUC` behaviour** at a cutoff before the first sample after IV bolus (C0 back-extrapolation), and whether Rule 1's pre-first-quantifiable zeros give the expected early partial AUC.
