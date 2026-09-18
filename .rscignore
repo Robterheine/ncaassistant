@@ -1,0 +1,12 @@
+# Files kept out of the shinyapps.io bundle.
+# One path per line, relative to this folder, no wildcards.
+# The app itself needs app.R, R/, www/, data/ and cdisc/.
+.claude
+rsconnect
+validation
+converters
+install_and_run.R
+CLAUDE.md
+README.md
+LICENSE
+NCA_Assistant_User_Manual_v1.6.docx
