@@ -117,7 +117,7 @@ Total: 410 (auto: 361, manual: 49)
 
 ALL CRITICAL TESTS PASSED
 
-URS: 62/62 covered
+URS: 63/63 covered
 
 Results: validation/validation_results.csv
 ```
