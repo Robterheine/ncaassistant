@@ -12,7 +12,8 @@ This folder contains the validation package for NCA Assistant v1.5.0. It follows
 | `make_iqoqpq.py` | Regenerates the test tables, traceability matrix and counts of the IQ/OQ/PQ protocol from `validation_results.csv` (needs python-docx) |
 | `NCA_Assistant_URS.docx` | User Requirement Specification — 62 requirements across 8 categories |
 | `NCA_Assistant_IQOQPQ.docx` | IQ/OQ/PQ protocol — every test listed individually with method, expected result, URS cross-reference, and criticality |
-| `validation_results.csv` | Generated on each run — pass/fail record with timestamps and environment details |
+| `fixtures/` | Committed test data (crossover, replicate and ADNCA-shaped files, plus reference values from `replicateBE`) and the deterministic scripts that generate them |
+| `validation_results.csv` | Generated on each run: pass/fail record with timestamps and environment details. Not committed, see below |
 
 ---
 
@@ -66,7 +67,7 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **358 automated tests** in eighteen sections, each mapped to a URS requirement:
+The script runs **359 automated tests** in eighteen sections, each mapped to a URS requirement:
 
 | Section | Code | Tests | Tests cover |
 |---------|------|------:|-------------|
@@ -77,7 +78,7 @@ The script runs **358 automated tests** in eighteen sections, each mapped to a U
 | Half-life overrides | OQ-NEW | 12 | R² propagation, recalculation by NonCompart, negative slope rejection, 2-point edge case, override audit trail |
 | Power & Sample Size | PWR | 13 | ABE, ABEL, RSABE, NTID and the planner designs via PowerTOST |
 | Export & Reproducibility | EXP | 18 | Determinism, summary statistics, R script generation, SHA-256 integrity, app and package versions, CDISC parameter codes from the pinned release |
-| Usability & Code Quality | UI | 31 | Parameter labels and help topics, column-mapping validation, defensive coding checks, requirement spot checks |
+| Usability & Code Quality | UI | 32 | Parameter labels and help topics, column-mapping validation, defensive coding checks (including one that fails when a layout gives fewer column widths than inputs), requirement spot checks |
 | Visualisation | VIZ | 9 | Plot data construction, dose normalisation, colour palette handling |
 | Correctness regressions | REG | 29 | Dose matching, BLQ rule scoping and ordering, unit validation, bioequivalence model and verdict (point-estimate constraint, rounding, factor coding), execution of the shipped reproduction script |
 | Replicate designs | REP | 25 | Profiles per administration, design merge, CVwR/CVwT diagnostic, design registry, agreement with `replicateBE` method A on its 30 reference data sets |
@@ -86,8 +87,8 @@ The script runs **358 automated tests** in eighteen sections, each mapped to a U
 | First adversarial review | REV | 11 | Per-profile doses, BLQ text, unit-column detection, rounded CI limits, model column, subject counts, whitespace in IDs, steady-state message, record fallback copy, record file names |
 | Second review (1) | REV2 | 7 | Reference treatment chosen by the user, Test and Reference CV in scaled planning, within-subject CV for the planner, grouped exports, CI labels |
 | Second review (2) | REV3 | 14 | Minimum R² applied to results, half-life review equal to NonCompart’s fit, results cleared on new data or profile, empty LLOQ, figure legend, help and Methods wording, warning when no Subject column is recognised, no references to commercial NCA software, half-life without a verdict |
-| Partial AUC | PAUC | 20 | Intervals with a fixed end or an end at the last measurable concentration (t), hand-calculated trapezoids, interpolated cutoffs, no extrapolation past Tlast, steady-state limits, Cmax and Tmax within an interval, notes for zeros and for BLQ-dependent or sparse windows, bioequivalence with pivotal and supportive roles (agreement with `replicateBE`), records, labels, the CDISC code AUCINT, figure shading and the app text |
 | Statistical audit | REV4 | 8 | Steady state with an entered dosing interval (AUCτ from 0 to τ, CL/F and Vz/F from AUCτ, Cavg, fluctuation and swing in all paths, records), planner defaults per method and total CV for parallel designs, Methods page statements, figure labels |
+| Partial AUC | PAUC | 20 | Intervals with a fixed end or an end at the last measurable concentration (t), hand-calculated trapezoids, interpolated cutoffs, no extrapolation past Tlast, steady-state limits, Cmax and Tmax within an interval, notes for zeros and for BLQ-dependent or sparse windows, bioequivalence with pivotal and supportive roles (agreement with `replicateBE`), records, labels, the CDISC code AUCINT, figure shading and the app text |
 
 In addition, **49 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload (flat and CDISC ADNCA), column mapping, interlock messages, the half-life review and minimum-R² note, choosing the Reference treatment, the replicate variability table, planning with both CVs, CDISC parameter codes, partial AUC intervals in the batch and bioequivalence paths (including an invalid interval, a suppressed metric and the shaded figure), the Complete Analysis Record download and its reproduction check, and the Visualize Figure Record. They are included in the script for traceability but are marked SKIP in automated runs.
 
@@ -111,10 +112,17 @@ Visualisation tests (URS-VIZ) are classified SUPPORTIVE because graphical output
 A passing run produces:
 
 ```
+Total: 408 (auto: 359, manual: 49)
+  PASS: 359 | FAIL: 0 | ERROR: 0 | SKIP: 49
+
 ALL CRITICAL TESTS PASSED
-URS: 58/58 covered
+
+URS: 62/62 covered
+
 Results: validation/validation_results.csv
 ```
+
+Of the 359 automated tests, 267 are CRITICAL and 92 SUPPORTIVE.
 
 If any critical test fails, the script lists the affected test IDs under `CRITICAL FAILURES` and prints `STATUS: FAILED`. Supportive failures are counted separately and require a written risk assessment before the system can be signed off.
 
@@ -132,7 +140,7 @@ The validation package is provided as a starting point. Before use in a regulate
 4. **Perform a risk assessment** for any SUPPORTIVE test failures or requirements not applicable to your use case.
 5. **Retain all documents** (URS, IQ/OQ/PQ protocol, validation results, risk assessments) in your quality management system.
 
-The documents are provided without version numbers in headers or filenames so that they can be incorporated directly into your local document management system with your own versioning scheme.
+The documents name the application version they were produced for, but carry no document version of their own, in the file name or elsewhere, so they can go into your document management system under your own versioning scheme.
 
 ---
 

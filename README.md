@@ -111,7 +111,7 @@ A consolidated validation package is available in [`validation/`](validation/), 
 Rscript validation/validation.R
 ```
 
-This executes 358 automated tests (plus 49 manual tests defined for a running app) and generates a results CSV with environment details, per-section results, and URS traceability.
+This executes 359 automated tests (plus 49 manual tests defined for a running app) and generates a results CSV with environment details, per-section results, and URS traceability.
 
 **Validation deliverables:**
 
