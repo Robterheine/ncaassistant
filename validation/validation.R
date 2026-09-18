@@ -1140,7 +1140,7 @@ skip_manual("MAN-45","Partial AUCs in All Subjects","Upload validation/fixtures/
 skip_manual("MAN-46","Invalid partial AUC interval","Enter start 2 and end 1, then run; tick steady state with tau 12 and enter 0-24","Error message; no analysis run","URS-NCA-14")
 skip_manual("MAN-47","Partial AUCs in Bioequivalence","Bioequivalence on the same file: 0-1.5 pivotal with Cmax, 4-t supportive; run once","Both partial AUCs and Cmax 0-1.5 compared on the first run; YES/NO for pivotal, no verdict (grey in the forest plot) for supportive","URS-BE-10")
 skip_manual("MAN-48","Record with partial AUCs","Download the Complete Analysis Record after MAN-47","reproduction_check.txt says MATCH; intervals and roles in analysis_settings.json and the HTML summary","URS-EXP-08")
-skip_manual("MAN-49","Partial AUC help and shading","Open 'What is a partial AUC?'; in Visualize Data choose Summary Plot and tick shading","Help text shown; intervals shaded; the suggested legend names the shaded intervals","URS-VIZ-08")
+skip_manual("MAN-49","Partial AUC help and shading","Open 'What is a partial AUC?'; in Visualize Data choose Summary Plot and tick shading","Help text shown; intervals shaded; the suggested legend names the shaded intervals","URS-VIZ-09")
 
 end_section("MAN")
 
@@ -2220,7 +2220,7 @@ check("REC-08", "Figure record rebuilds the figure from the processed data",
     file.exists(file.path(ex, "nca_pipeline.R")) && grepl("prepare_pk_dataset(", scr, fixed = TRUE) &&
       grepl("Result: FIGURE CREATED", rec_check_text(ex))
   }, error = function(e) FALSE),
-  "URS-VIZ-08", critical = FALSE, method = "spaghetti figure record from the 2x2 fixture with LLOQ 0.5",
+  "URS-VIZ-09", critical = FALSE, method = "spaghetti figure record from the 2x2 fixture with LLOQ 0.5",
   expected = "script uses the pipeline; check reports the figure was produced")
 
 check("REC-09", "Records state the CDISC release and include the parameter codes",
@@ -3342,7 +3342,7 @@ check("PAUC-17", "Figures shade the partial AUC intervals, also in the Figure Re
       grepl("partial_auc_shading(rec$visualization$shade_partial_aucs", scr, fixed = TRUE) &&
       grepl("Result: FIGURE CREATED", rec_check_text(ex))
   }, error = function(e) FALSE),
-  "URS-VIZ-08", critical = FALSE, method = "partial_auc_shading(); summary figure record with two shaded intervals",
+  "URS-VIZ-09", critical = FALSE, method = "partial_auc_shading(); summary figure record with two shaded intervals",
   expected = "0-1.5 and 4-36 (t drawn to the last time); script shades them; figure produced")
 
 check("PAUC-18", "Methods page, help and Data Guide describe partial AUCs as implemented",
@@ -3389,7 +3389,7 @@ if (nrow(cf)>0) {
 
 all_urs <- c(paste0("URS-GEN-0",c(1,3:6)),paste0("URS-DAT-0",1:7),paste0("URS-NCA-",sprintf("%02d",1:14)),
              paste0("URS-BE-0",1:9),"URS-BE-10",paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:8),paste0("URS-UI-0",1:4),
-             paste0("URS-VIZ-0",1:8))
+             paste0("URS-VIZ-0",1:9))
 covered <- unique(unlist(strsplit(results_df$URS_Ref,",\\s*")))
 cat(sprintf("\nURS: %d/%d covered\n",length(intersect(all_urs,covered)),length(all_urs)))
 miss <- setdiff(all_urs,covered)

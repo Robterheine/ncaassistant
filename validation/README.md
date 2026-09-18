@@ -10,7 +10,7 @@ This folder contains the validation package for NCA Assistant v1.5.0. It follows
 |------|-------------|
 | `validation.R` | Consolidated validation script (Attachment A to the IQ/OQ/PQ protocol) |
 | `make_iqoqpq.py` | Regenerates the test tables, traceability matrix and counts of the IQ/OQ/PQ protocol from `validation_results.csv` (needs python-docx) |
-| `NCA_Assistant_URS.docx` | User Requirement Specification — 62 requirements across 8 categories |
+| `NCA_Assistant_URS.docx` | User Requirement Specification — 63 requirements across 8 categories |
 | `NCA_Assistant_IQOQPQ.docx` | IQ/OQ/PQ protocol — every test listed individually with method, expected result, URS cross-reference, and criticality |
 | `fixtures/` | Committed test data (crossover, replicate and ADNCA-shaped files, plus reference values from `replicateBE`) and the deterministic scripts that generate them |
 | `validation_results.csv` | Generated on each run: pass/fail record with timestamps and environment details. Not committed, see below |

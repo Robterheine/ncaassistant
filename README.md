@@ -115,7 +115,7 @@ This executes 359 automated tests (plus 49 manual tests defined for a running ap
 
 **Validation deliverables:**
 
-- **User Requirement Specification** ([`validation/NCA_Assistant_URS.docx`](validation/NCA_Assistant_URS.docx)) — 62 requirements across 8 categories (GEN, DAT, NCA, BE, PWR, EXP, UI, VIZ), with FMEA risk assessment, supplier assessment, and change control procedures
+- **User Requirement Specification** ([`validation/NCA_Assistant_URS.docx`](validation/NCA_Assistant_URS.docx)) — 63 requirements across 8 categories (GEN, DAT, NCA, BE, PWR, EXP, UI, VIZ), with FMEA risk assessment, supplier assessment, and change control procedures
 - **IQ/OQ/PQ Protocol** ([`validation/NCA_Assistant_IQOQPQ.docx`](validation/NCA_Assistant_IQOQPQ.docx)) — every automated and manual test listed individually with method, expected result, URS cross-reference, and criticality classification
 - **Consolidated test script** ([`validation/validation.R`](validation/validation.R)) — automated tests + manual test definitions, covering IQ, data handling, NCA accuracy, bioequivalence, power/sample size, export/reproducibility, usability, and visualization (URS-VIZ)
 

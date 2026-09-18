@@ -98,7 +98,7 @@ src = open("validation/validation.R", encoding="utf-8").read()
 urs_all = (["URS-GEN-01"] + [f"URS-GEN-0{i}" for i in (3,4,5,6)] + [f"URS-DAT-0{i}" for i in range(1,8)] +
            [f"URS-NCA-{i:02d}" for i in range(1,15)] + [f"URS-BE-0{i}" for i in range(1,10)] + ["URS-BE-10"] +
            [f"URS-PWR-0{i}" for i in range(1,7)] + [f"URS-EXP-0{i}" for i in range(1,9)] +
-           [f"URS-UI-0{i}" for i in range(1,5)] + [f"URS-VIZ-0{i}" for i in range(1,9)])
+           [f"URS-UI-0{i}" for i in range(1,5)] + [f"URS-VIZ-0{i}" for i in range(1,10)])
 def refs(r): return [x.strip() for x in r["URS_Ref"].split(",")]
 tr_rows = []
 for u in urs_all:
