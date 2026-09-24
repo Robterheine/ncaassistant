@@ -308,6 +308,13 @@ path_be_server <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    # Pre-select the design detected at upload (the default crossover would
+    # otherwise be run on parallel data)
+    observeEvent(shared$study_info, {
+      t <- shared$study_info$design$type
+      if (length(t) == 1 && t %in% BE_DESIGNS$code) updateSelectInput(session, "be_design", selected = t)
+    })
+
     # Pre-select the units stated in the file
     observeEvent(shared$study_info, {
       u <- shared$study_info$units

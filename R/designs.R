@@ -83,6 +83,10 @@ check_design_against_data <- function(code, detected) {
                     detected$n_periods, " periods."))
     return(NULL)
   }
+  if (row$model == "crossover" && isTRUE(detected$n_periods <= 1))
+    return(paste0("The selected design (", row$label, ") is a crossover, but the data have one period ",
+                  "per subject (no Period column mapped, or a parallel-group study). Select Parallel groups, ",
+                  "or map the Period column on the Upload page."))
   issues <- character(0)
   if (!is.na(row$n_periods) && !is.null(detected$n_periods) && detected$n_periods > 1 &&
       detected$n_periods != row$n_periods)

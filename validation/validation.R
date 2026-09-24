@@ -4149,6 +4149,20 @@ check("REL-43", "R-33: the Methods steady-state text and the BE table match the 
   "URS-NCA-07", critical = FALSE, method = "Methods page and Bioequivalence PK table code",
   expected = "No claim that AUC0-t is AUCtau or that Vz/F is not reported; the BE table shows AUCtau at steady state")
 
+check("REL-44", "R-34: parallel data are not run under the default crossover design",
+  tryCatch({
+    par <- read.csv("data/example_be_parallel.csv", stringsAsFactors = FALSE)
+    cm <- auto_detect_columns(names(par)); cm <- cm[nzchar(unlist(cm))]
+    det <- detect_study_design(par, cm)
+    msg <- check_design_against_data("2x2x2", det)
+    be <- paste(readLines("R/mod_path_be.R", warn = FALSE), collapse = "\n")
+    identical(det$type, "parallel") && "parallel" %in% BE_DESIGNS$code && !is.null(msg) &&
+      grepl("one period per subject", msg) && is.null(check_design_against_data("parallel", det)) &&
+      grepl('updateSelectInput(session, "be_design", selected = t)', be, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-BE-02", critical = FALSE, method = "Parallel example: detected design, design check for 2x2x2, BE module pre-selection",
+  expected = "Parallel detected and pre-selected; a crossover selection on one-period data is flagged")
+
 end_section("REL")
 
 # =============================================================================
