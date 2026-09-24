@@ -398,7 +398,15 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   } else { pe <- diff; ci_lo_p <- ci_lo; ci_hi_p <- ci_hi }
   pe <- unname(pe); ci_lo_p <- unname(ci_lo_p); ci_hi_p <- unname(ci_hi_p)
 
-  if (has_limits) {
+  # The model is pre-specified (ICH M13A 2.2.3.1: no data-driven changes to
+  # the primary analysis). When the chosen mixed model cannot be fitted, the
+  # fixed-effects fit is shown for information, without a verdict.
+  mixed_failed <- use_mixed && !inherits(fit, "lme")
+  if (has_limits && mixed_failed) {
+    pe_status <- "not applicable"
+    verdict <- paste0("no verdict: the pre-specified mixed model could not be fitted (", mixed_error,
+                      "); the fixed-effects result is shown for information only")
+  } else if (has_limits) {
     ci_pass <- be_limits_pass(ci_lo_p, ci_hi_p, be_lower, be_upper)
     # A CI inside 80-125% already puts the point estimate inside it. Wider
     # limits (ABEL-style, or fixed widened Cmax limits) do not, so the
@@ -572,4 +580,45 @@ be_variability_diagnostic <- function(be_data, param, trt_col, subj_col,
     ABEL_lower = lim[1], ABEL_upper = lim[2],
     ABEL_widened = param == "CMAX" && r$cv > 30,
     stringsAsFactors = FALSE)
+}
+
+#' ICH M13A checks on a bioequivalence analysis (warnings; nothing is excluded)
+#'
+#' - pre-dose concentration above 5% of the profile's Cmax (single dose;
+#'   M13A 2.2.3.3 excludes that period from the primary analysis)
+#' - fewer than 12 evaluable subjects (M13A 2.2.3.1)
+#' - AUC(0-t) covering less than 80% of AUC(0-inf) in more than 20% of the
+#'   profiles (M13A 2.2.2.2: the validity of the study may need discussion)
+#' @param ci_df CI table of the run (N_Test, N_Ref per parameter)
+#' @return character vector of messages, empty when all checks pass
+be_m13a_checks <- function(pk_data, col_map, nca_res, ci_df, is_ss = FALSE) {
+  out <- character(0)
+  pk <- profile_key(pk_data, col_map)
+  t <- suppressWarnings(as.numeric(pk_data[[col_map$time]]))
+  cc <- suppressWarnings(as.numeric(pk_data[[col_map$conc]]))
+  if (!isTRUE(is_ss)) {
+    pre <- tapply(ifelse(!is.na(t) & t <= 0, cc, NA), pk$key, function(v) suppressWarnings(max(v, na.rm = TRUE)))
+    cmax <- tapply(cc, pk$key, function(v) suppressWarnings(max(v, na.rm = TRUE)))
+    high <- names(pre)[is.finite(pre) & is.finite(cmax) & cmax > 0 & pre > 0.05 * cmax]
+    if (length(high) > 0) {
+      lab <- profile_labels(pk$parts[match(high, pk$key), , drop = FALSE])
+      out <- c(out, paste0("Pre-dose concentration above 5% of Cmax in ", length(high), " profile(s): ",
+                           paste(head(lab, 5), collapse = "; "), if (length(lab) > 5) " and more" else "",
+                           ". ICH M13A (2.2.3.3) excludes such a period from the primary analysis."))
+    }
+  }
+  if (!is.null(ci_df) && all(c("N_Test", "N_Ref") %in% names(ci_df))) {
+    n <- suppressWarnings(pmin(ci_df$N_Test, ci_df$N_Ref))
+    if (any(!is.na(n) & n < 12))
+      out <- c(out, paste0("Fewer than 12 evaluable subjects (smallest: ", min(n, na.rm = TRUE),
+                           "). ICH M13A (2.2.3.1) does not accept a pivotal study with fewer than 12."))
+  }
+  if (!isTRUE(is_ss) && "AUCPEO" %in% names(nca_res)) {
+    pe <- suppressWarnings(as.numeric(nca_res$AUCPEO)); pe <- pe[!is.na(pe)]
+    if (length(pe) > 0 && mean(pe > 20) > 0.2)
+      out <- c(out, paste0("AUC(0-t) covers less than 80% of AUC(0-inf) in ", sum(pe > 20), " of ", length(pe),
+                           " profiles (more than 20%). ICH M13A (2.2.2.2): the validity of the study may need ",
+                           "to be discussed."))
+  }
+  out
 }

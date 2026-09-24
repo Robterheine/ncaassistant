@@ -126,14 +126,14 @@ path_be_ui <- function(id) {
               selectInput(ns("model_type"),
                           tagList("Statistical model", help_mixed_effects),
                           choices = c(
-                            "Fixed effects (EMA: all terms fixed)" = "fixed",
-                            "Mixed effects (subject random; uses dropouts)" = "mixed"
+                            "Fixed effects (all terms fixed)" = "fixed",
+                            "Mixed effects (subject random; also uses subjects with one period)" = "mixed"
                           )),
               
               checkboxGroupInput(ns("be_params"), "Parameters to compare",
                                  choiceNames = unname(sapply(c("CMAX", "AUCLST", "AUCIFO", "TMAX", "LAMZHL"), friendly_name)),
                                  choiceValues = c("CMAX", "AUCLST", "AUCIFO", "TMAX", "LAMZHL"),
-                                 selected = c("CMAX", "AUCLST", "AUCIFO")),
+                                 selected = c("CMAX", "AUCLST")),
               
               checkboxInput(ns("log_transform"),
                             tagList("Log-transform (recommended)", help_log_transform),
@@ -188,6 +188,7 @@ path_be_ui <- function(id) {
           uiOutput(ns("be_status")),
           uiOutput(ns("ss_note")),
           uiOutput(ns("blq_rule_note")),
+          uiOutput(ns("m13a_note")),
           uiOutput(ns("pauc_note")),
           uiOutput(ns("balance_note")),
           uiOutput(ns("design_summary")),
@@ -371,7 +372,7 @@ path_be_server <- function(id, shared) {
       ran <- isolate(be_run_settings()$be$parameters)
       selected <- if (length(ran) > 0) intersect(ran, available) else {
         c(if (isTRUE(isolate(input$is_ss))) intersect(c("CMAX","AUCTAU"), available)
-          else intersect(c("CMAX","AUCLST","AUCIFO"), available), pauc_params)
+          else intersect(c("CMAX","AUCLST"), available), pauc_params)
       }
       updateCheckboxGroupInput(session, "be_params",
                                choiceNames = unname(sapply(available, friendly_name)),
@@ -582,7 +583,7 @@ path_be_server <- function(id, shared) {
         
         params <- input$be_params
         if (is.null(params) || length(params) == 0)
-          params <- c("CMAX","AUCLST","AUCIFO")
+          params <- c("CMAX","AUCLST")
         if (isTRUE(input$is_ss)) {
           # At steady state the exposure parameter is AUC from 0 to tau
           swapped <- intersect(c("AUCLST","AUCIFO"), params)
@@ -750,7 +751,10 @@ path_be_server <- function(id, shared) {
                                            ifelse(pe >= 80 & pe <= 125, "YES", "NO"))
         }
 
-        be_result(list(ci_table = ci_df, anova = anova_results, cv_table = cv_df))
+        be_result(list(ci_table = ci_df, anova = anova_results, cv_table = cv_df,
+                       m13a = be_m13a_checks(shared$pk_data, shared$col_map, nca_res,
+                                             ci_df[ci_df$Parameter %in% setdiff(params, c(supportive, BE_NO_VERDICT_PARAMS)), ],
+                                             isTRUE(input$is_ss))))
         be_run_settings(list(
           nca = settings,
           be  = list(
@@ -920,6 +924,15 @@ path_be_server <- function(id, shared) {
         "ICH M13A sets values below the LLOQ to zero in bioequivalence analyses (Rules 1 and 2 do this). ",
         "The rule used here (", sub("rule", "Rule ", si$blq_rule), ") needs a justification in the protocol."
       )
+    })
+
+    output$m13a_note <- renderUI({
+      msgs <- be_result()$m13a
+      if (length(msgs) == 0) return(NULL)
+      tags$div(class = "alert alert-warning py-2 small mb-2",
+               icon("triangle-exclamation", class = "me-1"),
+               tags$strong("ICH M13A checks: "),
+               tags$ul(class = "mb-0", lapply(msgs, tags$li)))
     })
 
     # CI table

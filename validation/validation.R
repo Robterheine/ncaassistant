@@ -2552,12 +2552,13 @@ check("REV-05", "The result states which model was fitted, including a failed mi
     fx <- fit_be_parameter(d, "CMAX", "2x2x2", "fixed", "Treatment", "Subject", "Period", "Sequence")$row$Model
     mx <- fit_be_parameter(d, "CMAX", "2x2x2", "mixed", "Treatment", "Subject", "Period", "Sequence")$row$Model
     suppressMessages(trace("lme", quote(stop("forced failure")), where = asNamespace("nlme"), print = FALSE))
-    fb <- tryCatch(fit_be_parameter(d, "CMAX", "2x2x2", "mixed", "Treatment", "Subject", "Period", "Sequence")$row$Model,
+    fbr <- tryCatch(fit_be_parameter(d, "CMAX", "2x2x2", "mixed", "Treatment", "Subject", "Period", "Sequence")$row,
                    finally = suppressMessages(untrace("lme", where = asNamespace("nlme"))))
-    identical(fx, "fixed effects") && identical(mx, "mixed effects") && grepl("^fixed effects .*mixed model", fb)
+    identical(fx, "fixed effects") && identical(mx, "mixed effects") && grepl("^fixed effects .*mixed model", fbr$Model) &&
+      grepl("^no verdict: the pre-specified mixed model could not be fitted", fbr$Bioequivalent) && !is.na(fbr$Point_Est)
   }, error = function(e) FALSE),
-  "URS-BE-05", critical = FALSE, method = "fixed, mixed, and mixed with lme forced to fail",
-  expected = "Model column says what was fitted")
+  "URS-BE-05", critical = TRUE, method = "fixed, mixed, and mixed with lme forced to fail",
+  expected = "Model column says what was fitted; a failed pre-specified mixed model gives no verdict (the fixed-effects estimate is shown)")
 check("REV-06", "Subjects counted are those that contribute to the comparison",
   tryCatch({
     d <- be_input(be_d); d <- d[!(d$Subject == "1" & d$Treatment == "R"), ]
@@ -3731,6 +3732,37 @@ check("REL-18", "R-09: a BLQ pre-dose sample is not imputed, and BE notes Rules 
   }, error = function(e) FALSE),
   "URS-DAT-04", critical = TRUE, method = "BLQ at 0 and 0.5 h (LLOQ 0.5) under Rules 1, 4 and 6; BE module text",
   expected = "The t = 0 sample stays 0 under Rules 4 and 6; the BE results note the rule when it is 3-6")
+
+check("REL-19", "R-10: ICH M13A checks flag a high pre-dose value, fewer than 12 subjects and poor AUC coverage",
+  tryCatch({
+    nca <- suppressWarnings(run_nca(rel_be, rel_be_cm, rel_st(trap = "linear")))
+    ci_ok <- data.frame(Parameter = "CMAX", N_Test = 12, N_Ref = 12)
+    clean <- be_m13a_checks(rel_be, rel_be_cm, nca, ci_ok)
+    d <- rel_be
+    p2 <- d$Subject == d$Subject[1] & d$Period == 2
+    d$Conc[p2 & d$Time == 0] <- 0.2 * max(d$Conc[p2])
+    pre <- be_m13a_checks(d, rel_be_cm, nca, ci_ok)
+    few <- be_m13a_checks(rel_be, rel_be_cm, nca, data.frame(Parameter = "CMAX", N_Test = 10, N_Ref = 10))
+    cov <- nca; cov$AUCPEO <- c(rep(25, 6), rep(5, nrow(cov) - 6))
+    poor <- be_m13a_checks(rel_be, rel_be_cm, cov, ci_ok)
+    ss <- be_m13a_checks(d, rel_be_cm, cov, ci_ok, is_ss = TRUE)
+    length(clean) == 0 && length(pre) == 1 && grepl("above 5% of Cmax in 1 profile", pre) &&
+      grepl(paste0("^", d$Subject[1], " \\| "), sub("^.*profile\\(s\\): ", "", pre)) &&
+      length(few) == 1 && grepl("Fewer than 12", few) && length(poor) == 1 && grepl("6 of", poor) && length(ss) == 0
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = FALSE, method = "be_m13a_checks() on the 2x2x2 fixture with a period-2 pre-dose value at 20% of Cmax, 10 subjects, 6 profiles with AUC%extrap 25%",
+  expected = "No message for the clean fixture; one message for each problem, naming the profile; none at steady state")
+
+check("REL-20", "R-10: M13A is cited and the default comparison is Cmax and AUC(0-t)",
+  tryCatch({
+    rd <- function(f) paste(readLines(f, warn = FALSE), collapse = "\n")
+    m <- rd("R/mod_methods.R"); be <- rd("R/mod_path_be.R")
+    grepl("ICH. M13A: Bioequivalence for immediate-release solid oral dosage forms", m, fixed = TRUE) &&
+      grepl('selected = c("CMAX", "AUCLST"))', be, fixed = TRUE) && !grepl("EMA: all terms fixed", be, fixed = TRUE) &&
+      grepl("output$m13a_note", be, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = FALSE, method = "Static check of the Methods page and the Bioequivalence module",
+  expected = "M13A in the references; Cmax and AUClast selected by default; the M13A checks are shown")
 
 end_section("REL")
 
