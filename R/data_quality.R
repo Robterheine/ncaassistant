@@ -48,8 +48,17 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
   raw_data <- data
   # Decimal-comma numbers stored as text are read exactly as the pipeline will
   # read them (see normalise_decimal_comma() in R/pipeline.R)
-  for (cc in unique(c(col_map$time, col_map$conc))) {
-    if (!is.null(cc) && cc %in% names(data)) data[[cc]] <- normalise_decimal_comma(data[[cc]], dec)
+  for (cc in unique(c(col_map$time, col_map$conc, col_map$dose))) {
+    if (is.null(cc) || !cc %in% names(data)) next
+    pts <- comma_file_point_values(data[[cc]], dec)
+    if (length(pts) > 0)
+      add("ERROR", "Decimal mark",
+          paste0("Column '", cc, "' has ", length(pts), " value(s) written with a decimal point, ",
+                 "but the file was read with a decimal comma"),
+          paste0("Examples: ", paste(head(pts, 5), collapse = ", ")),
+          paste0("In a decimal-comma file a point can only separate thousands (12.500 = 12500). ",
+                 "Correct these values, or read the file with a decimal point."))
+    data[[cc]] <- normalise_decimal_comma(data[[cc]], dec)
   }
   # IDs and design labels are trimmed as in prepare_pk_dataset()
   for (cc in unique(c(col_map$subject, col_map$treatment, col_map$period, col_map$sequence))) {

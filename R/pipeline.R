@@ -39,15 +39,34 @@ read_pk_file <- function(path, read_args = list(), ext = tools::file_ext(path)) 
 #' A concentration column that also holds BLQ text ("<0,5") stays text, and
 #' values such as "4,25" would become missing. When the upload's decimal mark
 #' is a comma, values that are plain decimal-comma numbers are rewritten with
-#' a point; anything else (BLQ text, other text) is left unchanged.
+#' a point, and a point is read as a thousands separator ("12.500" = 12500,
+#' "1.234,5" = 1234.5), as Excel writes it. Any other value with a point
+#' ("0.25") contradicts the chosen decimal mark: it becomes missing here and
+#' the data quality check refuses the file (comma_file_point_values()).
+#' Anything else (BLQ text, other text) is left unchanged.
 #' @param x Column as read
 #' @param dec Decimal mark chosen at upload
 normalise_decimal_comma <- function(x, dec) {
   if (!identical(dec, ",") || !(is.character(x) || is.factor(x))) return(x)
   x <- as.character(x)
-  num_comma <- grepl("^\\s*-?\\d+,\\d+\\s*$", x)
-  x[num_comma] <- sub(",", ".", trimws(x[num_comma]), fixed = TRUE)
+  v <- trimws(x)
+  num_comma <- grepl("^-?\\d+,\\d+$", v)
+  x[num_comma] <- sub(",", ".", v[num_comma], fixed = TRUE)
+  grouped <- grepl(THOUSANDS_PATTERN, v)
+  x[grouped] <- sub(",", ".", gsub(".", "", v[grouped], fixed = TRUE), fixed = TRUE)
+  x[v %in% comma_file_point_values(v, dec)] <- NA_character_
   x
+}
+
+#' A number with points as thousands separators and an optional decimal comma
+THOUSANDS_PATTERN <- "^-?\\d{1,3}(\\.\\d{3})+(,\\d+)?$"
+
+#' Values written with a decimal point in a file read with a decimal comma
+#' @return the distinct offending values (empty when there are none)
+comma_file_point_values <- function(x, dec) {
+  if (!identical(dec, ",") || !(is.character(x) || is.factor(x))) return(character(0))
+  v <- trimws(as.character(x))
+  unique(v[grepl("^-?\\d*\\.\\d+$", v) & !grepl(THOUSANDS_PATTERN, v)])
 }
 
 #' Name of the column that marks values set by the BLQ rule
@@ -111,6 +130,8 @@ prepare_pk_dataset <- function(raw, col_map, opts = list()) {
   dec <- opts$read_args$dec
   data[[col_map$time]] <- normalise_decimal_comma(data[[col_map$time]], dec)
   data[[col_map$conc]] <- normalise_decimal_comma(data[[col_map$conc]], dec)
+  if (!is.null(col_map$dose) && col_map$dose %in% names(data))
+    data[[col_map$dose]] <- normalise_decimal_comma(data[[col_map$dose]], dec)
   data[[col_map$time]] <- suppressWarnings(as.numeric(data[[col_map$time]]))
 
   # Pre-process BLQ text entries before numeric conversion. Text such as

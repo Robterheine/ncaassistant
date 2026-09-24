@@ -1053,7 +1053,12 @@ run_reproduction_check <- function(rec_dir, script, outputs = "reproduced_result
 #' @return read arguments for the copy (always the defaults)
 write_record_fallback <- function(raw, path, read_args = list()) {
   if (identical(read_args$dec, ",")) {
-    for (cc in names(raw)) raw[[cc]] <- normalise_decimal_comma(raw[[cc]], ",")
+    for (cc in names(raw)) {
+      v <- normalise_decimal_comma(raw[[cc]], ",")
+      # A value the pipeline refuses (a decimal point) is copied unchanged
+      if (is.character(v)) v[is.na(v)] <- as.character(raw[[cc]])[is.na(v)]
+      raw[[cc]] <- v
+    }
   }
   utils::write.csv(raw, path, row.names = FALSE)
   list()

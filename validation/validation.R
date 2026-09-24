@@ -3539,6 +3539,34 @@ check("REL-06", "R-02: IV bolus at steady state takes the trough from the whole 
   "URS-NCA-07", critical = TRUE, method = "Steady-state IV bolus with pre-dose trough 40 at t = 0",
   expected = "Cmin = 40 (the trough); C0 back-extrapolated above the first post-dose sample, not the trough")
 
+check("REL-07", "R-03: a decimal-comma file with thousands separators is read at the right magnitude",
+  tryCatch({
+    f <- tempfile(fileext = ".csv")
+    writeLines(c("ID;TIME;CONC;DOSE", "1;0;0;1.000", "1;1;850,5;1.000", "1;2;12.500;1.000", "1;4;1.234,5;1.000",
+                 "1;8;980;1.000"), f)
+    raw <- read_pk_file(f, list(sep = ";", dec = ","))
+    cm <- list(subject = "ID", time = "TIME", conc = "CONC", dose = "DOSE")
+    d <- prepare_pk_dataset(raw, cm, list(read_args = list(sep = ";", dec = ",")))$data
+    q <- run_data_quality_check(raw, cm, 0, dec = ",")
+    identical(as.numeric(d$CONC), c(0, 850.5, 12500, 1234.5, 980)) &&
+      all(as.numeric(d$DOSE) == 1000) && q$n_errors == 0
+  }, error = function(e) FALSE),
+  "URS-DAT-01", critical = TRUE, method = "Semicolon file with decimal comma and values 12.500, 1.234,5 and dose 1.000",
+  expected = "12500, 1234.5 and dose 1000 (were read as 12.5, NA and 1); no quality errors")
+
+check("REL-08", "R-03: a decimal point in a decimal-comma file is refused, naming the column",
+  tryCatch({
+    raw <- data.frame(ID = "1", TIME = c("0", "0.5", "1"), CONC = c("0", "4,2", "3.75"), stringsAsFactors = FALSE)
+    cm <- list(subject = "ID", time = "TIME", conc = "CONC")
+    q <- run_data_quality_check(raw, cm, 0, dec = ",")
+    err <- q$findings[q$findings$Severity == "ERROR", ]
+    d <- prepare_pk_dataset(raw, cm, list(read_args = list(dec = ",")))$data
+    nrow(err) == 2 && all(grepl("decimal point", err$Message)) &&
+      any(grepl("'TIME'", err$Message)) && any(grepl("3.75", err$Detail)) && !any(d$CONC == 3.75, na.rm = TRUE)
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "Decimal-comma upload with 0.5 in Time and 3.75 in Concentration",
+  expected = "Two ERRORs naming the columns with examples; the values are never read as 0.5 or 3.75")
+
 end_section("REL")
 
 # =============================================================================
