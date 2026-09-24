@@ -157,8 +157,19 @@ pk_param_labels <- c(
   # Dose-normalised (from add_dose_normalized)
   "CMAX_DN"  = "Dose-Normalised Cmax",
   "AUCLST_DN"= "Dose-Normalised AUC Last",
-  "AUCIFO_DN"= "Dose-Normalised AUC Inf"
+  "AUCIFO_DN"= "Dose-Normalised AUC Inf",
+  "AUCIFP_DN"= "Dose-Normalised AUC Inf (pred)",
+  "AUMCLST_DN" = "Dose-Normalised AUMC Last",
+  "AUMCIFO_DN" = "Dose-Normalised AUMC Inf",
+  "AUMCIFP_DN" = "Dose-Normalised AUMC Inf (pred)"
 )
+
+#' NonCompart's own dose-normalised values, dropped from tables and exports
+#' when the app's per-profile ones (..._DN) are present, so each appears once
+drop_duplicate_dose_normalised <- function(df) {
+  if (!any(grepl("_DN$", names(df)))) return(df)
+  df[, setdiff(names(df), c("CMAXD", "AUCIFOD", "AUCIFPD")), drop = FALSE]
+}
 
 #' Translate a NonCompart parameter name to plain English
 #' @param name Character: the abbreviation

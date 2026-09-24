@@ -225,7 +225,7 @@ path_be_ui <- function(id) {
               icon = icon("table"),
               tags$p(class = "text-muted small",
                      "Individual NCA results for all subject-treatment profiles."),
-              checkboxInput(ns("nca_show_all"), "Show all parameters (37 columns)", FALSE),
+              checkboxInput(ns("nca_show_all"), "Show all parameters", FALSE),
               DTOutput(ns("nca_table")),
               uiOutput(ns("cdisc_codes"))
             ),

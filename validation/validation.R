@@ -4199,6 +4199,20 @@ check("REL-47", "R-37: the navbar wraps on a phone instead of widening the page"
   "URS-UI-03", critical = FALSE, method = "custom.css; checked in the running app at 375 px (every page 375 px wide, was 457)",
   expected = "Navbar items wrap")
 
+check("REL-48", "R-38: dose-normalised values appear once, all labelled, and in the default view",
+  tryCatch({
+    th <- read.csv("data/example_theoph.csv"); cm <- list(subject = "Subject", time = "Time", conc = "conc", dose = "Dose")
+    st <- rel_st(trap = "linear"); st$dose <- dose_by_profile(th, cm)
+    r <- add_dose_normalized(as.data.frame(suppressWarnings(run_nca(th, cm, st))), st$dose)
+    shown <- names(rename_nca_columns(drop_duplicate_dose_normalised(r)))
+    multi <- paste(readLines("R/mod_path_multi_nca.R", warn = FALSE), collapse = "\n")
+    !anyDuplicated(shown) && !any(grepl("_DN$", shown)) && !"CMAXD" %in% names(drop_duplicate_dose_normalised(r)) &&
+      "CMAXD" %in% names(r) && grepl('"Dose-Normalised Cmax", "Dose-Normalised AUC Last"', multi, fixed = TRUE) &&
+      !grepl("37 columns", multi, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-NCA-08", critical = FALSE, method = "Theophylline with per-profile doses and dose normalisation; All Subjects table code",
+  expected = "No duplicate or raw-code headers; NonCompart's CMAXD kept in the data (records) but not shown twice; DN columns in the default view")
+
 end_section("REL")
 
 # =============================================================================

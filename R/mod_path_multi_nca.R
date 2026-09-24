@@ -140,7 +140,7 @@ path_multi_nca_ui <- function(id) {
                      "Key PK parameters shown. Tick the box below for all 37 parameters, ",
                      "or download the full table as Excel."),
               checkboxInput(ns("show_all_params"),
-                            "Show all parameters (37 columns)", FALSE),
+                            "Show all parameters", FALSE),
               DTOutput(ns("param_table")),
               uiOutput(ns("cdisc_codes")),
               downloadButton(ns("dl_params_csv"), "Download Results (CSV)",
@@ -551,7 +551,7 @@ path_multi_nca_server <- function(id, shared) {
     # Parameter table
     output$param_table <- renderDT({
       req(nca_result())
-      display_df <- rename_nca_columns(nca_result())
+      display_df <- rename_nca_columns(drop_duplicate_dose_normalised(nca_result()))
       
       if (!isTRUE(input$show_all_params)) {
         if (isTRUE(input$is_ss)) {
@@ -573,7 +573,8 @@ path_multi_nca_server <- function(id, shared) {
               "Half-Life", "Elimination Rate Constant",
               "Points Used for Half-Life",
               "Apparent Clearance (CL/F)", "Clearance (CL)",
-              "Apparent Volume (Vz/F)", "Volume of Distribution (Vz)", "Adjusted R-squared"),
+              "Apparent Volume (Vz/F)", "Volume of Distribution (Vz)", "Adjusted R-squared",
+              "Dose-Normalised Cmax", "Dose-Normalised AUC Last", "Dose-Normalised AUC Inf"),
             names(display_df))
         }
         key_cols <- c(key_cols, unname(friendly_name(partial_auc_cols(names(nca_result())))))
@@ -644,7 +645,7 @@ path_multi_nca_server <- function(id, shared) {
       } else {
         key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","LAMZ","CLFO","VZFO","CLO","VZO"), names(r))
       }
-      key <- c(key, partial_auc_cols(names(r)))
+      key <- c(key, intersect(c("CMAX_DN", "AUCLST_DN", "AUCIFO_DN"), names(r)), partial_auc_cols(names(r)))
       if (length(key) == 0) return(NULL)
       group <- if ("Treatment" %in% names(r)) "Treatment" else NULL
       summ <- summarize_pk_params(r, key, group_col = group)
@@ -910,7 +911,7 @@ path_multi_nca_server <- function(id, shared) {
       filename = function() paste0("NCA_results_", Sys.Date(), ".csv"),
       content = function(file) {
         req(nca_result())
-        write.csv(rename_nca_columns(nca_result(), units = list(dose = input$dose_unit, time = input$time_unit, conc = input$conc_unit)), file, row.names=FALSE)
+        write.csv(rename_nca_columns(drop_duplicate_dose_normalised(nca_result()), units = list(dose = input$dose_unit, time = input$time_unit, conc = input$conc_unit)), file, row.names=FALSE)
       }
     )
     output$dl_params_xlsx <- downloadHandler(
@@ -919,7 +920,7 @@ path_multi_nca_server <- function(id, shared) {
         req(nca_result())
         wb <- createWorkbook()
         addWorksheet(wb, "Individual_Parameters")
-        writeData(wb, 1, rename_nca_columns(nca_result(), units = list(dose = input$dose_unit, time = input$time_unit, conc = input$conc_unit)))
+        writeData(wb, 1, rename_nca_columns(drop_duplicate_dose_normalised(nca_result()), units = list(dose = input$dose_unit, time = input$time_unit, conc = input$conc_unit)))
         r <- nca_result()
         add_cdisc_code_sheet(wb, names(r)[vapply(r, is.numeric, logical(1))],
                              input$admin_route, isTRUE(input$is_ss))
