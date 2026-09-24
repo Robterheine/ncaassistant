@@ -27,11 +27,16 @@ read_pk_file <- function(path, read_args = list(), ext = tools::file_ext(path)) 
   dec   <- if (is.null(read_args$dec))   "." else read_args$dec
   sheet <- if (is.null(read_args$sheet)) 1   else read_args$sheet
   if (tolower(ext) %in% c("xlsx", "xls")) {
-    readxl::read_excel(path, sheet = sheet)
+    # guess_max: readxl guesses a column's type from its first 1000 rows by
+    # default, and text further down (e.g. "BLQ") then became missing without
+    # a warning. Excel's row limit makes it look at every row.
+    readxl::read_excel(path, sheet = sheet, guess_max = EXCEL_MAX_ROWS)
   } else {
     read.csv(path, sep = sep, dec = dec, stringsAsFactors = FALSE)
   }
 }
+
+EXCEL_MAX_ROWS <- 1048576
 
 #' Read decimal-comma numbers stored as text when the file uses a decimal comma
 #'

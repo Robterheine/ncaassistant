@@ -3764,6 +3764,27 @@ check("REL-20", "R-10: M13A is cited and the default comparison is Cmax and AUC(
   "URS-BE-01", critical = FALSE, method = "Static check of the Methods page and the Bioequivalence module",
   expected = "M13A in the references; Cmax and AUClast selected by default; the M13A checks are shown")
 
+check("REL-21", "R-11: text after row 1000 of an Excel file is read, in flat and ADNCA uploads",
+  tryCatch({
+    f <- tempfile(fileext = ".xlsx")
+    n <- 1200
+    x <- data.frame(ID = rep(1:100, each = 12), TIME = rep(c(0, 0.5, 1, 2, 4, 6, 8, 12, 24, 36, 48, 72), 100),
+                    CONC = as.character(round(rep(c(0, 5, 9, 8, 6, 4, 3, 2, 1, 0.8, 0.6, 0.4), 100), 2)),
+                    stringsAsFactors = FALSE)
+    x$CONC[1001:n][x$TIME[1001:n] >= 48] <- "BLQ"
+    openxlsx::write.xlsx(x, f)
+    r <- read_pk_file(f)
+    a <- data.frame(USUBJID = rep("S1", n), PARAMCD = "DRUG", PCSPEC = "PLASMA", AFRLT = seq_len(n) / 10,
+                    ARRLT = seq_len(n) / 10, AVAL = 1, AVALU = "ng/mL", PCSTRESU = "ng/mL", RRLTU = "h",
+                    DTYPE = c(rep(NA, n - 1), "INTERP"), stringsAsFactors = FALSE)
+    fa <- tempfile(fileext = ".xlsx"); openxlsx::write.xlsx(a, fa)
+    ra <- adnca_read(fa)
+    sum(r$CONC == "BLQ", na.rm = TRUE) == sum(x$CONC == "BLQ") && sum(is.na(r$CONC)) == 0 &&
+      identical(ra$DTYPE[n], "INTERP")
+  }, error = function(e) FALSE),
+  "URS-DAT-01", critical = TRUE, method = "1200-row xlsx with BLQ text only after row 1000; ADNCA xlsx with DTYPE in the last row",
+  expected = "Every BLQ entry and the DTYPE value are read (were missing: readxl guessed the types from 1000 rows)")
+
 end_section("REL")
 
 # =============================================================================

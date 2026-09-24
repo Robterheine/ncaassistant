@@ -36,7 +36,10 @@ ADNCA_TIME_VARS <- c(NRRLT = "Nominal time since the dose of the profile",
 #' @param read_args list(sep, dec, sheet)
 adnca_read <- function(path, read_args = list(), ext = tools::file_ext(path)) {
   if (tolower(ext) %in% c("xlsx", "xls")) {
-    d <- as.data.frame(readxl::read_excel(path, sheet = if (is.null(read_args$sheet)) 1 else read_args$sheet))
+    # guess_max = Excel's row limit: guessed from the first 1000 rows, a DTYPE
+    # value in a later row became missing and the derived record went unseen
+    d <- as.data.frame(readxl::read_excel(path, sheet = if (is.null(read_args$sheet)) 1 else read_args$sheet,
+                                          guess_max = 1048576))
   } else {
     d <- utils::read.csv(path, stringsAsFactors = FALSE, na.strings = c("", "NA"),
                          sep = if (is.null(read_args$sep)) "," else read_args$sep,
