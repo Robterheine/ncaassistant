@@ -36,6 +36,7 @@ help_init_js <- function() {
       // Initialize popovers
       var popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle=\"popover\"]'));
       popoverTriggerList.map(function(el) {
+        el.classList.add('popover-initialized');
         return new bootstrap.Popover(el, { sanitize: false });
       });
       

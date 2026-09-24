@@ -3627,6 +3627,20 @@ check("REL-12", "R-05: Period is detected from APERIOD and Occasion/OCC columns"
   "URS-DAT-02", critical = FALSE, method = "auto_detect_columns() on ADaM and NONMEM-style names",
   expected = "APERIOD, OCC and Occasion map to Period; Visit is not mapped automatically")
 
+check("REL-13", "R-06: each path's UI is built once, so settings survive leaving and returning",
+  tryCatch({
+    src <- paste(readLines("app.R", warn = FALSE), collapse = "\n")
+    ui_part <- sub("\n# --- Server.*$", "", src)
+    server_part <- sub("^.*\n# --- Server", "", src)
+    paths <- c("path_power_ui", "path_data_ui", "path_viz_ui", "path_single_nca_ui", "path_multi_nca_ui", "path_be_ui")
+    grepl("navset_hidden(", ui_part, fixed = TRUE) &&
+      all(vapply(paths, function(f) lengths(regmatches(ui_part, gregexpr(paste0(f, "("), ui_part, fixed = TRUE))) == 1, logical(1))) &&
+      !any(vapply(paths, function(f) grepl(paste0(f, "("), server_part, fixed = TRUE), logical(1))) &&
+      grepl("nav_select(\"main_nav\"", server_part, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-UI-03", critical = TRUE, method = "Static check of app.R; confirmed in the running app (dose 4.02 kept after Home and back)",
+  expected = "Every path UI appears once in the page definition and never in a server-side renderUI")
+
 end_section("REL")
 
 # =============================================================================

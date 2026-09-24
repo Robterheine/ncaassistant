@@ -145,8 +145,22 @@ ui <- page_fluid(
   # Popover initialization
   help_init_js(),
   
-  # Main content area — switches between paths
-  uiOutput("main_content")
+  # Main content area. Every path is built once and shown or hidden, so the
+  # inputs of a path keep their values when the user leaves it and comes
+  # back (a rebuilt path came back with default settings next to old results).
+  navset_hidden(
+    id = "main_nav",
+    nav_panel_hidden("home", uiOutput("hub_page")),
+    nav_panel_hidden("power", path_power_ui("path_power")),
+    nav_panel_hidden("data", path_data_ui("path_data")),
+    nav_panel_hidden("viz", path_viz_ui("path_viz")),
+    nav_panel_hidden("single_nca", path_single_nca_ui("path_single_nca")),
+    nav_panel_hidden("multi_nca", path_multi_nca_ui("path_multi_nca")),
+    nav_panel_hidden("be", path_be_ui("path_be")),
+    nav_panel_hidden("about", uiOutput("about_page")),
+    nav_panel_hidden("guide", data_guide_ui()),
+    nav_panel_hidden("methods", methods_ui())
+  )
 )
 
 # --- Server ------------------------------------------------------------------
@@ -253,20 +267,13 @@ server <- function(input, output, session) {
   })
   
   # === MAIN CONTENT ROUTER ===================================================
-  output$main_content <- renderUI({
-    switch(shared$current_path,
-      "home"       = hub_ui(),
-      "power"      = path_power_ui("path_power"),
-      "data"       = path_data_ui("path_data"),
-      "viz"        = path_viz_ui("path_viz"),
-      "single_nca" = path_single_nca_ui("path_single_nca"),
-      "multi_nca"  = path_multi_nca_ui("path_multi_nca"),
-      "be"         = path_be_ui("path_be"),
-      "about"      = about_ui(),
-      "guide"      = data_guide_ui(),
-      "methods"    = methods_ui(),
-      hub_ui()
-    )
+  # Home and About depend on no reactive value, so each renders once
+  output$hub_page <- renderUI(hub_ui())
+  output$about_page <- renderUI(about_ui())
+  outputOptions(output, "hub_page", suspendWhenHidden = FALSE)
+  observeEvent(shared$current_path, {
+    known <- c("home", "power", "data", "viz", "single_nca", "multi_nca", "be", "about", "guide", "methods")
+    nav_select("main_nav", if (shared$current_path %in% known) shared$current_path else "home")
   })
   
   # === HUB (HOME) UI =========================================================
