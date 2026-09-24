@@ -4163,6 +4163,18 @@ check("REL-44", "R-34: parallel data are not run under the default crossover des
   "URS-BE-02", critical = FALSE, method = "Parallel example: detected design, design check for 2x2x2, BE module pre-selection",
   expected = "Parallel detected and pre-selected; a crossover selection on one-period data is flagged")
 
+check("REL-45", "R-35: error messages use the app's words and say what to do",
+  tryCatch({
+    m <- validate_mapping(list(subject = "ID", time = "", conc = NULL))$message
+    rd <- function(f) paste(readLines(f, warn = FALSE), collapse = "\n")
+    grepl("Choose a column for: Time, Concentration", m, fixed = TRUE) && !grepl("conc", m, fixed = TRUE) &&
+      grepl("Check the delimiter", friendly_read_error("more columns than column names")) &&
+      grepl('paste0("Set LLOQ to ", sug)', rd("R/mod_data_upload.R"), fixed = TRUE) &&
+      grepl("Please enter the infusion duration", rd("R/mod_path_single_nca.R"), fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-UI-04", critical = FALSE, method = "validate_mapping(), friendly_read_error(), LLOQ button and single-profile infusion check",
+  expected = "On-screen names in the mapping message; a hint for read errors; the LLOQ button says what it does; infusion duration checked")
+
 end_section("REL")
 
 # =============================================================================

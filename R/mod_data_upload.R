@@ -158,7 +158,7 @@ data_upload_server <- function(id, shared) {
         tags$br(),
         "A value of ", tags$strong(sug), " was inferred from your BLQ entries. ",
         actionButton(ns("btn_apply_lloq"),
-                     paste0("Apply LLOQ = ", sug, " and process"),
+                     paste0("Set LLOQ to ", sug),
                      class = "btn-primary btn-sm mt-1",
                      icon = icon("check"))
       )
@@ -223,7 +223,7 @@ data_upload_server <- function(id, shared) {
       req(input$file_upload, input$data_type == "adnca", !identical(tolower(file_ext()), "xpt"))
       tryCatch(adnca_read(input$file_upload$datapath, read_args(), ext = file_ext()),
                error = function(e) {
-                 showNotification(paste("Error reading file:", e$message), type = "error", duration = 8)
+                 showNotification(friendly_read_error(conditionMessage(e)), type = "error", duration = 8)
                  NULL
                })
     })
@@ -355,7 +355,7 @@ data_upload_server <- function(id, shared) {
       tryCatch({
         read_pk_file(path, read_args(), ext = ext)
       }, error = function(e) {
-        showNotification(paste("Error reading file:", e$message),
+        showNotification(friendly_read_error(conditionMessage(e)),
                          type = "error", duration = 8)
         NULL
       })

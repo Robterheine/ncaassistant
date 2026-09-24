@@ -109,7 +109,7 @@ path_single_nca_ui <- function(id) {
             condition = sprintf("input['%s'] == 'iv_infusion'", ns("admin_route")),
             numericInput(ns("inf_dur"),
                          "Infusion duration (same unit as Time)",
-                         value = 1, min = 0)
+                         value = 0, min = 0)
           ),
           layout_columns(
             col_widths = c(6, 6),
@@ -445,6 +445,12 @@ path_single_nca_server <- function(id, shared) {
 
       # Units drive a real conversion factor for CL/F and Vz/F, and an
       # unrecognised spelling makes sNCA fail with an opaque error. Check first.
+      if (input$admin_route == "iv_infusion" &&
+          (is.null(input$inf_dur) || is.na(input$inf_dur) || input$inf_dur <= 0)) {
+        showNotification("Please enter the infusion duration (greater than 0) for IV infusion.",
+                         type = "error", duration = 5)
+        return(NULL)
+      }
       uchk <- validate_units(input$dose_unit, input$time_unit, input$conc_unit, input$mw)
       if (!uchk$valid) {
         showNotification(uchk$message, type = "error", duration = 12)

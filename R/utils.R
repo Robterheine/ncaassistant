@@ -403,9 +403,11 @@ validate_mapping <- function(col_map, required = c("subject", "time", "conc")) {
   missing <- required[!required %in% names(col_map) |
                         sapply(col_map[required], function(x) is.null(x) || x == "")]
   if (length(missing) > 0) {
+    shown <- c(subject = "Subject ID", time = "Time", conc = "Concentration")
     list(valid = FALSE,
-         message = paste("Missing required mappings:",
-                         paste(missing, collapse = ", ")))
+         message = paste0("Choose a column for: ",
+                          paste(ifelse(missing %in% names(shown), shown[missing], missing), collapse = ", "),
+                          " (under Column Mapping)."))
   } else {
     list(valid = TRUE, message = "All required columns mapped.")
   }
@@ -608,3 +610,11 @@ DATA_PROTECTION_NOTICE <- paste0(
   "On the public instance, uploads are processed on shinyapps.io servers run by Posit PBC (USA). ",
   "Do not upload data that identify people or that you may not share with a third party: use ",
   "pseudonymised IDs, or run the app on your own computer for confidential studies.")
+
+#' A file-reading error in words a user can act on
+friendly_read_error <- function(msg) {
+  hint <- if (grepl("more columns than column names|did not have|no lines available|incomplete final line|duplicate 'row.names'", msg))
+    paste0(" Check the delimiter (comma, semicolon or tab) and the decimal mark under the file choice, and ",
+           "that the first row holds the column names.") else ""
+  paste0("The file could not be read (", msg, ").", hint)
+}
