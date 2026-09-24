@@ -3473,7 +3473,7 @@ check("REL-02", "R-01: parameters derived from AUClast follow the corrected valu
       abs(r[["VZFO"]] - 100 / ifo / lz * 1000) < 1e-5 && abs(r[["MRTEVIFO"]] - aumc_ifo / ifo) < 1e-9 &&
       abs(r[["AUCPEO"]] - (1 - h[["AUC"]] / ifo) * 100) < 1e-9 && abs(r[["AUCIFOD"]] - ifo / 100) < 1e-9
   }, error = function(e) FALSE),
-  "URS-NCA-04", critical = TRUE, method = "AUCinf, CL/F, Vz/F, MRT, %extrap and AUCinf/D recomputed from the corrected AUClast",
+  "URS-NCA-01", critical = TRUE, method = "AUCinf, CL/F, Vz/F, MRT, %extrap and AUCinf/D recomputed from the corrected AUClast",
   expected = "Each equals its definition (mg and ng/mL: CL/F in L/h = dose / AUCinf x 1000)")
 
 check("REL-03", "R-01: a partial AUC ending at t after an embedded BLQ is not negative and matches the hand value",
@@ -3506,6 +3506,38 @@ check("REL-04", "R-01: profiles without a fall to zero are unchanged, and steady
   }, error = function(e) FALSE),
   "URS-NCA-03", critical = TRUE, method = "Theoph vs NonCompart unchanged; steady state CL/F from AUCtau; infusion Vss = MRT x CL",
   expected = "Theoph identical to NonCompart; the identities hold after the correction")
+
+rel_iv <- function(t) 900 * exp(-3 * t) + 100 * exp(-0.1 * t)
+rel_iv_t <- c(0.25, 0.5, 1, 2, 4, 6, 8, 12, 24, 36, 48)
+
+check("REL-05", "R-02: IV bolus with a pre-dose sample at time 0 gives the same result as without it",
+  tryCatch({
+    st <- rel_st(route = "iv_bolus"); st$dose <- 1000
+    a <- run_single_nca(rel_iv_t, rel_iv(rel_iv_t), st)
+    b <- run_single_nca(c(0, rel_iv_t), c(0, rel_iv(rel_iv_t)), st)
+    d <- data.frame(ID = "1", T = c(0, rel_iv_t), C = c(0, rel_iv(rel_iv_t)))
+    bb <- run_nca(d, rel_cm, st)
+    blq <- run_nca(prepare_pk_dataset(transform(d, C = ifelse(T == 0, "BLQ", as.character(C))), rel_cm,
+                                      list(lloq = 0.5, blq_rule = "rule1"))$data, rel_cm, st)
+    hl <- estimate_lambda_z(d$T, d$C, 0, route = "iv_bolus")
+    abs(b[["AUCIFO"]] - a[["AUCIFO"]]) < 1e-9 && abs(bb$AUCIFO - a[["AUCIFO"]]) < 1e-9 &&
+      abs(blq$AUCIFO - a[["AUCIFO"]]) < 1e-9 && abs(b[["C0"]] - a[["C0"]]) < 1e-9 && b[["AUCPBEO"]] > 10 &&
+      abs(a[["AUCIFO"]] - 1300) / 1300 < 0.01 && abs(hl$lambda_z - a[["LAMZ"]]) < 1e-12
+  }, error = function(e) FALSE),
+  "URS-NCA-02", critical = TRUE,
+  method = "900e^-3t + 100e^-0.1t (AUCinf 1300), first sample 0.25 h, with and without a 0 or BLQ row at t = 0",
+  expected = "AUCinf within 1% of 1300 in all cases (was 1196 with the t = 0 row); C0 back-extrapolated; review fit identical")
+
+check("REL-06", "R-02: IV bolus at steady state takes the trough from the whole profile",
+  tryCatch({
+    st <- rel_st(route = "iv_bolus", ss = TRUE, tau = 12); st$dose <- 1000
+    t <- c(0, 0.25, 0.5, 1, 2, 4, 6, 8, 12); cc <- c(40, 700, 560, 380, 220, 120, 90, 70, 42)
+    r <- run_single_nca(t, cc, st)
+    b <- run_nca(data.frame(ID = "1", T = t, C = cc), rel_cm, st)
+    r[["CMIN_SS"]] == 40 && b$CMIN_SS == 40 && abs(r[["AUCTAU"]] - b$AUCTAU) < 1e-9 && r[["C0"]] > 700
+  }, error = function(e) FALSE),
+  "URS-NCA-07", critical = TRUE, method = "Steady-state IV bolus with pre-dose trough 40 at t = 0",
+  expected = "Cmin = 40 (the trough); C0 back-extrapolated above the first post-dose sample, not the trough")
 
 end_section("REL")
 

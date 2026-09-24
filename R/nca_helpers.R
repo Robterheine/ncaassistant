@@ -56,9 +56,11 @@ estimate_lambda_z <- function(time, conc, r2adj_threshold = 0.7,
   keep <- !is.na(time) & !is.na(conc)
   x <- time[keep]; y <- conc[keep]
   ord <- order(x); x <- x[ord]; y <- y[ord]
+  adm <- switch(route, "iv_bolus" = "Bolus", "iv_infusion" = "Infusion", "Extravascular")
+  # As in run_nca(): an IV bolus analysis sets aside samples at or before 0
+  if (adm == "Bolus") { y <- y[x > 0]; x <- x[x > 0] }
   if (sum(y > 0) < 3) return(empty("Fewer than 3 non-zero points available"))
 
-  adm <- switch(route, "iv_bolus" = "Bolus", "iv_infusion" = "Infusion", "Extravascular")
   bs <- tryCatch(NonCompart::BestSlope(x, y, adm = adm), error = function(e) NULL)
   if (is.null(bs) || is.na(bs["LAMZ"]) || bs["LAMZ"] <= 0)
     return(empty("No terminal phase could be fitted"))

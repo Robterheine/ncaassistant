@@ -601,6 +601,14 @@ run_single_nca <- function(time, conc, settings, time_used = NULL, is_blq = NULL
   c_num <- suppressWarnings(as.numeric(as.character(conc)))
   ord <- order(t_num); t_num <- t_num[ord]; c_num <- c_num[ord]
   if (!is.null(is_blq)) is_blq <- is_blq[ord]
+  # The steady-state trough (Cmin) comes from the whole profile, including a
+  # pre-dose sample that an IV bolus analysis sets aside below
+  t_all <- t_num; c_all <- c_num
+  if (adm == "Bolus") {
+    post <- is.na(t_num) | t_num > 0
+    t_num <- t_num[post]; c_num <- c_num[post]
+    if (!is.null(is_blq)) is_blq <- is_blq[post]
+  }
   use <- NULL
   if (length(time_used) >= 2) {
     keep <- !(is.na(t_num) | is.na(c_num))
@@ -637,7 +645,7 @@ run_single_nca <- function(time, conc, settings, time_used = NULL, is_blq = NULL
   # chosen by hand
   low <- is.null(use) && below_r2_threshold(r["R2ADJ"], settings$r2adj_threshold)
   if (low) r[lamz_dependent_cols(names(r), settings$is_steady_state)] <- NA
-  if (ss) r <- steady_state_parameters(r, t_num, c_num, tau, lamz_rejected = low)
+  if (ss) r <- steady_state_parameters(r, t_all, c_all, tau, lamz_rejected = low)
   if (!is.null(pauc)) {
     p <- partial_auc_profile(r, pauc, t_num, c_num, is_blq, partial_auc_blq_fraction(settings))
     r <- r[!grepl("^\\.PAUC", names(r))]
@@ -984,6 +992,13 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
 
   # Ensure data is sorted by key and time
   data <- data[order(data[[nca_key]], data[[col_map$time]]), ]
+
+  # IV bolus: NonCompart back-extrapolates C0 only when the first sample is
+  # after the dose. A sample at or before time 0 (the pre-dose sample, often
+  # 0 or BLQ) would instead start the curve from that value, so it is set
+  # aside for the NCA. The steady-state trough still uses the whole profile.
+  data_all <- data
+  if (adm == "Bolus") data <- data[is.na(data[[col_map$time]]) | data[[col_map$time]] > 0, , drop = FALSE]
   
   # Degenerate profile filter: remove profiles with < 2 non-zero, non-NA
   # concentration values before passing to tblNCA. At least 2 positive
@@ -1129,9 +1144,9 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
       # Steady-state parameters per profile, before any rows are blanked
       for (n in c("TAU", "CAVG", "CMIN_SS", "FLUCTP", "SWING")) if (!n %in% names(result)) result[[n]] <- NA_real_
       for (i in seq_len(nrow(result))) {
-        rows <- data[[nca_key]] == result[[1]][i]
+        rows <- data_all[[nca_key]] == result[[1]][i]
         rr <- steady_state_parameters(as.list(result[i, , drop = FALSE]),
-                                      data[[col_map$time]][rows], data[[col_map$conc]][rows], tau,
+                                      data_all[[col_map$time]][rows], data_all[[col_map$conc]][rows], tau,
                                       lamz_rejected = low[i])
         for (n in names(rr)) result[[n]][i] <- rr[[n]]
       }

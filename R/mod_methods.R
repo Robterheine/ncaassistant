@@ -82,12 +82,12 @@ methods_ui <- function() {
         
         tags$h6(class = "fw-semibold mt-3", "Pre-Dose Concentration at Time Zero"),
         tags$p(class = "small",
-          "For extravascular administration, if no observation was recorded at time zero, ",
-          "the concentration at time zero was assumed to be zero. For intravenous bolus ",
-          "administration, the concentration at time zero (C", tags$sub("0"),
-          ") was back-extrapolated from the log-linear regression of the first two ",
-          "measurable concentrations to time zero. This back-extrapolated C", tags$sub("0"),
-          " was used in the calculation of AUC", tags$sub("0\u2013t"), " and AUC", tags$sub("0\u2013\u221E"), "."
+          "For extravascular administration without an observation at time zero, the ",
+          "concentration at time zero was taken as zero. For an intravenous bolus, samples at ",
+          "or before time zero were left out of the NCA. C", tags$sub("0"), " was back-extrapolated ",
+          "log-linearly from the first two post-dose concentrations when they declined; otherwise ",
+          "it was set to the first measured concentration. AUC", tags$sub("0\u2013t"), " and AUC",
+          tags$sub("0\u2013\u221E"), " include the area from this C", tags$sub("0"), "."
         ),
         
         tags$h6(class = "fw-semibold mt-3", "Area Under the Curve (AUC)"),
