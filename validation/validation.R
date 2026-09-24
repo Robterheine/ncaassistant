@@ -4012,6 +4012,19 @@ check("REL-33", "R-22: with chosen half-life points, predicted Clast is taken at
   "URS-NCA-12", critical = TRUE, method = "Points 8, 12, 24 h chosen, a 0 at 36 h; single profile and batch vs lm() by hand",
   expected = "CLSTP = exp(b0 - lambda-z x 24), AUCIFP and CL/F (pred) from it (NonCompart alone predicts at 36 h)")
 
+check("REL-34", "R-23: Tlag is the last sample before the first measurable concentration",
+  tryCatch({
+    st <- rel_st(trap = "linear"); tt <- c(0, 1, 2, 4, 6, 8, 12)
+    embedded <- run_single_nca(tt, c(0, 5, 20, 15, 0, 6, 4), st)[["TLAG"]]
+    lag <- run_single_nca(tt, c(0, 0, 20, 15, 10, 6, 4), st)[["TLAG"]]
+    none <- run_single_nca(tt, c(3, 5, 20, 15, 0, 6, 4), st)[["TLAG"]]
+    b <- run_nca(data.frame(ID = c(rep("A", 7), rep("B", 7)), T = rep(tt, 2),
+                            C = c(0, 5, 20, 15, 0, 6, 4, 0, 0, 20, 15, 10, 6, 4)), rel_cm, st)
+    embedded == 0 && lag == 1 && none == 0 && identical(b$TLAG, c(0, 1))
+  }, error = function(e) FALSE),
+  "URS-NCA-01", critical = FALSE, method = "0, 5, 20, 15, 0, 6, 4 (embedded zero); 0, 0, 20, ... (lag); single and batch",
+  expected = "Tlag 0 with an embedded zero (NonCompart gives 6 h); 1 h with a real lag")
+
 end_section("REL")
 
 # =============================================================================

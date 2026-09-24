@@ -688,6 +688,20 @@ fix_predicted_clast <- function(r, adm, dur = 0) {
   r
 }
 
+#' Lag time: the last sample before the first measurable concentration
+#'
+#' NonCompart takes the last zero before Tlast, so a BLQ value set to 0
+#' between measurable samples became the lag time. Not used for IV bolus.
+fix_tlag <- function(r, time, conc, adm) {
+  if (toupper(adm) == "BOLUS" || !"TLAG" %in% names(r)) return(r)
+  ok <- !is.na(time) & !is.na(conc)
+  x <- time[ok]; y <- conc[ok]
+  first <- which(y > 0)[1]
+  if (is.na(first)) return(r)
+  r[["TLAG"]] <- if (first == 1) 0 else x[first - 1]
+  r
+}
+
 #' NCA for one profile given as vectors (single-subject analysis)
 #'
 #' Same NonCompart call and options as run_nca(), so a profile analysed on
@@ -747,6 +761,7 @@ run_single_nca <- function(time, conc, settings, time_used = NULL, is_blq = NULL
                           dur = if (adm == "Infusion") num0(settings$infusion_duration) else 0, ss = ss)
   if (!is.null(nc_points))
     r <- fix_predicted_clast(r, adm, dur = if (adm == "Infusion") num0(settings$infusion_duration) else 0)
+  r <- fix_tlag(r, t_num, c_num, adm)
   # The analyst's R2 threshold applies to the automatic fit, not to points
   # chosen by hand
   low <- is.null(use) && (no_fit || below_r2_threshold(r["R2ADJ"], settings$r2adj_threshold))
@@ -1249,6 +1264,7 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
       k <- match(as.character(result[[1]][i]), as.character(final_keys))
       if (!is.null(use_points) && !is.na(k) && !is.null(use_points[[k]]))
         fixed <- fix_predicted_clast(fixed, adm, dur = if (adm == "Infusion") dur_num else 0)
+      fixed <- fix_tlag(fixed, data[[col_map$time]][rows], data[[col_map$conc]][rows], adm)
       for (n in names(fixed)) if (!identical(fixed[[n]], row[[n]])) result[[n]][i] <- fixed[[n]]
     }
   }
