@@ -4081,6 +4081,20 @@ check("REL-38", "R-26: exports carry the units of the run; half-life is not labe
   "URS-EXP-01", critical = FALSE, method = "Theophylline record with time in minutes; rename_nca_columns() with units",
   expected = "results.xlsx says Half-Life (min) (was Half-Life (h) over values in minutes); units on every labelled column")
 
+check("REL-39", "R-27: IV clearance and volume are shown in the result card and the default views",
+  tryCatch({
+    st <- rel_st(route = "iv_bolus"); st$dose <- 1000
+    r <- run_nca(data.frame(ID = "1", T = rel_iv_t, C = rel_iv(rel_iv_t)), rel_cm, st)
+    rd <- function(f) paste(readLines(f, warn = FALSE), collapse = "\n")
+    single <- rd("R/mod_path_single_nca.R"); multi <- rd("R/mod_path_multi_nca.R")
+    all(c("CLO", "VZO") %in% names(r)) && !"CLFO" %in% names(r) &&
+      grepl('tags$td("Clearance (CL):"), tags$td(tags$strong(sg("CLO")))', single, fixed = TRUE) &&
+      grepl('"Clearance (CL)"', multi, fixed = TRUE) && grepl('"CLFO","VZFO","CLO","VZO")', multi, fixed = TRUE) &&
+      grepl("Clearance (CL) (L/h)", add_units_to_labels("Clearance (CL)"), fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-NCA-02", critical = FALSE, method = "IV bolus run; card, table and summary code; unit label",
+  expected = "CL and Vz (CLO, VZO) shown for IV instead of an empty CL/F")
+
 end_section("REL")
 
 # =============================================================================

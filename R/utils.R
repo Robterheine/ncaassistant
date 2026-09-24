@@ -374,6 +374,8 @@ add_units_to_labels <- function(labels, dose_unit = "mg", time_unit = "h", conc_
     "Elimination Rate Constant"          = paste0("1/", time_unit),
     "Apparent Clearance (CL/F)"          = cl_unit,
     "Apparent Volume (Vz/F)"             = "L",
+    "Clearance (CL)"                     = cl_unit,
+    "Volume of Distribution (Vz)"        = "L",
     "Lambda_z Lower Time"                = time_unit,
     "Lambda_z Upper Time"                = time_unit
   )

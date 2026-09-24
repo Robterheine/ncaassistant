@@ -1098,8 +1098,8 @@ path_be_server <- function(id, shared) {
             "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
             "AUC to Last Point", "AUC to Infinity (observed)",
             "AUC % Extrapolated (observed)",
-            "Half-Life", "Apparent Clearance (CL/F)",
-            "Apparent Volume (Vz/F)", "Adjusted R-squared"),
+            "Half-Life", "Apparent Clearance (CL/F)", "Clearance (CL)",
+            "Apparent Volume (Vz/F)", "Volume of Distribution (Vz)", "Adjusted R-squared"),
           names(display_nca))
         key_cols <- c(key_cols, unname(friendly_name(partial_auc_cols(names(be_nca_result())))))
         display_nca <- display_nca[, key_cols, drop = FALSE]

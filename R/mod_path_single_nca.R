@@ -535,8 +535,14 @@ path_single_nca_server <- function(id, shared) {
       # Always show these
       rows <- tagList(rows,
         tags$tr(tags$td("Terminal half-life:"), tags$td(tags$strong(sg("LAMZHL")))),
-        tags$tr(tags$td("Clearance (CL/F):"), tags$td(tags$strong(sg("CLFO")))),
-        tags$tr(tags$td("Volume of distribution (Vz/F):"), tags$td(tags$strong(sg("VZFO")))),
+        # NonCompart names clearance and volume by route: CLFO/VZFO after
+        # extravascular dosing, CLO/VZO after IV
+        if ("CLO" %in% names(r)) tagList(
+          tags$tr(tags$td("Clearance (CL):"), tags$td(tags$strong(sg("CLO")))),
+          tags$tr(tags$td("Volume of distribution (Vz):"), tags$td(tags$strong(sg("VZO")))))
+        else tagList(
+          tags$tr(tags$td("Clearance (CL/F):"), tags$td(tags$strong(sg("CLFO")))),
+          tags$tr(tags$td("Volume of distribution (Vz/F):"), tags$td(tags$strong(sg("VZFO"))))),
         tags$tr(tags$td("R\u00B2 of terminal fit:"), tags$td(tags$strong(sg("R2ADJ"))))
       )
       

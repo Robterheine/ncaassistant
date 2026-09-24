@@ -555,7 +555,7 @@ path_multi_nca_server <- function(id, shared) {
               "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
               "AUC Within Dosing Interval", "Average Concentration (Cavg)",
               "Trough Concentration (Cmin)", "Peak-Trough Fluctuation (%)",
-              "Half-Life", "Apparent Clearance (CL/F)",
+              "Half-Life", "Apparent Clearance (CL/F)", "Clearance (CL)",
               "Adjusted R-squared"),
             names(display_df))
         } else {
@@ -567,8 +567,8 @@ path_multi_nca_server <- function(id, shared) {
               "AUC % Extrapolated (observed)",
               "Half-Life", "Elimination Rate Constant",
               "Points Used for Half-Life",
-              "Apparent Clearance (CL/F)",
-              "Apparent Volume (Vz/F)", "Adjusted R-squared"),
+              "Apparent Clearance (CL/F)", "Clearance (CL)",
+              "Apparent Volume (Vz/F)", "Volume of Distribution (Vz)", "Adjusted R-squared"),
             names(display_df))
         }
         key_cols <- c(key_cols, unname(friendly_name(partial_auc_cols(names(nca_result())))))
@@ -635,9 +635,9 @@ path_multi_nca_server <- function(id, shared) {
       
       if (isTRUE(input$is_ss)) {
         # At steady state: AUC over the dosing interval and its derived parameters
-        key <- intersect(c("CMAX","TMAX","AUCTAU","CAVG","CMIN_SS","FLUCTP","LAMZHL","CLFO"), names(r))
+        key <- intersect(c("CMAX","TMAX","AUCTAU","CAVG","CMIN_SS","FLUCTP","LAMZHL","CLFO","CLO"), names(r))
       } else {
-        key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","LAMZ","CLFO","VZFO"), names(r))
+        key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","LAMZ","CLFO","VZFO","CLO","VZO"), names(r))
       }
       key <- c(key, partial_auc_cols(names(r)))
       if (length(key) == 0) return(NULL)
@@ -902,7 +902,7 @@ path_multi_nca_server <- function(id, shared) {
         r <- nca_result()
         add_cdisc_code_sheet(wb, names(r)[vapply(r, is.numeric, logical(1))],
                              input$admin_route, isTRUE(input$is_ss))
-        key <- c(intersect(if (isTRUE(input$is_ss)) c("CMAX","TMAX","AUCTAU","CAVG","CMIN_SS","FLUCTP","LAMZHL","CLFO") else c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r)),
+        key <- c(intersect(if (isTRUE(input$is_ss)) c("CMAX","TMAX","AUCTAU","CAVG","CMIN_SS","FLUCTP","LAMZHL","CLFO","CLO") else c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO","CLO","VZO"), names(r)),
                  partial_auc_cols(names(r)))
         if (length(key)>0) {
           addWorksheet(wb, "Summary_Statistics")
@@ -935,7 +935,7 @@ path_multi_nca_server <- function(id, shared) {
         
         withProgress(message = "Generating analysis record...", value = 0.3, {
           r <- nca_result()
-          key <- c(intersect(if (isTRUE(input$is_ss)) c("CMAX","TMAX","AUCTAU","CAVG","CMIN_SS","FLUCTP","LAMZHL","CLFO") else c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO"), names(r)),
+          key <- c(intersect(if (isTRUE(input$is_ss)) c("CMAX","TMAX","AUCTAU","CAVG","CMIN_SS","FLUCTP","LAMZHL","CLFO","CLO") else c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","CLFO","VZFO","CLO","VZO"), names(r)),
                    partial_auc_cols(names(r)))
           summ <- if (length(key) > 0) summarize_pk_params(r, key, group_col = if ("Treatment" %in% names(r)) "Treatment" else NULL) else NULL
           
