@@ -258,7 +258,7 @@ auto_detect_columns <- function(cols) {
                           "^result", "^konz", "^plasma", "ug.l", "ng.ml"), 3, "conc"),
     treatment = detect_optional(c("^trt", "^treat", "^form", "^drug", "^arm",
                                    "^behandl")),
-    period    = detect_optional(c("^per", "^period", "^prd", "^phase")),
+    period    = detect_optional(c("^per", "^period", "^prd", "^phase", "^aperiod$", "^occ")),
     sequence  = detect_optional(c("^seq", "^grp", "^sequence")),
     dose      = detect_optional(c("^dose", "^amt$", "^amount", "^dosis"))
   )

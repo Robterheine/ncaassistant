@@ -3601,6 +3601,32 @@ check("REL-10", "R-04: a subject recorded in two sequences is an error, not an u
   "URS-DAT-05", critical = TRUE, method = "One subject's period-2 rows given the other sequence",
   expected = "ERROR naming the subject; the sequence line shows subjects per sequence")
 
+check("REL-11", "R-05: a crossover without a mapped Period gets no estimate and no verdict",
+  tryCatch({
+    run <- function(cm) {
+      nca <- suppressWarnings(run_nca(rel_be, cm, rel_st(trap = "linear")))
+      b <- build_be_data(nca, rel_be, cm, "Reference")
+      fit_be_parameter(b$data, "AUCLST", design = "2x2x2", trt_col = b$trt_col, subj_col = b$subj_col,
+                       per_col = b$per_col, seq_col = b$seq_col)
+    }
+    with_p <- run(rel_be_cm)
+    no_p <- run(rel_be_cm[names(rel_be_cm) != "period"])
+    with_p$row$Bioequivalent %in% c("YES", "NO") && is.na(no_p$row$Point_Est) && is.null(no_p$estimate) &&
+      grepl("^no verdict: a crossover needs the Period column", no_p$row$Bioequivalent)
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = TRUE, method = "2x2x2 fixture with Sequence mapped and Period unmapped",
+  expected = "No point estimate, CI or verdict; the reason asks for the Period column (was a verdict from a model without period)")
+
+check("REL-12", "R-05: Period is detected from APERIOD and Occasion/OCC columns",
+  tryCatch({
+    identical(auto_detect_columns(c("USUBJID", "AFRLT", "AVAL", "TRTA", "APERIOD"))$period, "APERIOD") &&
+      identical(auto_detect_columns(c("ID", "TIME", "DV", "OCC"))$period, "OCC") &&
+      identical(auto_detect_columns(c("ID", "Time", "Conc", "Occasion"))$period, "Occasion") &&
+      identical(auto_detect_columns(c("ID", "Time", "Conc", "Visit"))$period, "")
+  }, error = function(e) FALSE),
+  "URS-DAT-02", critical = FALSE, method = "auto_detect_columns() on ADaM and NONMEM-style names",
+  expected = "APERIOD, OCC and Occasion map to Period; Visit is not mapped automatically")
+
 end_section("REL")
 
 # =============================================================================

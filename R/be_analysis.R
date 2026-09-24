@@ -179,6 +179,17 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
       MSE = mse, DF = dfe, Model = model_label, stringsAsFactors = FALSE)
   }
 
+  # A crossover without its Period column loses the period term: a period
+  # effect then biases the ratio when the sequences are unbalanced, and widens
+  # the CI when they are balanced. No estimate rather than a wrong one.
+  if (model_family == "crossover" && (is.null(per_col) || !per_col %in% names(be_data))) {
+    out$reason <- paste0("no verdict: a crossover needs the Period column. Map it on the Upload page ",
+                         "(a column named Visit or Occasion is not recognised automatically) and run ",
+                         "the analysis again.")
+    out$row <- make_row(verdict = out$reason)
+    return(out)
+  }
+
   # Subject, Period and Sequence are classification factors in the ANOVA
   # model. Uploaded files usually code them as integers, and lm()/lme() would
   # then fit each as a single linear covariate: harmless with two periods,
