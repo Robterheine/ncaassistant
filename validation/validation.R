@@ -4025,6 +4025,20 @@ check("REL-34", "R-23: Tlag is the last sample before the first measurable conce
   "URS-NCA-01", critical = FALSE, method = "0, 5, 20, 15, 0, 6, 4 (embedded zero); 0, 0, 20, ... (lag); single and batch",
   expected = "Tlag 0 with an embedded zero (NonCompart gives 6 h); 1 h with a real lag")
 
+check("REL-35", "R-24: steady state without a pre-dose sample is reported",
+  tryCatch({
+    warn_of <- function(expr) { w <- character(0)
+      withCallingHandlers(expr, warning = function(x) { w <<- c(w, conditionMessage(x)); invokeRestart("muffleWarning") }); w }
+    st <- rel_st(trap = "linear", ss = TRUE, tau = 12)
+    with0 <- warn_of(run_nca(data.frame(ID = "1", T = c(0, 1, 2, 4, 8, 12), C = c(5, 20, 15, 10, 7, 5)), rel_cm, st))
+    no0 <- warn_of(run_nca(data.frame(ID = "1", T = c(1, 2, 4, 8, 12), C = c(20, 15, 10, 7, 5)), rel_cm, st))
+    single <- warn_of(run_single_nca(c(1, 2, 4, 8, 12), c(20, 15, 10, 7, 5), st))
+    !any(grepl("no measured pre-dose sample", with0)) && any(grepl("1 profile\\(s\\) have no measured pre-dose sample", no0)) &&
+      any(grepl("no measured pre-dose sample", single))
+  }, error = function(e) FALSE),
+  "URS-NCA-07", critical = FALSE, method = "Steady state (tau 12 h) with and without a sample at time 0; batch and single profile",
+  expected = "A warning naming the profile when there is no pre-dose sample; none when there is one")
+
 end_section("REL")
 
 # =============================================================================

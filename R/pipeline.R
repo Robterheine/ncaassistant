@@ -766,7 +766,11 @@ run_single_nca <- function(time, conc, settings, time_used = NULL, is_blq = NULL
   # chosen by hand
   low <- is.null(use) && (no_fit || below_r2_threshold(r["R2ADJ"], settings$r2adj_threshold))
   if (low) r[lamz_dependent_cols(names(r), settings$is_steady_state)] <- NA
-  if (ss) r <- steady_state_parameters(r, t_all, c_all, tau, lamz_rejected = low)
+  if (ss) {
+    r <- steady_state_parameters(r, t_all, c_all, tau, lamz_rejected = low)
+    note <- steady_state_predose_note(list(t_all), list(c_all), "this profile", adm)
+    if (!is.null(note)) warning(note)
+  }
   if (!is.null(pauc)) {
     p <- partial_auc_profile(r, pauc, t_num, c_num, is_blq, partial_auc_blq_fraction(settings))
     r <- r[!grepl("^\\.PAUC", names(r))]
@@ -775,6 +779,23 @@ run_single_nca <- function(time, conc, settings, time_used = NULL, is_blq = NULL
                                   partial_auc_blq_fraction(settings))) warning(msg)
   }
   r
+}
+
+#' Steady-state warning for profiles without a measured pre-dose sample
+#'
+#' NonCompart then puts a concentration of 0 at time 0, which at steady state
+#' underestimates AUCtau (by about Cmin x t1 / 2).
+#' @param labels profile label per element of the lists
+#' @return message, or NULL when every profile has a value at t <= 0
+steady_state_predose_note <- function(times, concs, labels, adm) {
+  if (toupper(adm) == "BOLUS") return(NULL)
+  miss <- labels[vapply(seq_along(times), function(i)
+    !any(!is.na(times[[i]]) & times[[i]] <= 0 & !is.na(concs[[i]])), logical(1))]
+  if (length(miss) == 0) return(NULL)
+  paste0("Steady state: ", length(miss), " profile(s) have no measured pre-dose sample at time 0 (",
+         paste(head(miss, 5), collapse = ", "), if (length(miss) > 5) ", ..." else "",
+         "). A concentration of 0 was assumed there, so AUC\u03C4 is too low by about Cmin x the time ",
+         "of the first sample / 2. Add the pre-dose (trough) sample at time 0.")
 }
 
 #' The dosing interval entered for a steady-state analysis, or NA
@@ -1277,6 +1298,13 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
     k <- match(as.character(result[[1]]), as.character(final_keys))
     low <- (below_r2_threshold(result$R2ADJ, settings$r2adj_threshold) | no_fit[k]) & !manual[k]
     if (ss) {
+      keys_ss <- as.character(result[[1]])
+      note <- steady_state_predose_note(
+        lapply(keys_ss, function(k) data_all[[col_map$time]][data_all[[nca_key]] == k]),
+        lapply(keys_ss, function(k) data_all[[col_map$conc]][data_all[[nca_key]] == k]),
+        if (use_composite_key) profile_labels(key_parts[match(keys_ss, key_parts$.nca_key), pk$cols, drop = FALSE])
+        else keys_ss, adm)
+      if (!is.null(note)) warning(note)
       # Steady-state parameters per profile, before any rows are blanked
       for (n in c("TAU", "CAVG", "CMIN_SS", "FLUCTP", "SWING")) if (!n %in% names(result)) result[[n]] <- NA_real_
       for (i in seq_len(nrow(result))) {
