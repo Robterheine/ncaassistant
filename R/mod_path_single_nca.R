@@ -40,7 +40,7 @@ path_single_nca_ui <- function(id) {
     conditionalPanel(
       condition = sprintf("input['%s'] == 'manual'", ns("data_mode")),
       card(
-        card_header(class = "bg-warning text-dark",
+        card_header(class = "bg-warning text-white",
                     icon("keyboard"), " Enter Concentration-Time Data"),
         card_body(
           tags$p(class = "text-muted small",
@@ -96,9 +96,9 @@ path_single_nca_ui <- function(id) {
             numericInput(ns("dose"), "Dose", value = 100, min = 0),
             tags$div(id = ns("dose_hint_container"),
                      uiOutput(ns("dose_hint"))),
-            selectInput(ns("dose_unit"), "Dose", choices = DOSE_UNIT_CHOICES, selected = "mg"),
-            selectInput(ns("time_unit"), "Time", choices = TIME_UNIT_CHOICES, selected = "h"),
-            selectInput(ns("conc_unit"), "Conc", choices = CONC_UNIT_CHOICES, selected = "ng/mL"),
+            selectInput(ns("dose_unit"), "Dose unit", choices = DOSE_UNIT_CHOICES, selected = "mg"),
+            selectInput(ns("time_unit"), "Time unit", choices = TIME_UNIT_CHOICES, selected = "h"),
+            selectInput(ns("conc_unit"), "Conc unit", choices = CONC_UNIT_CHOICES, selected = "ng/mL"),
             numericInput(ns("mw"), "Molecular weight (only for molar units)",
                          value = 0, min = 0, step = 1),
             selectInput(ns("trap_method"), tagList("Trapezoidal method", help_trapezoidal),

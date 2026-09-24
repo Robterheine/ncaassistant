@@ -71,15 +71,16 @@ source("R/mod_data_guide.R")
 source("R/mod_methods.R")
 
 # --- Theme -------------------------------------------------------------------
+# Colours chosen for at least 4.5:1 contrast with white text (WCAG AA)
 pharma_theme <- bs_theme(
   version    = 5,
   bootswatch = "flatly",
   primary    = "#2C3E50",
-  secondary  = "#95A5A6",
-  success    = "#18BC9C",
-  info       = "#3498DB",
-  warning    = "#F39C12",
-  danger     = "#E74C3C",
+  secondary  = "#5F6B6D",
+  success    = "#0E7C66",
+  info       = "#1F6FAE",
+  warning    = "#A85B00",
+  danger     = "#C0392B",
   base_font  = font_google("Source Sans Pro"),
   heading_font = font_google("Source Sans Pro"),
   code_font  = font_google("Fira Code"),
@@ -93,7 +94,7 @@ ui <- page_fluid(
   
   # Global header
   tags$nav(
-    class = "navbar navbar-dark bg-dark px-3 py-2 mb-0",
+    class = "navbar navbar-dark bg-primary px-3 py-2 mb-0",
     tags$div(
       class = "container-fluid",
       tags$a(
@@ -108,14 +109,14 @@ ui <- page_fluid(
         tags$a(
           href = "#",
           onclick = "Shiny.setInputValue('nav_path', 'methods', {priority: 'event'}); return false;",
-          class = "btn btn-info btn-sm ms-3",
+          class = "btn btn-outline-light btn-sm ms-3",
           style = "font-size: 0.7rem; padding: 2px 8px; color: #fff;",
           icon("flask-vial", class = "me-1"), "Statistical Methods"
         ),
         tags$a(
           href = "#",
           onclick = "Shiny.setInputValue('nav_path', 'guide', {priority: 'event'}); return false;",
-          class = "btn btn-outline-warning btn-sm ms-2",
+          class = "btn btn-outline-light btn-sm ms-2",
           style = "font-size: 0.7rem; padding: 2px 8px;",
           icon("book-open", class = "me-1"), "Data Guide"
         ),
@@ -129,11 +130,11 @@ ui <- page_fluid(
         tags$a(
           href = "NCA_Assistant_User_Manual_v1.6.pdf",
           target = "_blank",
-          class = "btn btn-outline-success btn-sm ms-2",
+          class = "btn btn-outline-light btn-sm ms-2",
           style = "font-size: 0.7rem; padding: 2px 8px;",
           icon("file-pdf", class = "me-1"), "User Manual"
         ),
-        tags$span(class = "text-muted ms-2", style = "font-size: 0.7rem;",
+        tags$span(class = "text-light ms-2", style = "font-size: 0.7rem;",
                   paste0("v", APP_VERSION))
       )
     )
@@ -305,6 +306,8 @@ server <- function(input, output, session) {
             class = "card h-100 border-0 shadow-sm hub-card",
             style = "cursor: pointer; transition: transform 0.15s;",
             onclick = "Shiny.setInputValue('nav_path', 'power', {priority: 'event'});",
+            role = "button", tabindex = "0",
+            onkeydown = "if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }",
             tags$div(
               class = "card-body p-4",
               tags$div(
@@ -337,6 +340,8 @@ server <- function(input, output, session) {
             class = "card h-100 border-0 shadow-sm hub-card",
             style = "cursor: pointer; transition: transform 0.15s;",
             onclick = "Shiny.setInputValue('nav_path', 'data', {priority: 'event'});",
+            role = "button", tabindex = "0",
+            onkeydown = "if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }",
             tags$div(
               class = "card-body p-4",
               tags$div(
@@ -369,6 +374,8 @@ server <- function(input, output, session) {
             class = "card h-100 border-0 shadow-sm hub-card viz-hub-card",
             style = "cursor: pointer; transition: transform 0.15s;",
             onclick = "Shiny.setInputValue('nav_path', 'viz', {priority: 'event'});",
+            role = "button", tabindex = "0",
+            onkeydown = "if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }",
             tags$div(
               class = "card-body p-4",
               tags$div(
@@ -406,6 +413,8 @@ server <- function(input, output, session) {
             class = "card h-100 border-0 shadow-sm hub-card",
             style = "cursor: pointer; transition: transform 0.15s;",
             onclick = "Shiny.setInputValue('nav_path', 'single_nca', {priority: 'event'});",
+            role = "button", tabindex = "0",
+            onkeydown = "if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }",
             tags$div(
               class = "card-body p-4",
               tags$div(
@@ -433,6 +442,8 @@ server <- function(input, output, session) {
             class = "card h-100 border-0 shadow-sm hub-card",
             style = "cursor: pointer; transition: transform 0.15s;",
             onclick = "Shiny.setInputValue('nav_path', 'multi_nca', {priority: 'event'});",
+            role = "button", tabindex = "0",
+            onkeydown = "if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }",
             tags$div(
               class = "card-body p-4",
               tags$div(
@@ -460,6 +471,8 @@ server <- function(input, output, session) {
             class = "card h-100 border-0 shadow-sm hub-card",
             style = "cursor: pointer; transition: transform 0.15s;",
             onclick = "Shiny.setInputValue('nav_path', 'be', {priority: 'event'});",
+            role = "button", tabindex = "0",
+            onkeydown = "if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }",
             tags$div(
               class = "card-body p-4",
               tags$div(
@@ -709,7 +722,7 @@ server <- function(input, output, session) {
               nc <- noncompart_compat()
               badge_class <- switch(nc$level,
                                     ok = "bg-success", info = "bg-info",
-                                    warn = "bg-warning text-dark", error = "bg-danger",
+                                    warn = "bg-warning text-white", error = "bg-danger",
                                     "bg-secondary")
               tags$tr(tags$td(class = "fw-bold", "NCA engine:"),
                       tags$td(

@@ -3977,6 +3977,25 @@ check("REL-31", "R-20: release files can be generated and the About page shows t
   "URS-GEN-01", critical = FALSE, method = "make_release_files.R parses and writes the lockfile and manifest; About and environment file",
   expected = "Release files and environment record in place")
 
+check("REL-32", "R-21: theme colours pass WCAG AA with white text; hub cards and help buttons work without a mouse",
+  tryCatch({
+    app <- paste(readLines("app.R", warn = FALSE), collapse = "\n")
+    lum <- function(h) { v <- grDevices::col2rgb(h)[, 1] / 255
+      v <- ifelse(v <= 0.03928, v / 12.92, ((v + 0.055) / 1.055)^2.4); sum(c(0.2126, 0.7152, 0.0722) * v) }
+    contrast <- function(h) (1 + 0.05) / (lum(h) + 0.05)
+    cols <- vapply(c("primary", "secondary", "success", "info", "warning", "danger"), function(k)
+      regmatches(app, regexpr(paste0(k, " *= \"#[0-9A-Fa-f]{6}\""), app)), character(1))
+    hex <- sub('^.*"(#[0-9A-Fa-f]{6})"$', "\\1", cols)
+    all_r <- paste(vapply(list.files("R", "\\.R$", full.names = TRUE), function(f)
+      paste(readLines(f, warn = FALSE), collapse = "\n"), character(1)), collapse = "\n")
+    all(vapply(hex, contrast, numeric(1)) >= 4.5) &&
+      lengths(regmatches(app, gregexpr('role = "button", tabindex = "0"', app, fixed = TRUE))) == 6 &&
+      grepl("`aria-label` = paste(\"Help:\", title)", all_r, fixed = TRUE) &&
+      !grepl("bg-warning text-dark", paste(all_r, app), fixed = TRUE) && grepl("navbar-dark bg-primary", app, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-UI-01", critical = FALSE, method = "Contrast of the six theme colours against white; hub card, help button and badge markup",
+  expected = "Every theme colour at least 4.5:1 (was 2.2-3.8 for success, info, warning, danger, secondary); keyboard-operable cards; named help buttons")
+
 end_section("REL")
 
 # =============================================================================

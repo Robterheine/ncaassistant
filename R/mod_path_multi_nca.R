@@ -72,9 +72,9 @@ path_multi_nca_ui <- function(id) {
             card_body(
               layout_columns(
                 col_widths = c(4, 4, 4),
-                selectInput(ns("dose_unit"), "Dose", choices = DOSE_UNIT_CHOICES, selected = "mg"),
-                selectInput(ns("time_unit"), "Time", choices = TIME_UNIT_CHOICES, selected = "h"),
-                selectInput(ns("conc_unit"), "Conc", choices = CONC_UNIT_CHOICES, selected = "ng/mL")
+                selectInput(ns("dose_unit"), "Dose unit", choices = DOSE_UNIT_CHOICES, selected = "mg"),
+                selectInput(ns("time_unit"), "Time unit", choices = TIME_UNIT_CHOICES, selected = "h"),
+                selectInput(ns("conc_unit"), "Conc unit", choices = CONC_UNIT_CHOICES, selected = "ng/mL")
               ),
               numericInput(ns("mw"), "Molecular weight (only for molar units)",
                            value = 0, min = 0, step = 1)

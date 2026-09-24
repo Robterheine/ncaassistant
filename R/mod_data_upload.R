@@ -547,7 +547,7 @@ data_upload_server <- function(id, shared) {
       qc <- shared$qc_result
       
       header_cls <- if (!qc$pass) "bg-danger text-white"
-                    else if (qc$n_warnings > 0) "bg-warning text-dark"
+                    else if (qc$n_warnings > 0) "bg-warning text-white"
                     else "bg-success text-white"
       header_text <- if (!qc$pass) "Data Quality — Issues Found"
                      else if (qc$n_warnings > 0) "Data Quality — Warnings"

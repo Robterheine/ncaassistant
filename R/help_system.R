@@ -16,7 +16,8 @@ info_btn <- function(id, title, content) {
   tags$button(
     type = "button",
     class = "btn btn-link btn-sm p-0 ms-1 info-help-btn",
-    style = "font-size: 0.85rem; vertical-align: middle; color: #3498DB; border: none; background: none;",
+    style = "font-size: 0.85rem; vertical-align: middle; color: #1F6FAE; border: none; background: none;",
+    `aria-label` = paste("Help:", title),
     `data-bs-toggle` = "popover",
     `data-bs-trigger` = "focus",
     `data-bs-placement` = "auto",

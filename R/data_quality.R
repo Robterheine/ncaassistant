@@ -586,7 +586,7 @@ render_quality_report <- function(qc_result) {
   severity_badge <- function(sev, n) {
     cls <- switch(sev,
                   "ERROR" = "bg-danger",
-                  "WARNING" = "bg-warning text-dark",
+                  "WARNING" = "bg-warning text-white",
                   "INFO" = "bg-info",
                   "OK" = "bg-success")
     if (n > 0 || sev == "OK") {
