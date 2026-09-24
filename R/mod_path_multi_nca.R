@@ -502,8 +502,8 @@ path_multi_nca_server <- function(id, shared) {
       d <- shared$pk_data; cm <- shared$col_map
       d <- d[!is.na(d[[cm$conc]]) & d[[cm$conc]] > 0, ]
       if (nrow(d) == 0) return(plotly_empty())
-      p <- ggplot(d, aes(x = .data[[cm$time]], y = .data[[cm$conc]],
-                         group = .data[[cm$subject]])) +
+      d$.profile <- profile_group(d, cm)
+      p <- ggplot(d, aes(x = .data[[cm$time]], y = .data[[cm$conc]], group = .profile)) +
         geom_line(alpha = 0.4, color = "#3498DB") +
         scale_y_log10() +
         labs(x = "Time", y = "Concentration (log)") +
@@ -517,15 +517,18 @@ path_multi_nca_server <- function(id, shared) {
       d <- shared$pk_data; cm <- shared$col_map
       d <- d[!is.na(d[[cm$conc]]) & !is.na(d[[cm$time]]), ]
       if (nrow(d) == 0) return(plotly_empty())
+      # Treatments are averaged separately, never pooled
+      d$.trt <- if (!is.null(cm$treatment) && cm$treatment %in% names(d)) as.character(d[[cm$treatment]]) else "All"
       summ <- d %>%
-        group_by(.data[[cm$time]]) %>%
+        group_by(.trt, .data[[cm$time]]) %>%
         summarize(mean_c = mean(.data[[cm$conc]], na.rm = TRUE),
                   sd_c = sd(.data[[cm$conc]], na.rm = TRUE), .groups = "drop")
-      p <- ggplot(summ, aes(x = .data[[cm$time]], y = mean_c)) +
+      p <- ggplot(summ, aes(x = .data[[cm$time]], y = mean_c, colour = .trt, group = .trt)) +
         geom_errorbar(aes(ymin = pmax(0, mean_c - sd_c), ymax = mean_c + sd_c),
                       width = 0.3, alpha = 0.5) +
-        geom_line(linewidth = 0.8, color = "#2C3E50") +
-        geom_point(size = 2.5, color = "#E74C3C") +
+        geom_line(linewidth = 0.8) +
+        geom_point(size = 2.5) +
+        labs(colour = NULL) +
         labs(x = "Time", y = "Mean ± SD") +
         theme_minimal(base_size = 11)
       ggplotly(p)
@@ -707,7 +710,8 @@ path_multi_nca_server <- function(id, shared) {
       
       sub_d <- d[d[[cm$subject]] %in% subjects, ]
       tryCatch({
-        p <- ggplot(sub_d, aes(x = .data[[cm$time]], y = .data[[cm$conc]])) +
+        sub_d$.profile <- profile_group(sub_d, cm)
+        p <- ggplot(sub_d, aes(x = .data[[cm$time]], y = .data[[cm$conc]], group = .profile)) +
           geom_line(color = "#2C3E50", linewidth = 0.5) +
           geom_point(size = 1.5, color = "#3498DB") +
           facet_wrap(reformulate(cm$subject), scales = "free_y") +

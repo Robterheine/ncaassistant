@@ -425,6 +425,7 @@ path_viz_server <- function(id, shared) {
       if (!is.null(cm$sequence) && cm$sequence %in% names(d))
         out$.sequence  <- d[[cm$sequence]]
 
+      out$.profile <- profile_group(d, cm)
       out <- out[!is.na(out$.time), ]
       out[order(out$.subj, out$.time), ]
     })
@@ -667,14 +668,14 @@ path_viz_server <- function(id, shared) {
           "")
 
         p <- ggplot(d, aes(x = .time, y = .conc,
-                           group  = .subj,
+                           group  = .profile,
                            colour = .data[[col_internal]])) +
           geom_line(alpha = 0.65, linewidth = 0.55) +
           scale_color_manual(values = cols, name = legend_name)
         if (show_pts)
           p <- p + geom_point(alpha = 0.80, size = 1.6)
       } else {
-        p <- ggplot(d, aes(x = .time, y = .conc, group = .subj)) +
+        p <- ggplot(d, aes(x = .time, y = .conc, group = .profile)) +
           geom_line(colour = "#2C3E50", alpha = 0.45, linewidth = 0.55)
         if (show_pts)
           p <- p + geom_point(colour = "#2C3E50", alpha = 0.70, size = 1.6)

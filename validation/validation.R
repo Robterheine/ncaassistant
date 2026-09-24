@@ -3845,6 +3845,27 @@ check("REL-24", "R-14: two periods merged into one profile are flagged, and TAD 
   method = "Interaction study with time since first dose (period 2 at 168 h) and an unmapped Visit column; theophylline and 2x2x2 fixture",
   expected = "Two warnings for the merged profiles; none for the example data; TAD chosen as time")
 
+check("REL-25", "R-15: concentration-time lines are drawn per profile, not per subject",
+  tryCatch({
+    x <- read.csv("data/example_be_crossover.csv", stringsAsFactors = FALSE)
+    cm <- list(subject = "Subject", time = "Time", conc = "Concentration", treatment = "Treatment", period = "Period")
+    g <- profile_group(x, cm)
+    wd <- file.path(tempdir(), "rel25"); dir.create(wd, showWarnings = FALSE)
+    f <- file.path(wd, "x.csv"); write.csv(x, f, row.names = FALSE)
+    p <- ggplot2::ggplot(x, ggplot2::aes(Time, Concentration, group = g)) + ggplot2::geom_line()
+    zp <- file.path(wd, "fig.zip")
+    create_viz_record(zp, p, list(plot_type = "spaghetti", color_by = "subject", export_format = "png", dpi = 72),
+                      cm, f, "x.csv", blq_rule = "rule1", lloq = 0)
+    ex <- rec_unzip(zp)
+    scr <- paste(readLines(file.path(ex, "reproduce_figure.R"), warn = FALSE), collapse = "\n")
+    rd <- function(f) paste(readLines(f, warn = FALSE), collapse = "\n")
+    nlevels(g) == 2 * length(unique(x$Subject)) && grepl("group = profile_group(d, ds$col_map)", scr, fixed = TRUE) &&
+      grepl("Result: FIGURE CREATED", rec_check_text(ex)) &&
+      !grepl("group  = .subj", rd("R/mod_path_viz.R"), fixed = TRUE) && grepl("group = .profile", rd("R/mod_path_multi_nca.R"), fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-VIZ-01", critical = FALSE, method = "BE crossover example: profile groups, Figure Record script and module code",
+  expected = "12 lines for 6 subjects x 2 periods (was 6 zig-zag lines); the Figure Record draws the same")
+
 end_section("REL")
 
 # =============================================================================

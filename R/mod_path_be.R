@@ -1158,7 +1158,7 @@ path_be_server <- function(id, shared) {
       if (nrow(d) == 0) return(plotly_empty())
       p <- ggplot(d, aes(x = .data[[cm$time]], y = .data[[cm$conc]],
                          color = factor(.data[[cm$treatment]]),
-                         group = interaction(.data[[cm$subject]], .data[[cm$treatment]]))) +
+                         group = profile_group(d, cm))) +
         geom_line(alpha = 0.4) + geom_point(alpha = 0.5, size = 1.5) +
         scale_y_log10() + scale_color_brewer(palette = "Set1") +
         labs(x = "Time", y = "Concentration (log)", color = "Treatment") +
@@ -1202,7 +1202,7 @@ path_be_server <- function(id, shared) {
       sub_d <- d[d[[cm$subject]] %in% subjects, ]
       tryCatch({
         p <- ggplot(sub_d, aes(x = .data[[cm$time]], y = .data[[cm$conc]],
-                               color = factor(.data[[cm$treatment]]))) +
+                               color = factor(.data[[cm$treatment]]), group = profile_group(sub_d, cm))) +
           geom_line(linewidth = 0.5) +
           geom_point(size = 1.5) +
           facet_wrap(reformulate(cm$subject), scales = "free_y") +

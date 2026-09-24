@@ -308,6 +308,18 @@ profile_labels <- function(parts) {
   lab
 }
 
+#' One line per profile in a concentration-time plot
+#'
+#' Lines grouped by subject alone join a crossover subject's Test and
+#' Reference profiles into one zig-zag line. A profile is subject x treatment
+#' x period, as in the NCA.
+#' @return factor, one level per profile
+profile_group <- function(data, col_map) {
+  cols <- c(col_map$subject, col_map$treatment, col_map$period)
+  cols <- cols[!is.null(cols) & nzchar(cols) & cols %in% names(data)]
+  interaction(lapply(cols, function(cc) as.character(data[[cc]])), drop = TRUE, sep = " | ")
+}
+
 #' Unique profiles in an uploaded data set, ordered subject -> treatment -> period
 #' @return data.frame of parts with a `label` column
 data_profiles <- function(data, col_map) {

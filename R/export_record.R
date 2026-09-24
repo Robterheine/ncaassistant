@@ -1212,7 +1212,7 @@ p$layers <- c(ggplot2::annotate("rect", xmin = iv$xmin, xmax = iv$xmax, ymin = i
   } else {
     paste0(
 'p <- ggplot2::ggplot(d, ggplot2::aes(x = .time, y = .conc,
-       group = ', deparse(col_map$subject), ', colour = factor(', deparse(color_col), '))) +
+       group = profile_group(d, ds$col_map), colour = factor(', deparse(color_col), '))) +
   ggplot2::geom_line(alpha = 0.7) +
   ggplot2::geom_point(size = 1) +
   ggplot2::labs(x = "Time", y = y_label, colour = ', deparse(color_by), ')
