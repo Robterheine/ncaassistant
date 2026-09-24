@@ -465,9 +465,10 @@ help_analysis_record <- info_btn("help_analysis_record",
   <li><b>HTML summary</b> — a human-readable record of methods and environment</li>
   <li><b>A copy of your original data</b> — so the package stands on its own</li>
   </ul>
-  <b>When to use it:</b> archiving, audit trails, publication supplements, and 
-  a sponsor's study documentation — any time someone needs to verify how the 
-  result was produced.")
+  <b>When to use it:</b> archiving, publication supplements, and a sponsor's
+  study documentation, any time someone needs to see how the result was
+  produced. It is not an audit trail or electronic signature (21 CFR Part 11,
+  EU GMP Annex 11).")
 
 # ============================================================================
 # SHARED UI — Analysis Record panel (used by every analysis tab)
@@ -492,7 +493,7 @@ analysis_record_ui <- function(ns, intro = NULL,
   default_intro <- paste0(
     "Download a self-contained package — results, settings, a standalone R ",
     "script that reproduces this analysis, a SHA-256 data-integrity hash, and an ",
-    "HTML summary. For archiving, audit trails, publication supplements, and study documentation.")
+    "HTML summary. For archiving, publication supplements, and study documentation.")
 
   card(
     class = "mt-3 border-secondary-subtle",
@@ -502,7 +503,7 @@ analysis_record_ui <- function(ns, intro = NULL,
       tags$span(class = "fw-semibold", "Analysis Record"),
       help_analysis_record,
       tags$span(class = "badge bg-secondary ms-2", style = "font-weight: 500;",
-                "reproducibility · audit")
+                "reproducibility")
     ),
     card_body(
       class = "py-3",

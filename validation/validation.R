@@ -885,7 +885,8 @@ check("EXP-MN-01", "Integrity manifest covers data, settings, results and pipeli
         man <- paste(readLines(file.path(ex,"data_integrity.txt")), collapse="\n")
         n_hash <- length(gregexpr("SHA-256:", man, fixed=TRUE)[[1]])
         pl_hash <- digest::digest(file = file.path(ex, "nca_pipeline.R"), algo = "sha256")
-        n_hash==4 && grepl("Source data",man) && grepl("Analysis settings",man) && grepl("Results",man) &&
+        n_hash==6 && grepl("Source data",man) && grepl("Analysis settings",man) && grepl("Results",man) &&
+          grepl("Reference results",man) && grepl("Reproduction script",man) &&
           grepl("Pipeline code",man) && grepl(pl_hash, man, fixed=TRUE) &&
           identical(pl_hash, digest::digest(file = "R/pipeline.R", algo = "sha256"))
       }, error=function(e) FALSE),
@@ -3865,6 +3866,30 @@ check("REL-25", "R-15: concentration-time lines are drawn per profile, not per s
   }, error = function(e) FALSE),
   "URS-VIZ-01", critical = FALSE, method = "BE crossover example: profile groups, Figure Record script and module code",
   expected = "12 lines for 6 subjects x 2 periods (was 6 zig-zag lines); the Figure Record draws the same")
+
+check("REL-26", "R-16: a changed file or a deleted reference column makes the reproduction DIFFERENT",
+  tryCatch({
+    r <- rec_build(df = theoph, cm = theoph_cm, st = theoph_settings)
+    ok0 <- grepl("Result: MATCH", rec_check_text(r$ex))
+    tamper <- function(edit) {
+      ex <- file.path(tempdir(), paste0("rel26_", sample.int(1e6, 1))); dir.create(ex)
+      file.copy(list.files(r$ex, full.names = TRUE), ex)
+      edit(ex); suppressWarnings(run_reproduction_check(ex, "reproduce_analysis.R")); rec_check_text(ex)
+    }
+    code <- tamper(function(ex) cat("\n# edited\n", file = file.path(ex, "nca_pipeline.R"), append = TRUE))
+    data <- tamper(function(ex) { f <- list.files(ex, "\\.csv$", full.names = TRUE)
+      f <- f[!grepl("app_results_reference|reproduced", f)][1]; cat("\n", file = f, append = TRUE) })
+    col <- tamper(function(ex) { f <- file.path(ex, "app_results_reference.csv"); x <- read.csv(f, check.names = FALSE)
+      write.csv(x[, setdiff(names(x), c("CMAX", "AUCLST"))], f, row.names = FALSE) })
+    man <- paste(readLines(file.path(r$ex, "data_integrity.txt")), collapse = "\n")
+    ok0 && grepl("Result: DIFFERENT (Pipeline code not the one analysed", code, fixed = TRUE) &&
+      grepl("Result: DIFFERENT (Data file not the one analysed", data, fixed = TRUE) &&
+      grepl("Result: DIFFERENT (parameters present on one side only: CMAX, AUCLST", col, fixed = TRUE) &&
+      grepl("Reference results:", man) && grepl("Reproduction script:", man) && grepl("not an", man) &&
+      !grepl("audit trails", paste(readLines("R/help_system.R"), collapse = " "))
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = TRUE, method = "Theophylline record: pipeline code edited, data file changed, CMAX and AUCLST deleted from the reference",
+  expected = "DIFFERENT with the reason in each case (was MATCH); the manifest covers the reference and the script")
 
 end_section("REL")
 

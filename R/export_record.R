@@ -77,8 +77,11 @@ write_integrity_manifest <- function(rec_dir, artifacts) {
     "This manifest fingerprints every artefact in this analysis record so the",
     "package is independently verifiable and traceable end to end:",
     "source data → analysis settings → results.",
-    "Recompute any hash below and confirm it matches; a match proves that file",
-    "has not been altered since the analysis was performed.",
+    "Recompute any hash below and confirm it matches; a match shows that file is",
+    "the one hashed when this record was created. The manifest itself is unsigned:",
+    "store the record, or this file's hash, in a controlled system to detect later",
+    "changes. This record documents how the result was produced; it is not an",
+    "audit trail or electronic signature in the sense of 21 CFR Part 11 or EU GMP Annex 11.",
     "")
   for (lab in names(artifacts)) {
     p <- artifacts[[lab]]
@@ -506,7 +509,9 @@ create_analysis_record <- function(output_path, results, settings, col_map,
       "Source data"       = original_file_path,
       "Analysis settings" = file.path(rec_dir, "analysis_settings.json"),
       "Results (Excel)"   = file.path(rec_dir, "results.xlsx"),
-      "Pipeline code"     = file.path(rec_dir, "nca_pipeline.R")
+      "Reference results" = file.path(rec_dir, "app_results_reference.csv"),
+      "Pipeline code"     = file.path(rec_dir, "nca_pipeline.R"),
+      "Reproduction script" = file.path(rec_dir, "reproduce_analysis.R")
     ), shipped_adnca$manifest))
   }, error = function(e) warning("Could not create integrity file: ", e$message))
 
@@ -673,7 +678,9 @@ create_single_analysis_record <- function(output_path, result, settings,
       "Source data"       = source_path,
       "Analysis settings" = file.path(rec_dir, "analysis_settings.json"),
       "Results (Excel)"   = file.path(rec_dir, "results.xlsx"),
-      "Pipeline code"     = file.path(rec_dir, "nca_pipeline.R")
+      "Reference results" = file.path(rec_dir, "app_results_reference.csv"),
+      "Pipeline code"     = file.path(rec_dir, "nca_pipeline.R"),
+      "Reproduction script" = file.path(rec_dir, "reproduce_analysis.R")
     ), shipped_adnca$manifest))
   }, error = function(e) warning("Could not create integrity file: ", e$message))
 
@@ -867,7 +874,8 @@ create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
       "Source data"     = original_file_path,
       "Figure settings" = file.path(rec_dir, "figure_settings.json"),
       "Figure"          = file.path(rec_dir, paste0("figure.", fmt)),
-      "Pipeline code"   = file.path(rec_dir, "nca_pipeline.R")
+      "Pipeline code"   = file.path(rec_dir, "nca_pipeline.R"),
+      "Reproduction script" = file.path(rec_dir, "reproduce_figure.R")
     ), shipped_adnca$manifest))
   }, error = function(e) warning("Could not create integrity file: ", e$message))
 
@@ -930,16 +938,18 @@ library(NonCompart)
 rec <- jsonlite::fromJSON("analysis_settings.json", simplifyDataFrame = FALSE)
 
 # 1. Integrity: the pipeline code and the data file must be the ones analysed
-cat("Pipeline code:", if (identical(digest::digest(file = "nca_pipeline.R", algo = "sha256"),
-                                    rec$pipeline_sha256)) "MATCH" else "MISMATCH", "\n")
+integrity <- c("Pipeline code" = if (identical(digest::digest(file = "nca_pipeline.R", algo = "sha256"),
+                                             rec$pipeline_sha256)) "MATCH" else "MISMATCH")
+cat("Pipeline code:", integrity[["Pipeline code"]], "\n")
 source("nca_pipeline.R")
-verify_file_hash(rec$input_file, rec$data_sha256, "Data file")
+integrity[["Data file"]] <- verify_file_hash(rec$input_file, rec$data_sha256, "Data file")
 
 # 2. Read and prepare the data exactly as the app did
 if (identical(rec$door, "adnca")) {
   # CDISC ADNCA import: convert again with the recorded choices (adnca_import.R)
-  cat("ADNCA import code:", if (identical(digest::digest(file = "adnca_import.R", algo = "sha256"),
-                                        rec$adnca_import_sha256)) "MATCH" else "MISMATCH", "\n")
+  integrity[["ADNCA import code"]] <- if (identical(digest::digest(file = "adnca_import.R", algo = "sha256"),
+                                                  rec$adnca_import_sha256)) "MATCH" else "MISMATCH"
+  cat("ADNCA import code:", integrity[["ADNCA import code"]], "\n")
   source("adnca_import.R")
 }
 inp <- read_record_input(rec)
@@ -953,7 +963,7 @@ write.csv(result, "reproduced_results.csv", row.names = FALSE)
 cat("Profiles analysed:", nrow(result), "\n")
 
 # 4. Compare with the app's results shipped in this record
-compare_with_reference(result, "app_results_reference.csv")
+compare_with_reference(result, "app_results_reference.csv", integrity = integrity)
 if (!is.null(rec$reproduction_scope)) cat("Scope:", rec$reproduction_scope, "\n")
 )---")
 }
@@ -971,16 +981,18 @@ library(NonCompart)
 
 rec <- jsonlite::fromJSON("analysis_settings.json", simplifyDataFrame = FALSE)
 
-cat("Pipeline code:", if (identical(digest::digest(file = "nca_pipeline.R", algo = "sha256"),
-                                    rec$pipeline_sha256)) "MATCH" else "MISMATCH", "\n")
+integrity <- c("Pipeline code" = if (identical(digest::digest(file = "nca_pipeline.R", algo = "sha256"),
+                                             rec$pipeline_sha256)) "MATCH" else "MISMATCH")
+cat("Pipeline code:", integrity[["Pipeline code"]], "\n")
 source("nca_pipeline.R")
-verify_file_hash(rec$input_file, rec$data_sha256, "Data file")
+integrity[["Data file"]] <- verify_file_hash(rec$input_file, rec$data_sha256, "Data file")
 
 # The profile: from the uploaded file (prepared as in the app) or manual entry
 if (identical(rec$data_source, "uploaded_file")) {
   if (identical(rec$door, "adnca")) {
-    cat("ADNCA import code:", if (identical(digest::digest(file = "adnca_import.R", algo = "sha256"),
-                                          rec$adnca_import_sha256)) "MATCH" else "MISMATCH", "\n")
+    integrity[["ADNCA import code"]] <- if (identical(digest::digest(file = "adnca_import.R", algo = "sha256"),
+                                                    rec$adnca_import_sha256)) "MATCH" else "MISMATCH"
+    cat("ADNCA import code:", integrity[["ADNCA import code"]], "\n")
     source("adnca_import.R")
   }
   inp  <- read_record_input(rec)
@@ -1006,7 +1018,7 @@ result <- run_single_nca(time, conc, settings, time_used = time_used)
 write.csv(data.frame(Parameter = names(result), Value = as.character(result)),
           "reproduced_results.csv", row.names = FALSE)
 
-compare_with_reference(result, "app_results_reference.csv")
+compare_with_reference(result, "app_results_reference.csv", integrity = integrity)
 )---")
 }
 

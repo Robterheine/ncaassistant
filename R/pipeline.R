@@ -1429,7 +1429,10 @@ record_nca_settings <- function(rec, data, col_map) {
 #' @param ref_file app_results_reference.csv
 #' @return "MATCH" (max relative difference < 1e-6), "CLOSE" (< 1e-3),
 #'   "DIFFERENT", or "NOT COMPARED"; prints a summary line
-compare_with_reference <- function(result, ref_file = "app_results_reference.csv") {
+compare_with_reference <- function(result, ref_file = "app_results_reference.csv", integrity = NULL) {
+  # A file that differs from the one analysed makes the record DIFFERENT, even
+  # when the numbers happen to agree
+  changed <- names(integrity)[integrity %in% "MISMATCH"]
   if (is.null(result) || length(result) == 0) {
     cat("Result: FAILED (the reproduction produced no NCA result)\n")
     return(invisible("FAILED"))
@@ -1446,6 +1449,19 @@ compare_with_reference <- function(result, ref_file = "app_results_reference.csv
   missing_pauc <- union(setdiff(ref_pauc, res_pauc), setdiff(res_pauc, ref_pauc))
   if (length(missing_pauc) > 0) {
     cat("Result: DIFFERENT (partial AUC columns differ: ", paste(missing_pauc, collapse = ", "), ")\n", sep = "")
+    return(invisible("DIFFERENT"))
+  }
+  # Every parameter must be on both sides: a column deleted from the
+  # reference would otherwise simply not be compared. Dose-normalised values
+  # are added by the app after the NCA and are not reproduced.
+  ref_names <- if (is.data.frame(result)) names(ref) else ref$Parameter
+  res_names <- names(result)[vapply(names(result), function(n) is.numeric(result[[n]]), logical(1))]
+  keys <- c("Subject", "Treatment", "Period")
+  one_side <- union(setdiff(setdiff(ref_names, keys), c(names(result), grep("_DN$", ref_names, value = TRUE))),
+                    setdiff(setdiff(res_names, keys), ref_names))
+  if (length(one_side) > 0) {
+    cat("Result: DIFFERENT (parameters present on one side only: ", paste(head(one_side, 10), collapse = ", "),
+        ")\n", sep = "")
     return(invisible("DIFFERENT"))
   }
   if (is.data.frame(result)) {
@@ -1490,6 +1506,11 @@ compare_with_reference <- function(result, ref_file = "app_results_reference.csv
   cat(sprintf("Compared %d numeric values across %d parameters (%d rows). Max relative difference: %.3g -> %s\n",
               n_cmp, n_par, n_rows, max_rel, verdict))
   if (na_mismatch > 0) cat(na_mismatch, "value(s) are missing in one table but not the other.\n")
+  if (length(changed) > 0) {
+    cat("Result: DIFFERENT (", paste(changed, collapse = " and "), " not the one analysed; the numbers were ",
+        verdict, ")\n", sep = "")
+    return(invisible("DIFFERENT"))
+  }
   cat("Result: ", verdict, "\n", sep = "")
   invisible(verdict)
 }
