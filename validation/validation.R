@@ -3567,6 +3567,40 @@ check("REL-08", "R-03: a decimal point in a decimal-comma file is refused, namin
   "URS-DAT-03", critical = TRUE, method = "Decimal-comma upload with 0.5 in Time and 3.75 in Concentration",
   expected = "Two ERRORs naming the columns with examples; the values are never read as 0.5 or 3.75")
 
+rel_be_cm <- list(subject = "Subject", time = "Time", conc = "Conc", treatment = "Treatment",
+                  period = "Period", sequence = "Sequence")
+rel_be <- read.csv("validation/fixtures/be_2x2x2_crossover.csv", stringsAsFactors = FALSE)
+
+check("REL-09", "R-04: subject IDs that restart in each sequence are refused before bioequivalence",
+  tryCatch({
+    d <- rel_be
+    d$Subject <- ave(d$Subject, d$Sequence, FUN = function(v) match(v, unique(v)))
+    q <- run_data_quality_check(d, rel_be_cm, 0)
+    msg <- q$findings$Message[q$findings$Severity == "ERROR"]
+    no_seq <- run_data_quality_check(d, rel_be_cm[names(rel_be_cm) != "sequence"], 0)
+    nca <- suppressWarnings(run_nca(d, rel_be_cm, rel_st(trap = "linear")))
+    be_stop <- tryCatch({ build_be_data(nca, d, rel_be_cm, "Reference"); FALSE },
+                        error = function(e) grepl("more than one sequence", conditionMessage(e)))
+    ok_orig <- run_data_quality_check(rel_be, rel_be_cm, 0)$n_errors == 0
+    any(grepl("more than one sequence", msg)) && any(grepl("same period", msg)) &&
+      any(grepl("same period", no_seq$findings$Message[no_seq$findings$Severity == "ERROR"])) &&
+      be_stop && ok_orig
+  }, error = function(e) FALSE),
+  "URS-DAT-05", critical = TRUE,
+  method = "2x2x2 fixture renumbered 1-6 within each sequence, with and without Sequence mapped",
+  expected = "ERROR in the data check (blocks analysis) and build_be_data() stops; the original IDs pass")
+
+check("REL-10", "R-04: a subject recorded in two sequences is an error, not an unbalanced design",
+  tryCatch({
+    d <- rel_be
+    d$Sequence[d$Subject == d$Subject[1] & d$Period == 2] <- setdiff(unique(d$Sequence), d$Sequence[1])[1]
+    q <- run_data_quality_check(d, rel_be_cm, 0)
+    any(q$findings$Severity == "ERROR" & grepl("more than one sequence", q$findings$Message)) &&
+      any(grepl("subjects\\)", q$findings$Message[q$findings$Category == "Design"]))
+  }, error = function(e) FALSE),
+  "URS-DAT-05", critical = TRUE, method = "One subject's period-2 rows given the other sequence",
+  expected = "ERROR naming the subject; the sequence line shows subjects per sequence")
+
 end_section("REL")
 
 # =============================================================================

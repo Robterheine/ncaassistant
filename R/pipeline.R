@@ -1229,6 +1229,40 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
   result
 }
 
+#' Design problems that make one subject ID stand for more than one person
+#'
+#' A subject in two sequences, or with two treatments in the same period,
+#' usually means subjects were numbered from 1 within each sequence.
+#' @return list of list(message, detail, action); empty when the IDs are sound
+design_identity_issues <- function(data, col_map) {
+  has <- function(cc) !is.null(cc) && cc %in% names(data)
+  subj <- col_map$subject
+  if (!has(subj)) return(list())
+  ids <- as.character(data[[subj]])
+  shown <- function(x) paste0(paste(head(x, 5), collapse = ", "), if (length(x) > 5) paste0(" (+ ", length(x) - 5, " more)") else "")
+  fix <- paste0("Give every subject a unique ID across sequences (for example 101-106 and ",
+                "201-206 instead of 1-6 in each sequence), then upload the file again.")
+  out <- list()
+  if (has(col_map$sequence)) {
+    n_seq <- tapply(as.character(data[[col_map$sequence]]), ids, function(v) length(unique(v[!is.na(v)])))
+    multi <- names(n_seq)[n_seq > 1]
+    if (length(multi) > 0)
+      out[[length(out) + 1]] <- list(
+        message = paste(length(multi), "subject ID(s) appear in more than one sequence"),
+        detail = paste0("Subjects: ", shown(multi), "."), action = fix)
+  }
+  if (has(col_map$period) && has(col_map$treatment)) {
+    sp <- paste(ids, as.character(data[[col_map$period]]), sep = "\r")
+    n_trt <- tapply(as.character(data[[col_map$treatment]]), sp, function(v) length(unique(v[!is.na(v)])))
+    multi <- unique(sub("\r.*$", "", names(n_trt)[n_trt > 1]))
+    if (length(multi) > 0)
+      out[[length(out) + 1]] <- list(
+        message = paste(length(multi), "subject ID(s) received more than one treatment in the same period"),
+        detail = paste0("Subjects: ", shown(multi), "."), action = fix)
+  }
+  out
+}
+
 #' Detect study design from data structure
 #' @param data Data frame with mapped columns
 #' @param col_map Named list of column mappings

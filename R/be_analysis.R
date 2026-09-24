@@ -44,6 +44,8 @@ build_be_data <- function(nca_res, pk_data, col_map, reference = NULL) {
     stop("The Sequence column is not constant within a profile (",
          paste(keys, collapse = " x "), "). Check the Sequence column.")
   }
+  issues <- design_identity_issues(pk_data, col_map)
+  if (length(issues) > 0) stop(issues[[1]]$message, ". ", issues[[1]]$detail, " ", issues[[1]]$action)
 
   # Key columns are character on both sides: NCA keys are always character,
   # while uploaded Subject/Period columns are usually integer. A type mismatch

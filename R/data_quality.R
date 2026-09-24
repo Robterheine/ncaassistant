@@ -495,13 +495,14 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
   
   if (!is.null(col_map$sequence) && col_map$sequence %in% names(data)) {
     seqs <- unique(data[[col_map$sequence]])
-    add("OK", "Design",
-        paste(length(seqs), "sequences:", paste(sort(seqs), collapse = ", ")))
-    
-    # Check balanced sequences
     subj_per_seq <- table(
       unique(data[, c(subj_col, col_map$sequence)])[[ col_map$sequence ]]
     )
+    add("OK", "Design",
+        paste0(length(seqs), " sequences: ",
+               paste0(names(subj_per_seq), " (", as.integer(subj_per_seq), " subjects)", collapse = ", ")))
+    
+    # Check balanced sequences
     if (length(unique(subj_per_seq)) > 1) {
       add("INFO", "Design",
           "Unbalanced sequences",
@@ -510,6 +511,11 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
           "Unbalanced designs are handled but may reduce power.")
     }
   }
+
+  # One subject ID must mean one person. Subjects numbered 1..n within each
+  # sequence give two people the same ID, and the bioequivalence model then
+  # treats them as one subject: the confidence interval is wrong.
+  for (issue in design_identity_issues(data, col_map)) add("ERROR", "Design", issue$message, issue$detail, issue$action)
   
   # ===========================================================================
   # 8. DOSE CHECKS
