@@ -66,10 +66,13 @@ estimate_lambda_z <- function(time, conc, r2adj_threshold = 0.7,
   bf <- blq_free_slope(x, y, f, adm)
   if (!is.null(bf) && length(bf$points) == 0)
     return(empty("No terminal phase could be fitted from the measured concentrations (values set by the BLQ rule are not used)"))
-  bs <- if (!is.null(bf)) bf$fit else tryCatch(NonCompart::BestSlope(x, y, adm = adm), error = function(e) NULL)
+  # As sNCA(): the search runs on the positive values up to the last one, so an
+  # embedded zero is neither a candidate nor counted as a point used
+  pos <- seq_len(max(which(y > 0))); pos <- pos[y[pos] > 0]
+  bs <- if (!is.null(bf)) bf$fit else tryCatch(NonCompart::BestSlope(x[pos], y[pos], adm = adm), error = function(e) NULL)
   if (is.null(bs) || is.na(bs["LAMZ"]) || bs["LAMZ"] <= 0)
     return(empty("No terminal phase could be fitted"))
-  used <- if (!is.null(bf)) bf$points else attr(bs, "UsedPoints")
+  used <- if (!is.null(bf)) bf$points else pos[attr(bs, "UsedPoints")]
   r2adj <- unname(bs["R2ADJ"])
   if (!is.null(r2adj_threshold) && !is.na(r2adj_threshold) && r2adj < r2adj_threshold)
     return(empty(paste0("Best adj R\u00b2 = ", round(r2adj, 4), " < threshold ", r2adj_threshold,

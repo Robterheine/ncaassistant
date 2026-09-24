@@ -4118,6 +4118,26 @@ check("REL-41", "R-29: Visualize describes the arithmetic mean as arithmetic and
   "URS-VIZ-03", critical = FALSE, method = "Visualize module text and summary code; checked in the running app with the arithmetic mean",
   expected = "Caption, legend and note follow the statistic; no 1e-10 clamp on a log axis")
 
+check("REL-42", "R-30: the Half-Life Review shows the fit the results use and keeps overrides per profile",
+  tryCatch({
+    tt <- c(0, 1, 2, 4, 6, 8, 12, 16, 24); cc <- c(0, 5, 20, 15, 0, 6, 4, 2, 1)
+    r <- run_single_nca(tt, cc, rel_st(trap = "linear"))
+    lz <- estimate_lambda_z(tt, cc, 0)
+    st <- rel_st(route = "iv_bolus"); st$dose <- 1000
+    rb <- run_single_nca(rel_iv_t, rel_iv(rel_iv_t), st)
+    lzb <- estimate_lambda_z(rel_iv_t, rel_iv(rel_iv_t), 0, route = "iv_bolus")
+    rd <- function(f) paste(readLines(f, warn = FALSE), collapse = "\n")
+    wired <- all(vapply(c("R/mod_path_multi_nca.R", "R/mod_path_be.R"), function(f) {
+      x <- rd(f)
+      grepl("lz_state$override <- lz_state$fits[[input$lz_profile]]", x, fixed = TRUE) &&
+        grepl("lz_state$fits[[sel]] <- override", x, fixed = TRUE) && grepl('observeEvent(input$lz_reset', x, fixed = TRUE) &&
+        grepl('sd$time >= cmax_t & sd$time > 0', x, fixed = TRUE)
+    }, logical(1)))
+    lz$n_points == r[["LAMZNPT"]] && abs(lzb$lambda_z - rb[["LAMZ"]]) < 1e-12 && lzb$n_points == rb[["LAMZNPT"]] && wired
+  }, error = function(e) FALSE),
+  "URS-NCA-12", critical = FALSE, method = "Profile with an embedded zero; IV bolus; review module code",
+  expected = "Point count equal to NonCompart's (was one more); IV bolus review fit equal to the result; overrides reloaded per profile and removable")
+
 end_section("REL")
 
 # =============================================================================

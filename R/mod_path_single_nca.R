@@ -646,7 +646,7 @@ path_single_nca_server <- function(id, shared) {
       d <- tc(); req(length(d$time) >= 3)
       valid <- !is.na(d$conc) & d$conc > 0
       cmax_t <- d$time[which.max(d$conc)]
-      term <- valid & d$time > cmax_t
+      term <- valid & (if (identical(input$admin_route, "iv_bolus")) d$time >= cmax_t & d$time > 0 else d$time > cmax_t)
       if (any(term)) {
         ch <- paste0("t=", d$time[term], "  C=", round(d$conc[term], 3))
         names(ch) <- which(term)

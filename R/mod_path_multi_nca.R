@@ -202,7 +202,10 @@ path_multi_nca_ui <- function(id) {
                                        choices = NULL),
                     actionButton(ns("lz_recalc"), "Recalculate",
                                  class = "btn-outline-primary btn-sm w-100",
-                                 icon = icon("refresh"))
+                                 icon = icon("refresh")),
+                    actionButton(ns("lz_reset"), "Remove override (automatic fit)",
+                                 class = "btn-outline-secondary btn-sm w-100 mt-1",
+                                 icon = icon("rotate-left"))
                   )
                 ),
                 card(
@@ -235,18 +238,20 @@ path_multi_nca_server <- function(id, shared) {
       }
     })
     
-    lz_state <- reactiveValues(override = NULL, overrides_log = list())
+    # fits: the recalculated fit per profile, shown again when that profile is
+    # selected; overrides_log: what the NCA and the record use
+    lz_state <- reactiveValues(override = NULL, overrides_log = list(), fits = list())
     # Overrides belong to one data set: clear them when new data are processed,
     # so they can never be applied to matching profiles of a different file.
     observeEvent(shared$pk_data, {
-      lz_state$overrides_log <- list()
+      lz_state$overrides_log <- list(); lz_state$fits <- list()
       lz_state$override <- NULL
       # Results of the previous file must not be shown or exported with the new one
       nca_result(NULL)
     }, ignoreNULL = FALSE)
     
-    # Reset override when profile changes
-    observeEvent(input$lz_profile, { lz_state$override <- NULL }, ignoreInit = TRUE)
+    # Show the selected profile's own override, if it has one
+    observeEvent(input$lz_profile, { lz_state$override <- lz_state$fits[[input$lz_profile]] }, ignoreInit = TRUE)
     
     output$data_ok <- reactive({ shared$data_ready })
     outputOptions(output, "data_ok", suspendWhenHidden = FALSE)
@@ -805,7 +810,8 @@ path_multi_nca_server <- function(id, shared) {
       sd <- lz_sub_data(); req(length(sd$time) >= 3)
       valid <- !is.na(sd$conc) & sd$conc > 0
       cmax_t <- sd$time[which.max(sd$conc)]
-      term <- valid & sd$time > cmax_t
+      # The automatic fit excludes Cmax except after an IV bolus: offer the same points
+      term <- valid & (if (identical(input$admin_route, "iv_bolus")) sd$time >= cmax_t & sd$time > 0 else sd$time > cmax_t)
       if (any(term)) {
         ch <- paste0("t=", sd$time[term], "  C=", round(sd$conc[term], 3))
         names(ch) <- which(term)
@@ -821,6 +827,32 @@ path_multi_nca_server <- function(id, shared) {
       }
     })
     
+    # Recompute with every logged override applied. NonCompart fits the chosen
+    # points and derives all dependent parameters (AUCinf, CL, V, MRT, ...)
+    # with its own unit conversions, exactly as the reproduction script does.
+    rerun_with_overrides <- function() {
+      settings <- shared$nca_settings
+      if (is.null(settings)) return()
+      r <- suppressWarnings(run_nca(shared$pk_data, shared$col_map, settings,
+                                    lz_overrides = lz_state$overrides_log))
+      if (!is.null(r)) {
+        if (isTRUE(input$dose_norm)) r <- add_dose_normalized(as.data.frame(r), settings$dose)
+        nca_result(r)
+        shared$nca_results <- r
+      }
+    }
+
+    observeEvent(input$lz_reset, {
+      sel <- input$lz_profile
+      if (is.null(sel) || is.null(lz_state$overrides_log[[sel]])) {
+        showNotification("This profile has no override.", type = "message", duration = 4)
+        return()
+      }
+      lz_state$overrides_log[[sel]] <- NULL; lz_state$fits[[sel]] <- NULL; lz_state$override <- NULL
+      rerun_with_overrides()
+      showNotification("Override removed: this profile uses the automatic fit again.", type = "message", duration = 5)
+    })
+
     # Recalculate from user-selected points
     observeEvent(input$lz_recalc, {
       sd <- lz_sub_data(); req(length(sd$time) >= 2)
@@ -848,6 +880,7 @@ path_multi_nca_server <- function(id, shared) {
       
       # Log the override for audit trail
       sel <- input$lz_profile
+      lz_state$fits[[sel]] <- override
       orig_lz <- estimate_lambda_z(sd$time, sd$conc, input$r2adj, route = input$admin_route, is_blq = sd$is_blq)
       lz_state$overrides_log[[sel]] <- c(list(
         profile = sel),
@@ -862,19 +895,7 @@ path_multi_nca_server <- function(id, shared) {
         time_used = as.numeric(t_sel)
       ))
       
-      # Recompute with every logged override applied. NonCompart fits the chosen
-      # points and derives all dependent parameters (AUCinf, CL, V, MRT, ...)
-      # with its own unit conversions, exactly as the reproduction script does.
-      settings <- shared$nca_settings
-      if (!is.null(settings)) {
-        r <- suppressWarnings(run_nca(shared$pk_data, shared$col_map, settings,
-                                      lz_overrides = lz_state$overrides_log))
-        if (!is.null(r)) {
-          if (isTRUE(input$dose_norm)) r <- add_dose_normalized(as.data.frame(r), settings$dose)
-          nca_result(r)
-          shared$nca_results <- r
-        }
-      }
+      rerun_with_overrides()
       
       showNotification(
         sprintf(paste0("Recalculated: t\u00BD = %.3f ", input$time_unit, " (%s, %d pts)"),
