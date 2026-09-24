@@ -3431,6 +3431,85 @@ check("PAUC-18", "Methods page, help and Data Guide describe partial AUCs as imp
 end_section("PAUC")
 
 # =============================================================================
+# SECTION REL: Fixes from the v1.5.0 release-readiness review (R-01 ...)
+# =============================================================================
+# Each test is built from the failing case the review found.
+start_section("REL")
+
+rel_st <- function(trap = "log", route = "extravascular", ss = FALSE, tau = NA, pauc = NULL, dur = 0)
+  list(admin_route = route, dose = 100, trap_method = trap, dose_unit = "mg", time_unit = "h",
+       conc_unit = "ng/mL", is_steady_state = ss, tau = tau, mw = 0, r2adj_threshold = 0,
+       infusion_duration = dur, partial_aucs = pauc)
+rel_cm <- list(subject = "ID", time = "T", conc = "C")
+# Linear-up/log-down written out by hand, linear on a segment that ends at 0
+rel_hand <- function(t, c) {
+  a <- 0; m <- 0
+  for (i in 2:length(t)) { dt <- t[i] - t[i - 1]
+    if (c[i] < c[i - 1] && c[i] > 0) { k <- log(c[i - 1] / c[i]) / dt
+      a <- a + (c[i - 1] - c[i]) / k; m <- m + (t[i - 1] * c[i - 1] - t[i] * c[i]) / k + (c[i - 1] - c[i]) / k^2
+    } else { a <- a + dt * (c[i] + c[i - 1]) / 2; m <- m + dt * (t[i] * c[i] + t[i - 1] * c[i - 1]) / 2 } }
+  c(AUC = a, AUMC = m)
+}
+rel_t <- c(0, 1, 2, 4, 6, 8, 12, 16, 24); rel_c <- c(0, 5, 20, 15, 0, 6, 4, 2, 1)
+
+check("REL-01", "R-01: log-down AUClast and AUMClast count the fall to an embedded zero",
+  tryCatch({
+    r <- suppressWarnings(run_single_nca(rel_t, rel_c, rel_st()))
+    b <- suppressWarnings(run_nca(data.frame(ID = "1", T = rel_t, C = rel_c), rel_cm, rel_st()))
+    h <- rel_hand(rel_t, rel_c)
+    abs(r[["AUCLST"]] - h[["AUC"]]) < 1e-9 && abs(r[["AUMCLST"]] - h[["AUMC"]]) < 1e-9 &&
+      abs(r[["AUCLST"]] - 113.5741428) < 1e-6 && abs(b$AUCLST - r[["AUCLST"]]) < 1e-12 &&
+      abs(b$AUMCLST - r[["AUMCLST"]]) < 1e-12
+  }, error = function(e) FALSE),
+  "URS-NCA-03", critical = TRUE, method = "0,5,20,15,0,6,4,2,1 at 0-24 h, log-down, single and batch vs hand calculation",
+  expected = "AUClast 113.574 (NonCompart alone gives 98.574); AUMClast equal to the hand value")
+
+check("REL-02", "R-01: parameters derived from AUClast follow the corrected value",
+  tryCatch({
+    r <- suppressWarnings(run_single_nca(rel_t, rel_c, rel_st()))
+    h <- rel_hand(rel_t, rel_c); lz <- r[["LAMZ"]]; ifo <- h[["AUC"]] + r[["CLST"]] / lz
+    aumc_ifo <- h[["AUMC"]] + r[["CLST"]] * r[["TLST"]] / lz + r[["CLST"]] / lz^2
+    abs(r[["AUCIFO"]] - ifo) < 1e-9 && abs(r[["CLFO"]] - 100 / ifo * 1000) < 1e-6 &&
+      abs(r[["VZFO"]] - 100 / ifo / lz * 1000) < 1e-5 && abs(r[["MRTEVIFO"]] - aumc_ifo / ifo) < 1e-9 &&
+      abs(r[["AUCPEO"]] - (1 - h[["AUC"]] / ifo) * 100) < 1e-9 && abs(r[["AUCIFOD"]] - ifo / 100) < 1e-9
+  }, error = function(e) FALSE),
+  "URS-NCA-04", critical = TRUE, method = "AUCinf, CL/F, Vz/F, MRT, %extrap and AUCinf/D recomputed from the corrected AUClast",
+  expected = "Each equals its definition (mg and ng/mL: CL/F in L/h = dose / AUCinf x 1000)")
+
+check("REL-03", "R-01: a partial AUC ending at t after an embedded BLQ is not negative and matches the hand value",
+  tryCatch({
+    d <- data.frame(ID = "1", T = c(0, 1, 2, 4, 6, 8, 12), C = c(0, 10, 0.2, 1, 0.9, 0.7, 0.6))
+    r <- suppressWarnings(run_nca(prepare_pk_dataset(d, rel_cm, list(lloq = 0.5, blq_rule = "rule1"))$data, rel_cm,
+                                  rel_st(pauc = data.frame(start = 2, end = "t", cmax = FALSE, role = "pivotal"))))
+    v <- r$AUC_2_t
+    h <- rel_hand(c(2, 4, 6, 8, 12), c(0, 1, 0.9, 0.7, 0.6))[["AUC"]]
+    isTRUE(v >= 0) && abs(v - h) < 1e-9 && abs(r$AUCLST - rel_hand(d$T, c(0, 10, 0, 1, 0.9, 0.7, 0.6))[["AUC"]]) < 1e-9
+  }, error = function(e) FALSE),
+  "URS-NCA-13", critical = TRUE, method = "0, 10, BLQ, 1, 0.9, 0.7, 0.6 with LLOQ 0.5 and Rule 1, log-down, interval 2-t",
+  expected = "AUC 2-t = hand value (was -0.66 before the fix)")
+
+check("REL-04", "R-01: profiles without a fall to zero are unchanged, and steady state and IV follow the corrected AUC",
+  tryCatch({
+    th <- data.frame(ID = as.character(Theoph$Subject), T = Theoph$Time, C = Theoph$conc)
+    a <- suppressWarnings(run_nca(th, rel_cm, rel_st()))
+    raw <- NonCompart::tblNCA(th, key = "ID", colTime = "T", colConc = "C", dose = 100, down = "Log",
+                              R2ADJ = 0, doseUnit = "mg", timeUnit = "h", concUnit = "ng/mL")
+    same <- isTRUE(all.equal(a$AUCLST, raw$AUCLST[match(a$ID, raw$ID)])) &&
+            isTRUE(all.equal(a$CLFO, raw$CLFO[match(a$ID, raw$ID)]))
+    s <- suppressWarnings(run_single_nca(rel_t, rel_c, rel_st(ss = TRUE, tau = 24)))
+    ss_ok <- abs(s[["AUCLST"]] - 113.5741428) < 1e-6 && abs(s[["CLFO"]] - 100 / s[["AUCTAU"]] * 1000) < 1e-6
+    iv <- suppressWarnings(run_single_nca(c(0.5, 1, 2, 4, 6, 8, 12), c(50, 30, 0, 8, 4, 2, 0.5),
+                                          rel_st(route = "iv_infusion", dur = 0.25)))
+    iv_ok <- abs(iv[["VSSO"]] - iv[["MRTIVIFO"]] * iv[["CLO"]]) < 1e-6 * iv[["VSSO"]] &&
+             abs(iv[["CLO"]] - 100 / iv[["AUCIFO"]] * 1000) < 1e-6
+    same && ss_ok && iv_ok
+  }, error = function(e) FALSE),
+  "URS-NCA-03", critical = TRUE, method = "Theoph vs NonCompart unchanged; steady state CL/F from AUCtau; infusion Vss = MRT x CL",
+  expected = "Theoph identical to NonCompart; the identities hold after the correction")
+
+end_section("REL")
+
+# =============================================================================
 # Post-execution
 # =============================================================================
 cat("\n", paste(rep("=",72),collapse=""), "\n")

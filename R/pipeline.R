@@ -496,6 +496,98 @@ below_r2_threshold <- function(r2adj, threshold) {
   !is.na(v) & v < thr
 }
 
+#' AUC and AUMC, linear-up/log-down, linear on any segment that ends at zero
+#'
+#' Same rule as NonCompart's LogAUC(), which its IntAUC() uses.
+log_down_auc <- function(x, y) {
+  auc <- 0; aumc <- 0
+  for (i in seq_along(x)[-1]) {
+    dt <- x[i] - x[i - 1]
+    if (y[i] < y[i - 1] && y[i] > 0) {
+      k <- (log(y[i - 1]) - log(y[i])) / dt
+      auc <- auc + (y[i - 1] - y[i]) / k
+      aumc <- aumc + (x[i - 1] * y[i - 1] - x[i] * y[i]) / k + (y[i - 1] - y[i]) / k / k
+    } else {
+      auc <- auc + dt * (y[i] + y[i - 1]) / 2
+      aumc <- aumc + dt * (y[i] * x[i] + y[i - 1] * x[i - 1]) / 2
+    }
+  }
+  c(AUC = auc, AUMC = aumc)
+}
+
+#' Correct AUClast, AUMClast, AUCall and what depends on them under log-down
+#'
+#' NonCompart's sNCA() computes these with AUC(), which under log-down gives
+#' a falling segment that ends at zero no area at all (log(0) = -Inf): a BLQ
+#' value set to 0 between measurable samples then removes the area of the
+#' preceding fall. Partial AUCs are not affected (IntAUC() goes linear there).
+#' This rebuilds the affected parameters with sNCA()'s own formulas; clearance
+#' and volumes are rescaled by the AUC ratio, which keeps NonCompart's unit
+#' conversion. Profiles without such a segment are returned unchanged.
+#' @param r Named NCA result (sNCA output, or one row of tblNCA as a list)
+#' @param adm,down NonCompart's adm and down values; dur infusion duration
+fix_log_down_zeros <- function(r, time, conc, adm, down, dur = 0, ss = FALSE) {
+  if (toupper(down) != "LOG") return(r)
+  ok <- !is.na(time) & !is.na(conc)
+  x <- time[ok]; y <- conc[ok]
+  if (length(x) < 2 || any(y < 0) || length(unique(y)) == 1 || !any(y > 0)) return(r)
+  get <- function(n) if (n %in% names(r)) suppressWarnings(as.numeric(r[[n]])) else NA_real_
+  put <- function(n, v) if (n %in% names(r)) r[[n]] <<- v
+  last <- max(which(y > 0))
+  x0 <- x[seq_len(last)]; y0 <- y[seq_len(last)]
+  bolus <- toupper(adm) == "BOLUS"
+  if (bolus) {
+    c0 <- get("C0"); x2 <- c(0, x); y2 <- c(c0, y); x3 <- c(0, x0); y3 <- c(c0, y0)
+  } else if (!any(x == 0)) {
+    x2 <- c(0, x); y2 <- c(0, y); x3 <- c(0, x0); y3 <- c(0, y0)
+  } else {
+    x2 <- x; y2 <- y; x3 <- x0; y3 <- y0
+  }
+  falls_to_zero <- function(v) length(v) > 1 && any(v[-1] == 0 & v[-length(v)] > 0)
+  if (!falls_to_zero(y2)) return(r)
+
+  old <- list(lst = get("AUCLST"), ifo = get("AUCIFO"), ifp = get("AUCIFP"))
+  a3 <- log_down_auc(x3, y3)
+  lst <- unname(a3["AUC"]); aumc <- unname(a3["AUMC"])
+  clst <- get("CLST"); clstp <- get("CLSTP"); lamz <- get("LAMZ"); tlst <- get("TLST")
+  ifo <- lst + clst / lamz; ifp <- lst + clstp / lamz
+  aumc_ifo <- aumc + clst * tlst / lamz + clst / lamz / lamz
+  aumc_ifp <- aumc + clstp * tlst / lamz + clstp / lamz / lamz
+  ratio <- function(new, o) if (is.finite(new) && is.finite(o) && new != 0) o / new else NA_real_
+  put("AUCLST", lst); put("AUMCLST", aumc)
+  put("AUCALL", unname(log_down_auc(x2, y2)["AUC"]))
+  put("AUCIFO", ifo); put("AUCIFP", ifp)
+  put("AUCPEO", (1 - lst / ifo) * 100); put("AUCPEP", (1 - lst / ifp) * 100)
+  put("AUMCIFO", aumc_ifo); put("AUMCIFP", aumc_ifp)
+  put("AUMCPEO", (1 - aumc / aumc_ifo) * 100); put("AUMCPEP", (1 - aumc / aumc_ifp) * 100)
+  put("AUCIFOD", get("AUCIFOD") / ratio(ifo, old$ifo))
+  put("AUCIFPD", get("AUCIFPD") / ratio(ifp, old$ifp))
+  if (bolus) {
+    first <- unname(log_down_auc(x3[1:2], y3[1:2])["AUC"])
+    put("AUCPBEO", first / ifo * 100); put("AUCPBEP", first / ifp * 100)
+  }
+  # CL = dose / AUC and V = dose / (lambda-z x AUC): rescale by the AUC they use
+  s_o <- if (ss) ratio(lst, old$lst) else ratio(ifo, old$ifo)
+  s_p <- if (ss) NA_real_ else ratio(ifp, old$ifp)
+  for (n in c("CLFO", "VZFO", "CLO", "VZO")) put(n, get(n) * s_o)
+  for (n in c("CLFP", "VZFP", "CLP", "VZP")) put(n, get(n) * s_p)
+  mrt_lst <- aumc / lst
+  if (toupper(adm) == "EXTRAVASCULAR") {
+    put("MRTEVLST", mrt_lst)
+    put("MRTEVIFO", if (ss) NA_real_ else aumc_ifo / ifo)
+    put("MRTEVIFP", if (ss) NA_real_ else aumc_ifp / ifp)
+  } else {
+    old_mrt_o <- get(if (ss) "MRTIVLST" else "MRTIVIFO"); old_mrt_p <- get("MRTIVIFP")
+    put("MRTIVLST", mrt_lst - dur / 2)
+    put("MRTIVIFO", if (ss) NA_real_ else aumc_ifo / ifo - dur / 2)
+    put("MRTIVIFP", if (ss) NA_real_ else aumc_ifp / ifp - dur / 2)
+    new_mrt_o <- get(if (ss) "MRTIVLST" else "MRTIVIFO")
+    put("VSSO", get("VSSO") * s_o * new_mrt_o / old_mrt_o)
+    if (!ss) put("VSSP", get("VSSP") * s_p * get("MRTIVIFP") / old_mrt_p)
+  }
+  r
+}
+
 #' NCA for one profile given as vectors (single-subject analysis)
 #'
 #' Same NonCompart call and options as run_nca(), so a profile analysed on
@@ -539,6 +631,8 @@ run_single_nca <- function(time, conc, settings, time_used = NULL, is_blq = NULL
                    # R2ADJ = 0 avoids NonCompart's interactive slope picker (see run_nca)
                    R2ADJ = 0, MW = num0(settings$mw), UsePoints = use,
                    iAUC = if (is.null(iauc)) "" else iauc)
+  r <- fix_log_down_zeros(r, t_num, c_num, adm, down,
+                          dur = if (adm == "Infusion") num0(settings$infusion_duration) else 0, ss = ss)
   # The analyst's R2 threshold applies to the automatic fit, not to points
   # chosen by hand
   low <- is.null(use) && below_r2_threshold(r["R2ADJ"], settings$r2adj_threshold)
@@ -1011,6 +1105,16 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
     NULL
   })
   
+  if (!is.null(result)) {
+    for (i in seq_len(nrow(result))) {
+      rows <- data[[nca_key]] == result[[1]][i]
+      row <- as.list(result[i, , drop = FALSE])
+      fixed <- fix_log_down_zeros(row, data[[col_map$time]][rows], data[[col_map$conc]][rows],
+                                  adm, down_method, dur = dur_num, ss = ss)
+      for (n in names(fixed)) if (!identical(fixed[[n]], row[[n]])) result[[n]][i] <- fixed[[n]]
+    }
+  }
+
   # Apply the analyst's adjusted R2 threshold. NonCompart is called with
   # R2ADJ = 0 (see above), so it always reports the best automatic fit; a fit
   # below the threshold is not reliable enough for half-life and everything
