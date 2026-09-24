@@ -207,6 +207,11 @@ data_upload_server <- function(id, shared) {
       shared$raw_data     <- NULL
       shared$study_info   <- NULL
       shared$pk_dataset   <- NULL
+      # Analysis state of the previous file: its intervals would otherwise be
+      # offered for shading, and its CV to the planner
+      shared$be_results   <- NULL
+      shared$partial_aucs <- NULL
+      shared$viz_settings <- NULL
     }, priority = 10)  # high priority: runs before raw_data() updates
     
     # How the file is read; recorded so the reproduction reads it the same way

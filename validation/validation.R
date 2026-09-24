@@ -4175,6 +4175,23 @@ check("REL-45", "R-35: error messages use the app's words and say what to do",
   "URS-UI-04", critical = FALSE, method = "validate_mapping(), friendly_read_error(), LLOQ button and single-profile infusion check",
   expected = "On-screen names in the mapping message; a hint for read errors; the LLOQ button says what it does; infusion duration checked")
 
+check("REL-46", "R-36: a new upload clears the analysis state of the previous file",
+  tryCatch({
+    suppressPackageStartupMessages({ library(shiny); library(bslib); library(DT) })
+    for (f in c("R/help_system.R", "R/mod_data_upload.R")) source(f, local = TRUE)
+    ok <- FALSE
+    sh <- shiny::reactiveValues(be_results = list(ci_table = 1), partial_aucs = data.frame(start = 0), viz_settings = list(a = 1),
+                                nca_results = 1, data_ready = TRUE)
+    suppressWarnings(shiny::testServer(data_upload_server, args = list(shared = sh), {
+      session$setInputs(file_upload = data.frame(name = "x.csv", size = 1, type = "text/csv",
+                                                 datapath = "data/example_theoph.csv"))
+      ok <<- is.null(sh$be_results) && is.null(sh$partial_aucs) && is.null(sh$viz_settings) && is.null(sh$nca_results)
+    }))
+    ok
+  }, error = function(e) FALSE),
+  "URS-DAT-01", critical = FALSE, method = "shiny::testServer on the upload module with state from an earlier analysis",
+  expected = "BE results, partial AUC intervals and figure settings cleared when a new file is chosen")
+
 end_section("REL")
 
 # =============================================================================
