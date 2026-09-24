@@ -253,13 +253,21 @@ path_viz_ui <- function(id) {
               tags$p(class = "fw-semibold text-muted small mb-1 mt-2",
                      "Summary Plot"),
               plotlyOutput(ns("summary_plotly"), height = "440px"),
-              tags$div(
-                class = "text-muted small mt-1",
-                icon("circle-info", class = "me-1"),
-                "Error bars: geometric mean \u00d7\u00f7 geometric SD ",
-                "(equivalent to \u00b1 1 geometric SD on the log scale). ",
-                "Observations with concentration \u2264 0 excluded from geometric mean."
-              )
+              conditionalPanel(
+                condition = sprintf("input['%s'] != 'arithmean'", ns("summary_stat")),
+                tags$div(
+                  class = "text-muted small mt-1",
+                  icon("circle-info", class = "me-1"),
+                  "Error bars: geometric mean \u00d7\u00f7 geometric SD ",
+                  "(equivalent to \u00b1 1 geometric SD on the log scale). ",
+                  "Observations with concentration \u2264 0 excluded from geometric mean.")),
+              conditionalPanel(
+                condition = sprintf("input['%s'] == 'arithmean'", ns("summary_stat")),
+                tags$div(
+                  class = "text-muted small mt-1",
+                  icon("circle-info", class = "me-1"),
+                  "Error bars: arithmetic mean \u00b1 SD, all observations included. On a log ",
+                  "axis a lower bar at or below zero is not drawn."))
             )
           ),
 
@@ -460,11 +468,11 @@ path_viz_server <- function(id, shared) {
       if (!input$plot_type %in% c("summary", "both")) return(NULL)
       n <- blq_n_summary()
       if (n == 0) return(NULL)
-      stat <- input$summary_stat %||% "geomean"
-      excl_label <- if (stat == "geomean") "from geometric mean" else "from the summary"
+      # Only the geometric mean leaves them out; the arithmetic mean includes them
+      if (!identical(input$summary_stat %||% "geomean", "geomean")) return(NULL)
       tags$div(class = "alert alert-info py-2 small mb-2",
                icon("triangle-exclamation", class = "me-1"),
-               n, paste0(" observation(s) with concentration \u2264 0 excluded ", excl_label, "."))
+               n, " observation(s) with concentration \u2264 0 excluded from the geometric mean.")
     })
 
     output$arithmean_warning <- renderUI({
@@ -503,7 +511,7 @@ path_viz_server <- function(id, shared) {
 
       y_desc     <- if (norm) "dose-normalised concentration (C/Dose)" else "concentration"
       scale_desc <- if (sc == "log") "semi-logarithmic" else "linear"
-      blq_sent   <- if (blq_excl > 0)
+      blq_sent   <- if (blq_excl > 0 && identical(stat, "geomean"))
         paste0(" ", blq_excl,
                " observation(s) with concentration \u2264 0 were excluded from the geometric mean.")
       else ""
@@ -542,8 +550,9 @@ path_viz_server <- function(id, shared) {
 
       summ_legend <- paste0(
         "Figure. ", tools::toTitleCase(y_desc), "-time profile showing ",
-        stat_desc, ". Error bars represent the geometric standard deviation ",
-        "(geometric mean \u00d7\u00f7 geometric SD on the log scale).",
+        stat_desc, if (identical(stat, "geomean"))
+          ". Error bars represent the geometric standard deviation (geometric mean \u00d7\u00f7 geometric SD on the log scale)."
+        else ". Error bars represent \u00b1 1 SD.",
         trt_sent, replicate_sent, blq_sent,
         " The Y-axis uses a ", scale_desc, " scale.",
         if (!is.null(shade_spec())) {
@@ -623,9 +632,7 @@ path_viz_server <- function(id, shared) {
           lo_raw <- if (!is.na(am) && !is.na(s)) am - s else NA_real_
           row <- data.frame(.time = grp_combos$.time[i],
                             .center = am,
-                            # Clamp lower bar to a small positive value so
-                            # log scale doesn't crash when SD > mean
-                            .lo     = if (!is.na(lo_raw)) max(lo_raw, 1e-10) else NA_real_,
+                            .lo     = lo_raw,
                             .hi     = if (!is.na(am) && !is.na(s)) am + s else NA_real_,
                             stringsAsFactors = FALSE)
         }
@@ -715,6 +722,12 @@ path_viz_server <- function(id, shared) {
 
       summ <- tryCatch(compute_summary_df(d, stat_type), error = function(e) NULL)
       req(!is.null(summ), nrow(summ) > 0)
+      # A lower bar at or below zero cannot be drawn on a log axis: show only
+      # the upper half there (clamping it to a tiny positive value stretched the axis)
+      if (isTRUE(input$y_scale == "log")) {
+        low <- !is.na(summ$.lo) & summ$.lo <= 0
+        summ$.lo[low] <- summ$.center[low]
+      }
 
       caption_txt <- if (stat_type == "geomean")
         "Error bars: geometric mean \u00d7\u00f7 geometric SD"

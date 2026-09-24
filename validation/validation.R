@@ -4107,6 +4107,17 @@ check("REL-40", "R-28: a bioequivalence verdict is given only for the 90% confid
   "URS-BE-04", critical = TRUE, method = "2x2x2 fixture at 80%, 90% and 95%",
   expected = "Verdict at 90% only; the 80% and 95% intervals are shown without a verdict")
 
+check("REL-41", "R-29: Visualize describes the arithmetic mean as arithmetic and does not clamp log-scale bars",
+  tryCatch({
+    v <- paste(readLines("R/mod_path_viz.R", warn = FALSE), collapse = "\n")
+    grepl("Error bars: arithmetic mean \\u00b1 SD, all observations included", v, fixed = TRUE) &&
+      grepl('". Error bars represent \\u00b1 1 SD."', v, fixed = TRUE) &&
+      grepl('if (!identical(input$summary_stat %||% "geomean", "geomean")) return(NULL)', v, fixed = TRUE) &&
+      !grepl("1e-10", v, fixed = TRUE) && grepl("summ$.lo[low] <- summ$.center[low]", v, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-VIZ-03", critical = FALSE, method = "Visualize module text and summary code; checked in the running app with the arithmetic mean",
+  expected = "Caption, legend and note follow the statistic; no 1e-10 clamp on a log axis")
+
 end_section("REL")
 
 # =============================================================================
