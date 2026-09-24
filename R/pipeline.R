@@ -660,6 +660,34 @@ fix_log_down_zeros <- function(r, time, conc, adm, down, dur = 0, ss = FALSE) {
   r
 }
 
+#' Predicted Clast at Tlast for a fit on chosen points
+#'
+#' With UsePoints, NonCompart's sNCA() predicts Clast at the last sample time
+#' (a logical vector is recycled over all times), not at Tlast, so with a zero
+#' after Tlast every "...P" parameter is off. Its automatic fit predicts at
+#' Tlast. This recomputes CLSTP = exp(b0 - lambda-z x Tlast) and the
+#' parameters that use it, rescaling clearance and volumes by the AUC ratio.
+fix_predicted_clast <- function(r, adm, dur = 0) {
+  get <- function(n) if (n %in% names(r)) suppressWarnings(as.numeric(r[[n]])) else NA_real_
+  put <- function(n, v) if (n %in% names(r)) r[[n]] <<- v
+  lamz <- get("LAMZ"); b0 <- get("b0"); tlst <- get("TLST")
+  new <- exp(b0 - lamz * tlst)
+  if (!is.finite(new) || isTRUE(abs(new - get("CLSTP")) <= 1e-12 * max(1, abs(new)))) return(r)
+  old_ifp <- get("AUCIFP"); lst <- get("AUCLST"); aumc <- get("AUMCLST")
+  ifp <- lst + new / lamz
+  aumc_ifp <- aumc + new * tlst / lamz + new / lamz / lamz
+  ratio <- if (is.finite(ifp) && is.finite(old_ifp) && ifp != 0) old_ifp / ifp else NA_real_
+  put("CLSTP", new); put("AUCIFP", ifp); put("AUCPEP", (1 - lst / ifp) * 100)
+  put("AUMCIFP", aumc_ifp); put("AUMCPEP", (1 - aumc / aumc_ifp) * 100)
+  put("AUCIFPD", get("AUCIFPD") / ratio); put("AUCPBEP", get("AUCPBEP") * ratio)
+  for (n in c("CLFP", "VZFP", "CLP", "VZP")) put(n, get(n) * ratio)
+  old_mrt <- get("MRTIVIFP")
+  put("MRTEVIFP", if (is.na(get("MRTEVIFP"))) NA_real_ else aumc_ifp / ifp)
+  put("MRTIVIFP", if (is.na(old_mrt)) NA_real_ else aumc_ifp / ifp - dur / 2)
+  if (!is.na(old_mrt)) put("VSSP", get("VSSP") * ratio * get("MRTIVIFP") / old_mrt)
+  r
+}
+
 #' NCA for one profile given as vectors (single-subject analysis)
 #'
 #' Same NonCompart call and options as run_nca(), so a profile analysed on
@@ -717,6 +745,8 @@ run_single_nca <- function(time, conc, settings, time_used = NULL, is_blq = NULL
                    iAUC = if (is.null(iauc)) "" else iauc)
   r <- fix_log_down_zeros(r, t_num, c_num, adm, down,
                           dur = if (adm == "Infusion") num0(settings$infusion_duration) else 0, ss = ss)
+  if (!is.null(nc_points))
+    r <- fix_predicted_clast(r, adm, dur = if (adm == "Infusion") num0(settings$infusion_duration) else 0)
   # The analyst's R2 threshold applies to the automatic fit, not to points
   # chosen by hand
   low <- is.null(use) && (no_fit || below_r2_threshold(r["R2ADJ"], settings$r2adj_threshold))
@@ -1216,6 +1246,9 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
       row <- as.list(result[i, , drop = FALSE])
       fixed <- fix_log_down_zeros(row, data[[col_map$time]][rows], data[[col_map$conc]][rows],
                                   adm, down_method, dur = dur_num, ss = ss)
+      k <- match(as.character(result[[1]][i]), as.character(final_keys))
+      if (!is.null(use_points) && !is.na(k) && !is.null(use_points[[k]]))
+        fixed <- fix_predicted_clast(fixed, adm, dur = if (adm == "Infusion") dur_num else 0)
       for (n in names(fixed)) if (!identical(fixed[[n]], row[[n]])) result[[n]][i] <- fixed[[n]]
     }
   }

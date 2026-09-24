@@ -3996,6 +3996,22 @@ check("REL-32", "R-21: theme colours pass WCAG AA with white text; hub cards and
   "URS-UI-01", critical = FALSE, method = "Contrast of the six theme colours against white; hub card, help button and badge markup",
   expected = "Every theme colour at least 4.5:1 (was 2.2-3.8 for success, info, warning, danger, secondary); keyboard-operable cards; named help buttons")
 
+check("REL-33", "R-22: with chosen half-life points, predicted Clast is taken at Tlast",
+  tryCatch({
+    tt <- c(0, 1, 2, 4, 8, 12, 24, 36); cc <- c(0, 8, 10, 7, 4, 2.2, 0.9, 0)
+    st <- rel_st(trap = "linear")
+    r <- run_single_nca(tt, cc, st, time_used = c(8, 12, 24))
+    b <- run_nca(data.frame(ID = "1", T = tt, C = cc), rel_cm, st,
+                 lz_overrides = list(list(subject = "1", time_used = c(8, 12, 24))))
+    fit <- stats::lm(log(c(4, 2.2, 0.9)) ~ c(8, 12, 24)); lz <- -stats::coef(fit)[[2]]
+    clstp <- exp(stats::coef(fit)[[1]] - lz * 24); ifp <- r[["AUCLST"]] + clstp / lz
+    raw <- NonCompart::sNCA(tt, cc, dose = 100, R2ADJ = 0, UsePoints = 5:7)
+    abs(r[["CLSTP"]] - clstp) < 1e-9 && abs(r[["AUCIFP"]] - ifp) < 1e-9 && abs(r[["CLFP"]] - 100 / ifp * 1000) < 1e-6 &&
+      abs(b$AUCIFP - ifp) < 1e-9 && abs(raw[["CLSTP"]] - clstp) > 0.1
+  }, error = function(e) FALSE),
+  "URS-NCA-12", critical = TRUE, method = "Points 8, 12, 24 h chosen, a 0 at 36 h; single profile and batch vs lm() by hand",
+  expected = "CLSTP = exp(b0 - lambda-z x 24), AUCIFP and CL/F (pred) from it (NonCompart alone predicts at 36 h)")
+
 end_section("REL")
 
 # =============================================================================
