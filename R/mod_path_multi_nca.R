@@ -225,6 +225,15 @@ path_multi_nca_ui <- function(id) {
 path_multi_nca_server <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
+
+    # Pre-select the units stated in the file
+    observeEvent(shared$study_info, {
+      u <- shared$study_info$units
+      for (k in c("conc", "time", "dose")) {
+        v <- u[[k]]$unit
+        if (length(v) == 1 && !is.na(v)) updateSelectInput(session, paste0(k, "_unit"), selected = v)
+      }
+    })
     
     lz_state <- reactiveValues(override = NULL, overrides_log = list())
     # Overrides belong to one data set: clear them when new data are processed,
@@ -364,6 +373,11 @@ path_multi_nca_server <- function(id, shared) {
       uchk <- validate_units(input$dose_unit, input$time_unit, input$conc_unit, input$mw)
       if (!uchk$valid) {
         showNotification(uchk$message, type = "error", duration = 12)
+        return()
+      }
+      umsg <- check_units_against_data(shared$study_info$units, input$dose_unit, input$time_unit, input$conc_unit)
+      if (!is.null(umsg)) {
+        showNotification(umsg, type = "error", duration = 12)
         return()
       }
 

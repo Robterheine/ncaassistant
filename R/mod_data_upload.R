@@ -526,6 +526,9 @@ data_upload_server <- function(id, shared) {
         file_path = input$file_upload$datapath,
         read_args = read_args(),
         door      = if (is_adnca) "adnca" else "flat",
+        # Units stated in the file; the analysis paths pre-select them and
+        # refuse a selection that contradicts them
+        units     = units_in_data(raw_data()),
         # ADNCA import: the choices, notes and sources, for the Analysis Record
         adnca     = if (is_adnca) adnca_conv()[c("options", "notes", "sources", "lloq", "n_records")] else NULL
       )

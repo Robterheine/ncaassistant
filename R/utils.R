@@ -540,3 +540,53 @@ clear_result_on_change <- function(settings, has_result, clear, id) {
                      type = "message", duration = 6, id = id)
   }, ignoreInit = TRUE)
 }
+
+#' Units stated in the data, mapped onto the app's unit choices
+#'
+#' Read from CDISC unit variables (AVALU/PCSTRESU, RRLTU, DOSEU/EXDOSU) or
+#' from flat-file unit columns named after the quantity (ConcUnit,
+#' Time_Unit, DOSE.UNITS). A column with more than one unit is refused
+#' elsewhere (interlock_mixed_units), so only single values are used.
+#' @return list(conc, time, dose), each list(unit = app choice or NA,
+#'   found = text in the data, column) or NULL when not stated
+units_in_data <- function(data) {
+  nm <- names(data)
+  is_unit_col <- function(n) grepl("(^|[_. ])units?($|[_. ])", n, ignore.case = TRUE) | grepl("[a-z]Units?$", n)
+  pick <- function(cdisc, word) {
+    cols <- c(nm[toupper(nm) %in% cdisc], nm[is_unit_col(nm) & grepl(word, nm, ignore.case = TRUE)])
+    for (cc in cols) {
+      v <- unique(trimws(as.character(data[[cc]]))); v <- v[!is.na(v) & v != ""]
+      if (length(v) == 1) return(list(found = v, column = cc))
+    }
+    NULL
+  }
+  norm <- function(u) gsub("µ|μ|mc(?=g)", "u", tolower(gsub("\\s", "", u)), perl = TRUE)
+  map <- function(hit, choices, aliases = character(0)) {
+    if (is.null(hit)) return(NULL)
+    u <- norm(hit$found)
+    if (u %in% names(aliases)) u <- aliases[[u]]
+    hit$unit <- choices[match(u, norm(choices))]
+    hit
+  }
+  list(conc = map(pick(c("AVALU", "PCSTRESU", "PCORRESU", "CONCU"), "conc|aval|dv"), CONC_UNIT_CHOICES,
+                  c("ng/ml" = "ng/ml", "ug/l" = "ug/l", "nm" = "nmol/l", "um" = "umol/l")),
+       time = map(pick(c("RRLTU", "AFRLTU", "TIMEU"), "time|tad|tafd"), TIME_UNIT_CHOICES,
+                  c("hr" = "h", "hrs" = "h", "hour" = "h", "hours" = "h", "minute" = "min", "minutes" = "min",
+                    "mins" = "min", "d" = "day", "days" = "day", "weeks" = "week", "sec" = "s", "seconds" = "s")),
+       dose = map(pick(c("DOSEU", "EXDOSU"), "dose|amt"), DOSE_UNIT_CHOICES))
+}
+
+#' Refuse a selected unit that contradicts a unit stated in the data
+#' @param found units_in_data() result
+#' @return NULL when consistent, otherwise a user-facing message
+check_units_against_data <- function(found, dose_unit, time_unit, conc_unit) {
+  sel <- list(conc = conc_unit, time = time_unit, dose = dose_unit)
+  what <- c(conc = "concentrations", time = "times", dose = "doses")
+  for (k in names(sel)) {
+    f <- found[[k]]
+    if (is.null(f) || is.na(f$unit) || identical(f$unit, sel[[k]])) next
+    return(paste0("The data give ", what[[k]], " in ", f$found, " (column ", f$column, "), but the ",
+                  k, " unit selected is ", sel[[k]], ". Select ", f$unit, ", or correct the file."))
+  }
+  NULL
+}

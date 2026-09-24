@@ -3787,6 +3787,26 @@ check("REL-21", "R-11: text after row 1000 of an Excel file is read, in flat and
   "URS-DAT-01", critical = TRUE, method = "1200-row xlsx with BLQ text only after row 1000; ADNCA xlsx with DTYPE in the last row",
   expected = "Every BLQ entry and the DTYPE value are read (were missing: readxl guessed the types from 1000 rows)")
 
+check("REL-22", "R-12: units stated in the data are pre-selected and a contradicting selection is refused",
+  tryCatch({
+    a <- read.csv("data/example_adnca.csv", stringsAsFactors = FALSE)
+    a$AVALU <- "ug/mL"; a$RRLTU <- "DAYS"
+    u <- units_in_data(a)
+    msg <- check_units_against_data(u, "mg", "h", "ng/mL")
+    ok_msg <- is.null(check_units_against_data(u, "mg", "day", "ug/mL"))
+    flat <- units_in_data(data.frame(ID = 1, Conc = 1, ConcUnit = "ng/ml", TimeUnit = "hr", Community = "x"))
+    rd <- function(f) paste(readLines(f, warn = FALSE), collapse = "\n")
+    wired <- all(vapply(c("R/mod_path_multi_nca.R", "R/mod_path_single_nca.R", "R/mod_path_be.R"), function(f)
+      grepl("check_units_against_data(shared$study_info$units", rd(f), fixed = TRUE) &&
+        grepl("Pre-select the units stated in the file", rd(f), fixed = TRUE), logical(1))) &&
+      grepl("units     = units_in_data(raw_data())", rd("R/mod_data_upload.R"), fixed = TRUE)
+    identical(u$conc$unit, "ug/mL") && identical(u$time$unit, "day") && identical(u$dose$unit, "mg") &&
+      grepl("ug/mL \\(column AVALU\\)", msg) && ok_msg &&
+      identical(flat$conc$unit, "ng/mL") && identical(flat$time$unit, "h") && is.null(flat$dose) && wired
+  }, error = function(e) FALSE),
+  "URS-NCA-05", critical = TRUE, method = "ADNCA example with AVALU ug/mL and RRLTU DAYS; flat file with ConcUnit and TimeUnit columns",
+  expected = "Units mapped to the app's choices; ng/mL and h refused with the column named; the paths pre-select and check them")
+
 end_section("REL")
 
 # =============================================================================
