@@ -402,7 +402,13 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   # the primary analysis). When the chosen mixed model cannot be fitted, the
   # fixed-effects fit is shown for information, without a verdict.
   mixed_failed <- use_mixed && !inherits(fit, "lme")
-  if (has_limits && mixed_failed) {
+  # TOST at alpha = 0.05 is the 90% interval; an 80% interval would double the
+  # type I error, so other levels give the interval without a verdict
+  if (has_limits && !isTRUE(all.equal(as.numeric(ci_level), 90))) {
+    pe_status <- "not applicable"
+    verdict <- paste0("no verdict: a bioequivalence verdict uses the 90% confidence interval (this is ",
+                      ci_level, "%)")
+  } else if (has_limits && mixed_failed) {
     pe_status <- "not applicable"
     verdict <- paste0("no verdict: the pre-specified mixed model could not be fitted (", mixed_error,
                       "); the fixed-effects result is shown for information only")

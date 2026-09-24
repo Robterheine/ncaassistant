@@ -4095,6 +4095,18 @@ check("REL-39", "R-27: IV clearance and volume are shown in the result card and 
   "URS-NCA-02", critical = FALSE, method = "IV bolus run; card, table and summary code; unit label",
   expected = "CL and Vz (CLO, VZO) shown for IV instead of an empty CL/F")
 
+check("REL-40", "R-28: a bioequivalence verdict is given only for the 90% confidence interval",
+  tryCatch({
+    b <- build_be_data(suppressWarnings(run_nca(rel_be, rel_be_cm, rel_st(trap = "linear"))), rel_be, rel_be_cm, "Reference")
+    f <- function(lv) fit_be_parameter(b$data, "AUCLST", design = "2x2x2", trt_col = b$trt_col, subj_col = b$subj_col,
+                                       per_col = b$per_col, seq_col = b$seq_col, ci_level = lv)$row
+    r90 <- f(90); r80 <- f(80); r95 <- f(95)
+    r90$Bioequivalent %in% c("YES", "NO") && grepl("^no verdict: a bioequivalence verdict uses the 90%", r80$Bioequivalent) &&
+      grepl("^no verdict", r95$Bioequivalent) && !is.na(r80$CI_Lower) && r80$CI_Lower > r90$CI_Lower
+  }, error = function(e) FALSE),
+  "URS-BE-04", critical = TRUE, method = "2x2x2 fixture at 80%, 90% and 95%",
+  expected = "Verdict at 90% only; the 80% and 95% intervals are shown without a verdict")
+
 end_section("REL")
 
 # =============================================================================
