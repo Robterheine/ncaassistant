@@ -765,10 +765,19 @@ server <- function(input, output, session) {
                  "their original licenses. Source code and documentation are available on ",
                  tags$a(href = "https://github.com/robterheine/ncaassistant",
                         target = "_blank", "GitHub"), "."),
+          tags$h6(class = "fw-bold mt-3", "Intended use"),
+          tags$p(class = "small",
+                 "NCA Assistant is for pharmacokineticists doing non-compartmental analysis, average ",
+                 "bioequivalence testing and study planning. It gives no reference-scaled bioequivalence ",
+                 "verdict (ABEL, RSABE), and it has no audit trail, electronic signature or access control. ",
+                 "The public instance on shinyapps.io is for evaluation and training, with synthetic or ",
+                 "pseudonymised data. For regulated work, install a tagged release on your own system and ",
+                 "qualify it there with the validation package. Responsibility for the analysis and its ",
+                 "conclusions stays with the user. Not for dosing decisions for individual patients."),
+          tags$h6(class = "fw-bold mt-3", "Your data"),
+          tags$p(class = "small", DATA_PROTECTION_NOTICE),
           tags$p(class = "text-muted small",
-                 "This is version ", APP_VERSION, ". The software is provided ",
-                 "as-is for research and educational purposes. Results should be ",
-                 "independently verified before use in regulatory submissions.")
+                 "This is version ", APP_VERSION, ". The software is provided as-is, without warranty.")
         )
       ),
       

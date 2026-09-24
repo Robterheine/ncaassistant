@@ -949,8 +949,10 @@ path_multi_nca_server <- function(id, shared) {
           adnca_rec <- if (identical(si$door, "adnca")) si$adnca else NULL
           
           # Fallback: save shared$raw_data to temp file
+          fallback_dir <- NULL
           if (is.null(original_path) || !file.exists(original_path)) {
-            original_path <- file.path(tempdir(), original_name)
+            original_path <- fallback_copy_path(original_name)
+            fallback_dir <- dirname(original_path)
             read_args <- if (!is.null(shared$raw_data))
               write_record_fallback(shared$raw_data, original_path, read_args) else list()
             adnca_rec <- NULL
@@ -976,6 +978,7 @@ path_multi_nca_server <- function(id, shared) {
             adnca          = adnca_rec
           )
           notify_reproduction(rec_out)
+          if (!is.null(fallback_dir)) unlink(fallback_dir, recursive = TRUE)
         })
       }
     )

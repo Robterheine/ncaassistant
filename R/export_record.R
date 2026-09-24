@@ -379,8 +379,9 @@ create_analysis_record <- function(output_path, results, settings, col_map,
   original_file_name <- basename(original_file_name)
 
   # Create temp directory
-  tmp <- tempdir()
-  rec_dir <- file.path(tmp, "analysis_record")
+  # A folder of its own: sessions share one R process (and its tempdir()),
+  # so a fixed name could mix one user's files into another user's record
+  rec_dir <- tempfile("analysis_record_")
   if (dir.exists(rec_dir)) unlink(rec_dir, recursive = TRUE)
   dir.create(rec_dir, recursive = TRUE)
   
@@ -571,8 +572,9 @@ create_single_analysis_record <- function(output_path, result, settings,
                                            adnca = NULL) {
 
   original_file_name <- basename(original_file_name)
-  tmp <- tempdir()
-  rec_dir <- file.path(tmp, "analysis_record")
+  # A folder of its own: sessions share one R process (and its tempdir()),
+  # so a fixed name could mix one user's files into another user's record
+  rec_dir <- tempfile("analysis_record_")
   if (dir.exists(rec_dir)) unlink(rec_dir, recursive = TRUE)
   dir.create(rec_dir, recursive = TRUE)
 
@@ -810,8 +812,7 @@ create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
                               n_subjects = NA, n_obs = NA, read_args = NULL, adnca = NULL) {
 
   original_file_name <- basename(original_file_name)
-  tmp <- tempdir()
-  rec_dir <- file.path(tmp, "figure_record")
+  rec_dir <- tempfile("figure_record_")
   if (dir.exists(rec_dir)) unlink(rec_dir, recursive = TRUE)
   dir.create(rec_dir, recursive = TRUE)
 
@@ -1055,6 +1056,14 @@ run_reproduction_check <- function(rec_dir, script, outputs = "reproduced_result
   writeLines(lines, file.path(rec_dir, "reproduction_check.txt"))
   unlink(file.path(rec_dir, c(outputs, figure)))
   verdict
+}
+
+#' Path for a fallback copy of the uploaded data, in a folder of its own
+#'
+#' Delete the folder (dirname of the path) once the record is built.
+fallback_copy_path <- function(file_name) {
+  d <- tempfile("upload_copy_"); dir.create(d)
+  file.path(d, basename(file_name))
 }
 
 #' Write the uploaded table when the original upload file is no longer available

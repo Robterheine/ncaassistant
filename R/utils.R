@@ -71,8 +71,8 @@ noncompart_compat <- function() {
                                  "install.packages(\"NonCompart\").")))
   }
   if (v == package_version(NONCOMPART_TESTED_VERSION)) {
-    return(list(version = vs, level = "ok", label = "Validated",
-                message = paste0("NonCompart ", vs, " — validated.")))
+    return(list(version = vs, level = "ok", label = "Tested version",
+                message = paste0("NonCompart ", vs, ": the version the validation suite was run with.")))
   }
   list(version = vs, level = "info", label = "Compatible",
        message = paste0("NonCompart ", vs, " detected (validated against ",
@@ -590,3 +590,9 @@ check_units_against_data <- function(found, dose_unit, time_unit, conc_unit) {
   }
   NULL
 }
+
+#' Where uploaded data go (upload page and About page)
+DATA_PROTECTION_NOTICE <- paste0(
+  "On the public instance, uploads are processed on shinyapps.io servers run by Posit PBC (USA). ",
+  "Do not upload data that identify people or that you may not share with a third party: use ",
+  "pseudonymised IDs, or run the app on your own computer for confidential studies.")

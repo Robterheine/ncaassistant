@@ -34,6 +34,8 @@ data_upload_ui <- function(id) {
             fileInput(ns("file_upload"), NULL,
                       accept = c(".csv", ".xlsx", ".xls", ".txt", ".tsv"),
                       placeholder = "Choose CSV or Excel file"),
+            tags$p(class = "text-muted small mb-2", icon("shield-halved", class = "me-1"),
+                   DATA_PROTECTION_NOTICE),
             
             conditionalPanel(
               condition = sprintf("output['%s'] == true", ns("is_csv")),

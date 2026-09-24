@@ -3891,6 +3891,27 @@ check("REL-26", "R-16: a changed file or a deleted reference column makes the re
   "URS-EXP-04", critical = TRUE, method = "Theophylline record: pipeline code edited, data file changed, CMAX and AUCLST deleted from the reference",
   expected = "DIFFERENT with the reason in each case (was MATCH); the manifest covers the reference and the script")
 
+check("REL-27", "R-17/R-18: records use private folders, and the app states where data go and what it is for",
+  tryCatch({
+    before <- list.files(tempdir(), "^(analysis_record|figure_record|upload_copy)")
+    r1 <- rec_build(df = theoph, cm = theoph_cm, st = theoph_settings)
+    after <- list.files(tempdir(), "^(analysis_record|figure_record|upload_copy)")
+    fp <- fallback_copy_path("../x.csv")
+    rd <- function(f) paste(readLines(f, warn = FALSE), collapse = "\n")
+    er <- rd("R/export_record.R"); app <- rd("app.R")
+    mods <- vapply(c("R/mod_path_multi_nca.R", "R/mod_path_be.R", "R/mod_path_viz.R"), function(f)
+      grepl("fallback_copy_path(original_name)", rd(f), fixed = TRUE) &&
+        grepl("unlink(fallback_dir, recursive = TRUE)", rd(f), fixed = TRUE), logical(1))
+    grepl("Result: MATCH", rec_check_text(r1$ex)) && length(setdiff(after, before)) == 0 &&
+      basename(fp) == "x.csv" && dir.exists(dirname(fp)) && dirname(fp) != tempdir() &&
+      !grepl('file.path(tmp, "analysis_record")', er, fixed = TRUE) && all(mods) &&
+      grepl("DATA_PROTECTION_NOTICE", rd("R/mod_data_upload.R"), fixed = TRUE) &&
+      grepl("Intended use", app, fixed = TRUE) && grepl("Posit PBC", DATA_PROTECTION_NOTICE, fixed = TRUE) &&
+      !grepl('label = "Validated"', rd("R/utils.R"), fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-GEN-04", critical = TRUE, method = "Build a record and list tempdir(); fallback path; upload page, About page and engine badge text",
+  expected = "Each record in its own folder, removed afterwards; fallback copies private and deleted; notice and intended use shown; badge says 'Tested version'")
+
 end_section("REL")
 
 # =============================================================================

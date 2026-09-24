@@ -1464,8 +1464,10 @@ path_be_server <- function(id, shared) {
           read_args <- si$read_args
           adnca_rec <- if (identical(si$door, "adnca")) si$adnca else NULL
           
+          fallback_dir <- NULL
           if (is.null(original_path) || !file.exists(original_path)) {
-            original_path <- file.path(tempdir(), original_name)
+            original_path <- fallback_copy_path(original_name)
+            fallback_dir <- dirname(original_path)
             if (!is.null(shared$raw_data))
               read_args <- write_record_fallback(shared$raw_data, original_path, read_args)
             else read_args <- list()
@@ -1493,6 +1495,7 @@ path_be_server <- function(id, shared) {
             adnca          = adnca_rec
           )
           notify_reproduction(rec_out)
+          if (!is.null(fallback_dir)) unlink(fallback_dir, recursive = TRUE)
         })
       }
     )
