@@ -3966,6 +3966,17 @@ check("REL-30", "R-19: theophylline AUClast and Cmax equal an independent calcul
   "URS-NCA-01", critical = TRUE, method = "Linear trapezoids written out by hand for every theophylline profile",
   expected = "AUClast, Cmax and Tmax identical to the hand calculation")
 
+check("REL-31", "R-20: release files can be generated and the About page shows the pipeline fingerprint",
+  tryCatch({
+    rel <- paste(readLines("validation/make_release_files.R", warn = FALSE), collapse = "\n")
+    parse(text = rel)
+    grepl("renv::lockfile_create", rel, fixed = TRUE) && grepl("release_manifest.csv", rel, fixed = TRUE) &&
+      grepl("Pipeline code SHA-256:", paste(readLines("app.R", warn = FALSE), collapse = "\n"), fixed = TRUE) &&
+      grepl("validation_environment.txt", paste(readLines("validation/validation.R", warn = FALSE), collapse = "\n"), fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-GEN-01", critical = FALSE, method = "make_release_files.R parses and writes the lockfile and manifest; About and environment file",
+  expected = "Release files and environment record in place")
+
 end_section("REL")
 
 # =============================================================================
@@ -4008,5 +4019,14 @@ miss <- setdiff(all_urs,covered)
 if (length(miss)>0) cat("  Missing:",paste(miss,collapse=", "),"\n")
 
 write.csv(results_df, "validation/validation_results.csv", row.names=FALSE)
+# The environment of this run, next to the results: R and package versions,
+# and the SHA-256 of every file that was tested
+env_pkgs <- c(required_pkgs, "shiny", "bslib", "shinyWidgets", "DT", "plotly", "ggplot2", "htmltools", "tidyr")
+writeLines(c(paste("NCA Assistant", APP_VERSION, "- validation run", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")), "",
+             "Packages:", paste0("  ", env_pkgs, " ", vapply(env_pkgs, function(p)
+               tryCatch(as.character(packageVersion(p)), error = function(e) "not installed"), character(1))), "",
+             "File SHA-256:", paste0("  ", names(file_hashes), " ", file_hashes), "",
+             capture.output(sessionInfo())),
+           "validation/validation_environment.txt")
 cat("\nResults: validation/validation_results.csv\n")
 cat("Validation complete:", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), "\n")

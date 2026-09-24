@@ -6,3 +6,4 @@ rsconnect/
 # Generated artifacts
 Rplots*.pdf
 validation/validation_results.csv
+validation/validation_environment.txt

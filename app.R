@@ -701,6 +701,10 @@ server <- function(input, output, session) {
                     tags$td(R.version$platform)),
             tags$tr(tags$td(class = "fw-bold", "OS:"),
                     tags$td(sessionInfo()$running)),
+            # Lets a user check that this instance runs the released code: the
+            # value is listed in validation/release_manifest.csv of each release
+            tags$tr(tags$td(class = "fw-bold", "Pipeline code SHA-256:"),
+                    tags$td(tags$code(if (is.na(PIPELINE_SHA256)) "not available" else PIPELINE_SHA256))),
             local({
               nc <- noncompart_compat()
               badge_class <- switch(nc$level,
