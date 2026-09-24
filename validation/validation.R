@@ -196,9 +196,9 @@ check("DAT-DQ-06", "DQ: Sparse subject WARNING",
       { qc <- run_data_quality_check(data.frame(Subject=c("A","A","B"),Time=c(0,1,0),Conc=c(0,5,3)), bcm); any(qc$findings$Severity=="WARNING" & grepl("< 3",qc$findings$Message)) },
       "URS-DAT-03", method="1 obs subject", expected="WARNING <3", critical=FALSE)
 
-check("DAT-DQ-07", "DQ: Negative conc WARNING",
-      { qc <- run_data_quality_check(data.frame(Subject=rep("A",4),Time=0:3,Conc=c(0,5,-1,3)), bcm); any(qc$findings$Severity=="WARNING" & grepl("egative",qc$findings$Message)) },
-      "URS-DAT-03", method="Conc=-1", expected="WARNING negative", critical=FALSE)
+check("DAT-DQ-07", "DQ: Negative conc ERROR without an LLOQ",
+      { qc <- run_data_quality_check(data.frame(Subject=rep("A",4),Time=0:3,Conc=c(0,5,-1,3)), bcm); any(qc$findings$Severity=="ERROR" & grepl("egative",qc$findings$Message)) },
+      "URS-DAT-03", method="Conc=-1, no LLOQ", expected="ERROR negative (the profile would get no parameters)", critical=FALSE)
 
 check("DAT-DQ-08", "DQ: All-zero WARNING",
       { qc <- run_data_quality_check(data.frame(Subject=rep("A",3),Time=0:2,Conc=c(0,0,0)), bcm); any(qc$findings$Severity=="WARNING" & grepl("all-zero",qc$findings$Message)) },
@@ -4051,6 +4051,18 @@ check("REL-36", "R-31: a half-life note is not presented as an excluded profile"
   }, error = function(e) FALSE),
   "URS-UI-04", critical = FALSE, method = "All Subjects alert code; run_nca with a minimum R2 of 0.9999",
   expected = "Exclusions and other notes in separate alerts; the R2 note is a note, not an exclusion")
+
+check("REL-37", "R-25: a negative concentration blocks the analysis without an LLOQ, and is BLQ with one",
+  tryCatch({
+    d <- data.frame(ID = "7", T = c(0, 1, 2, 4), C = c(-0.1, 5, 3, 1))
+    q0 <- run_data_quality_check(d, rel_cm, 0); q1 <- run_data_quality_check(d, rel_cm, 0.5)
+    e0 <- q0$findings[grepl("negative concentration", q0$findings$Message), ]
+    e1 <- q1$findings[grepl("negative concentration", q1$findings$Message), ]
+    e0$Severity == "ERROR" && grepl("Subjects: 7", e0$Detail) && e1$Severity == "WARNING" &&
+      !any(grepl("excluded from log-scale", c(q0$findings$Action, q1$findings$Action)))
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE, method = "Profile with -0.1 at t = 0, LLOQ 0 and 0.5",
+  expected = "ERROR naming the subject without an LLOQ (NonCompart would return no parameters); WARNING that the BLQ rule handles it with an LLOQ")
 
 end_section("REL")
 

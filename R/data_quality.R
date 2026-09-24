@@ -296,10 +296,19 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
   # Negative concentrations
   n_neg_conc <- sum(conc_num < 0, na.rm = TRUE)
   if (n_neg_conc > 0) {
-    add("WARNING", "Concentration",
-        paste(n_neg_conc, "negative concentration values"),
-        paste("Min value:", min(conc_num, na.rm = TRUE)),
-        "Negative values are unusual. Check assay results. These will be excluded from log-scale calculations.")
+    neg_subj <- unique(as.character(data[[subj_col]][!is.na(conc_num) & conc_num < 0]))
+    detail <- paste0("Min value: ", min(conc_num, na.rm = TRUE), ". Subjects: ",
+                     paste(head(neg_subj, 5), collapse = ", "), if (length(neg_subj) > 5) ", ..." else "")
+    # NonCompart returns no parameters at all for a profile with a negative
+    # value, so without an LLOQ the analysis cannot go ahead
+    if (lloq > 0) {
+      add("WARNING", "Concentration", paste(n_neg_conc, "negative concentration values"), detail,
+          "They are below the LLOQ, so the selected BLQ rule handles them. Check the assay results.")
+    } else {
+      add("ERROR", "Concentration", paste(n_neg_conc, "negative concentration values"), detail,
+          paste0("A profile with a negative concentration gets no NCA parameters at all. Enter the LLOQ so ",
+                 "the BLQ rule handles these values, or correct them in the file."))
+    }
   }
   
   # All concentrations missing
