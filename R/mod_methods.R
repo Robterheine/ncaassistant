@@ -298,16 +298,13 @@ tags$h6(class = "fw-semibold mt-3", "Descriptive Statistics"),
         tags$h6(class = "fw-semibold mt-3", "AUC", tags$sub("\u03C4"), " vs. AUC", tags$sub("0\u2013\u221E"),
                 " at Steady State"),
         tags$p(class = "small",
-               "At steady state, AUC", tags$sub("0\u2013t"), " (where t equals the last sampling time ",
-               "within the dosing interval) represents AUC", tags$sub("\u03C4"),
-               " and is the primary exposure measure. ",
-               "AUC", tags$sub("0\u2013\u221E"), " is not pharmacokinetically meaningful during repeated ",
-               "dosing because the extrapolation to infinity does not account for subsequent doses. ",
-               "Clearance at steady state was calculated as CL/F = Dose / AUC", tags$sub("\u03C4"),
-               " (not Dose / AUC", tags$sub("0\u2013\u221E"), "). ",
-               "AUC", tags$sub("0\u2013\u221E"), " and V", tags$sub("z"),
-               "/F (which depends on AUC", tags$sub("0\u2013\u221E"),
-               ") are hidden from the default display at steady state and should not be reported.")
+               "At steady state, AUC", tags$sub("\u03C4"), " (0 to \u03C4) is the primary exposure measure. ",
+               "It was calculated over the entered dosing interval: interpolated when a sample fell after ",
+               "\u03C4, extrapolated with \u03BBz when the last sample came before \u03C4. AUC",
+               tags$sub("0\u2013\u221E"), " has no meaning during repeated dosing, since extrapolating to ",
+               "infinity ignores the next doses, and it is hidden from the default display. CL/F and V",
+               tags$sub("z"), "/F were calculated from AUC", tags$sub("\u03C4"), " (CL/F = Dose / AUC",
+               tags$sub("\u03C4"), ").")
       ),
       
       # ================================================================

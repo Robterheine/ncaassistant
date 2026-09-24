@@ -1097,12 +1097,20 @@ path_be_server <- function(id, shared) {
       if (!isTRUE(input$nca_show_all)) {
         # AUCPEO included so >20% extrapolation is visible in default view
         key_cols <- intersect(
-          c("Subject", "Treatment", "Period",
-            "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
-            "AUC to Last Point", "AUC to Infinity (observed)",
-            "AUC % Extrapolated (observed)",
-            "Half-Life", "Apparent Clearance (CL/F)", "Clearance (CL)",
-            "Apparent Volume (Vz/F)", "Volume of Distribution (Vz)", "Adjusted R-squared"),
+          if (isTRUE(input$is_ss))
+            # At steady state: AUC over the dosing interval, not to infinity
+            c("Subject", "Treatment", "Period",
+              "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
+              "AUC Within Dosing Interval", "Average Concentration (Cavg)",
+              "Trough Concentration (Cmin)", "Half-Life",
+              "Apparent Clearance (CL/F)", "Clearance (CL)", "Adjusted R-squared")
+          else
+            c("Subject", "Treatment", "Period",
+              "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
+              "AUC to Last Point", "AUC to Infinity (observed)",
+              "AUC % Extrapolated (observed)",
+              "Half-Life", "Apparent Clearance (CL/F)", "Clearance (CL)",
+              "Apparent Volume (Vz/F)", "Volume of Distribution (Vz)", "Adjusted R-squared"),
           names(display_nca))
         key_cols <- c(key_cols, unname(friendly_name(partial_auc_cols(names(be_nca_result())))))
         display_nca <- display_nca[, key_cols, drop = FALSE]

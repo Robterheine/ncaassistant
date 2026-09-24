@@ -4138,6 +4138,17 @@ check("REL-42", "R-30: the Half-Life Review shows the fit the results use and ke
   "URS-NCA-12", critical = FALSE, method = "Profile with an embedded zero; IV bolus; review module code",
   expected = "Point count equal to NonCompart's (was one more); IV bolus review fit equal to the result; overrides reloaded per profile and removable")
 
+check("REL-43", "R-33: the Methods steady-state text and the BE table match the implementation",
+  tryCatch({
+    m <- paste(readLines("R/mod_methods.R", warn = FALSE), collapse = "\n")
+    be <- paste(readLines("R/mod_path_be.R", warn = FALSE), collapse = "\n")
+    !grepl("represents AUC", m, fixed = TRUE) && !grepl("should not be reported", m, fixed = TRUE) &&
+      grepl("is the primary exposure measure", m, fixed = TRUE) &&
+      grepl('"AUC Within Dosing Interval", "Average Concentration (Cavg)"', be, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-NCA-07", critical = FALSE, method = "Methods page and Bioequivalence PK table code",
+  expected = "No claim that AUC0-t is AUCtau or that Vz/F is not reported; the BE table shows AUCtau at steady state")
+
 end_section("REL")
 
 # =============================================================================
