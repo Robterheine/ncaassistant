@@ -258,17 +258,7 @@ path_single_nca_server <- function(id, shared) {
     })
     
     # Manual validation
-    manual_parsed <- reactive({
-      t_lines <- trimws(unlist(strsplit(input$manual_time %||% "", "\n")))
-      c_lines <- trimws(unlist(strsplit(input$manual_conc %||% "", "\n")))
-      t_lines <- t_lines[t_lines != ""]; c_lines <- c_lines[c_lines != ""]
-      t_vals <- suppressWarnings(as.numeric(t_lines))
-      c_vals <- suppressWarnings(as.numeric(c_lines))
-      list(time = t_vals, conc = c_vals,
-           nt = length(t_vals), nc = length(c_vals),
-           ok = length(t_vals) == length(c_vals) && length(t_vals) >= 3 &&
-                sum(is.na(t_vals)) == 0 && sum(is.na(c_vals)) == 0)
-    })
+    manual_parsed <- reactive(parse_manual_entry(input$manual_time, input$manual_conc))
     
     output$manual_validation <- renderUI({
       p <- manual_parsed()

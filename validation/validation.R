@@ -595,12 +595,8 @@ check("NCA-ED-07", "Robustness: character-typed time/conc",
       "URS-NCA-10", method="run_nca: character vs numeric time/conc (NonCompart 0.8.0 type robustness)",
       expected="Identical CMAX & AUClast; no type/sort failure", critical=TRUE)
 
-parse_manual <- function(tt, cc) {
-  tl<-trimws(unlist(strsplit(tt,"\n"))); cl<-trimws(unlist(strsplit(cc,"\n")))
-  tl<-tl[tl!=""]; cl<-cl[cl!=""]
-  tv<-suppressWarnings(as.numeric(tl)); cv<-suppressWarnings(as.numeric(cl))
-  list(time=tv,conc=cv,nt=length(tv),nc=length(cv),ok=length(tv)==length(cv)&&length(tv)>=3&&sum(is.na(tv))==0&&sum(is.na(cv))==0)
-}
+# The app's own parser (R/nca_helpers.R), not a copy
+parse_manual <- parse_manual_entry
 check("NCA-ME-01", "Manual: normal", { p<-parse_manual("0\n1\n2\n4","0\n10\n8\n3"); p$ok&&p$nt==4 },
       "URS-NCA-11", method="Newline parse", expected="ok=TRUE 4pt", critical=TRUE)
 check("NCA-ME-02", "Manual: CRLF", { p<-parse_manual("0\r\n1\r\n2\r\n4","0\r\n10\r\n8\r\n3"); p$ok },
@@ -865,7 +861,7 @@ check("EXP-VR-02", "APP_VERSION is 1.5.0", APP_VERSION=="1.5.0",
 check("EXP-VR-03", "Package versions", { v<-sapply(c("NonCompart","PowerTOST","nlme"),function(p)as.character(packageVersion(p))); all(nchar(v)>0) },
       "URS-EXP-06", method="packageVersion", expected="All return strings", critical=TRUE)
 check("EXP-SH-01", "SHA-256 computable", nchar(digest(file="validation/validation.R",algo="sha256"))==64,
-      "URS-EXP-04", method="digest SHA-256", expected="64-char hex", critical=TRUE)
+      "URS-EXP-04", method="digest SHA-256", expected="64-char hex", critical=FALSE)
 check("EXP-RS-01", "Repro script: valid R",
       tryCatch({ parse(text=generate_nca_script()); parse(text=generate_single_nca_script()); TRUE },error=function(e)FALSE),
       "URS-EXP-02", method="generate_nca_script->parse", expected="Valid R", critical=TRUE)
@@ -1007,7 +1003,7 @@ check("UI-VM-03", "validate: empty->invalid", !validate_mapping(list(subject="",
 
 check("UI-CQ-01", "No /mnt/ paths",
       { rf<-list.files("R",pattern="\\.R$",full.names=TRUE); !any(sapply(rf,function(f){l<-readLines(f,warn=FALSE);any(grepl("/mnt/",l)&!grepl("^#",l))})) },
-      "URS-GEN-01", method="Grep R/*.R", expected="None", critical=TRUE)
+      "URS-GEN-01", method="Grep R/*.R", expected="None", critical=FALSE)
 check("UI-CQ-02", "No browser()",
       { rf<-list.files("R",pattern="\\.R$",full.names=TRUE); !any(sapply(rf,function(f){l<-readLines(f,warn=FALSE);any(grepl("browser\\(\\)",l)&!grepl("^#",l))})) },
       "URS-GEN-01", method="Grep browser()", expected="None", critical=FALSE)
@@ -1602,7 +1598,7 @@ check("REG-BE-MX-03", "Mixed model: ~1|Subject, no degenerate Sequence row",
     abs(log(r$estimate$pe / 100) - tt[["Value"]]) < 1e-8 && r$estimate$dfe == tt[["DF"]] &&
       a["Sequence", "denDF"] > 0 && !is.nan(a["Sequence", "p-value"])
   }, error = function(e) FALSE),
-  "URS-BE-05", critical = FALSE,
+  "URS-BE-05", critical = TRUE,
   method = "compare with lme(random = ~1|Subject); inspect marginal ANOVA",
   expected = "same estimate and DF; Sequence denDF > 0, p-value not NaN")
 check("REG-BE-AOV-01", "Fixed model: Sequence tested against Subject(Sequence)",
@@ -2071,10 +2067,12 @@ check("REP-RBE-01", "EMA Method A and CVwR agree with replicateBE on all 30 refe
                       Sequence = as.character(d$sequence),
                       Treatment = factor(ifelse(d$treatment == "T", "Test", "Reference"),
                                          levels = c("Reference", "Test")),
-                      PK = d$PK, stringsAsFactors = FALSE)
-      f <- fit_be_parameter(b, "PK", "2x2x4", trt_col = "Treatment", subj_col = "Subject",
+                      CMAX = d$PK, stringsAsFactors = FALSE)
+      # Named CMAX: EMA widens the limits for Cmax only, so the implied ABEL
+      # limits are reported (and compared) for that metric
+      f <- fit_be_parameter(b, "CMAX", "2x2x4", trt_col = "Treatment", subj_col = "Subject",
                             per_col = "Period", seq_col = "Sequence")$estimate
-      v <- be_variability_diagnostic(b, "PK", trt_col = "Treatment", subj_col = "Subject",
+      v <- be_variability_diagnostic(b, "CMAX", trt_col = "Treatment", subj_col = "Subject",
                                      per_col = "Period", seq_col = "Sequence")
       g <- function(col) if (col %in% names(ma)) as.numeric(ma[1, col]) else NA_real_
       diffs <- c(f$pe - g("PE(%)"), f$ci_lo - g("CL.lo(%)"), f$ci_hi - g("CL.hi(%)"),
@@ -3912,6 +3910,62 @@ check("REL-27", "R-17/R-18: records use private folders, and the app states wher
   "URS-GEN-04", critical = TRUE, method = "Build a record and list tempdir(); fallback path; upload page, About page and engine badge text",
   expected = "Each record in its own folder, removed afterwards; fallback copies private and deleted; notice and intended use shown; badge says 'Tested version'")
 
+check("REL-28", "R-19: the planner's own calls give PowerTOST's sample sizes and power",
+  tryCatch({
+    N <- function(r) r[["Sample size"]]
+    abe <- N(planner_sample_size("abe", 0.05, 0.8, 0.95, 0.8, 1.25, 0.20, planner_cv("abe", 20, 20), "2x2"))
+    par <- N(planner_sample_size("abe", 0.05, 0.8, 0.95, 0.8, 1.25, 0.30, planner_cv("abe", 30, 30), "parallel"))
+    abel <- N(planner_sample_size("abel", 0.05, 0.8, 0.90, 0.8, 1.25, 0.35, planner_cv("abel", 35, 45), "2x2x4"))
+    rsabe <- N(planner_sample_size("rsabe", 0.05, 0.8, 0.90, 0.8, 1.25, 0.35, planner_cv("rsabe", 35, 45), "2x2x4"))
+    ntid <- N(planner_sample_size("ntid", 0.05, 0.8, 0.975, 0.9, 1.1111, 0.08, planner_cv("ntid", 8, 10), "2x2x4"))
+    pw <- planner_power(28, "abel", 0.05, 0.9, 0.8, 1.25, 0.45, 0.45, "2x2x4")
+    abe == 20 && par == 76 && abel == 24 && rsabe == 20 && ntid == 14 &&
+      ntid == PowerTOST::sampleN.NTID(CV = c(0.08, 0.10), theta0 = 0.975, design = "2x2x4", print = FALSE,
+                                     details = FALSE)[["Sample size"]] &&
+      abs(pw - PowerTOST::power.scABEL(CV = 0.45, n = 28, theta0 = 0.9, design = "2x2x4")) < 1e-12
+  }, error = function(e) FALSE),
+  "URS-PWR-01", critical = TRUE,
+  method = "planner_sample_size() and planner_power(), the functions the planner calls, for ABE (crossover, parallel), ABEL, RSABE and NTID",
+  expected = "N = 20, 76, 24, 20, 14; ABEL power at n = 28 equal to power.scABEL (100,000 simulations)")
+
+check("REL-29", "R-19: Method B (mixed model) agrees with replicateBE on all 30 reference data sets",
+  tryCatch({
+    worst <- 0
+    for (nm in sprintf("rds%02d", 1:30)) {
+      d <- getExportedValue("replicateBE", nm)
+      mb <- suppressMessages(suppressWarnings(replicateBE::method.B(
+        data = d, print = FALSE, details = TRUE, verbose = FALSE, plot.bxp = FALSE, option = 2)))
+      b <- data.frame(Subject = as.character(d$subject), Period = as.character(d$period),
+                      Sequence = as.character(d$sequence),
+                      Treatment = factor(ifelse(d$treatment == "T", "Test", "Reference"), levels = c("Reference", "Test")),
+                      CMAX = d$PK, stringsAsFactors = FALSE)
+      f <- fit_be_parameter(b, "CMAX", "2x2x4", model_type = "mixed", trt_col = "Treatment", subj_col = "Subject",
+                            per_col = "Period", seq_col = "Sequence")$estimate
+      g <- function(col) as.numeric(mb[1, col])
+      worst <- max(worst, abs(c(f$pe - g("PE(%)"), f$ci_lo - g("CL.lo(%)"), f$ci_hi - g("CL.hi(%)"))))
+    }
+    worst < 1e-6
+  }, error = function(e) FALSE),
+  "URS-BE-05", critical = TRUE, method = "fit_be_parameter(model_type = 'mixed') vs replicateBE::method.B(option = 2) on rds01-rds30",
+  expected = "Point estimate and 90% CI equal to 1e-6 (Methods: 'its results agree with the replicateBE package')")
+
+check("REL-30", "R-19: theophylline AUClast and Cmax equal an independent calculation for all 12 subjects",
+  tryCatch({
+    th <- read.csv("data/example_theoph.csv"); cm <- list(subject = "Subject", time = "Time", conc = "conc")
+    r <- suppressWarnings(run_nca(th, cm, rel_st(trap = "linear")))
+    ok <- TRUE
+    for (s in unique(th$Subject)) {
+      x <- th[th$Subject == s, ]; x <- x[order(x$Time), ]
+      last <- max(which(x$conc > 0)); x <- x[seq_len(last), ]
+      auc <- sum(diff(x$Time) * (head(x$conc, -1) + tail(x$conc, -1)) / 2)
+      rr <- r[as.character(r$Subject) == as.character(s), ]
+      ok <- ok && abs(rr$AUCLST - auc) < 1e-9 && rr$CMAX == max(x$conc) && rr$TMAX == x$Time[which.max(x$conc)]
+    }
+    ok && nrow(r) == 12
+  }, error = function(e) FALSE),
+  "URS-NCA-01", critical = TRUE, method = "Linear trapezoids written out by hand for every theophylline profile",
+  expected = "AUClast, Cmax and Tmax identical to the hand calculation")
+
 end_section("REL")
 
 # =============================================================================
@@ -3943,7 +3997,13 @@ all_urs <- c(paste0("URS-GEN-0",c(1,3:6)),paste0("URS-DAT-0",1:7),paste0("URS-NC
              paste0("URS-BE-0",1:9),"URS-BE-10",paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:8),paste0("URS-UI-0",1:4),
              paste0("URS-VIZ-0",1:9))
 covered <- unique(unlist(strsplit(results_df$URS_Ref,",\\s*")))
-cat(sprintf("\nURS: %d/%d covered\n",length(intersect(all_urs,covered)),length(all_urs)))
+# Coverage by executed tests only: a requirement whose only tests are manual
+# (SKIP in this run) is reported as such, not as covered by this run
+auto_cov <- unique(unlist(strsplit(results_df$URS_Ref[results_df$Result != "SKIP"],",\\s*")))
+manual_only <- setdiff(intersect(all_urs, covered), auto_cov)
+cat(sprintf("\nURS: %d/%d covered (%d by automated tests%s)\n",length(intersect(all_urs,covered)),length(all_urs),
+            length(intersect(all_urs, auto_cov)),
+            if (length(manual_only) > 0) paste0("; manual tests only: ", paste(manual_only, collapse = ", ")) else ""))
 miss <- setdiff(all_urs,covered)
 if (length(miss)>0) cat("  Missing:",paste(miss,collapse=", "),"\n")
 

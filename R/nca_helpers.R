@@ -213,3 +213,16 @@ recalculate_lambda_z <- function(time_vals, conc_vals, selected_idx) {
 
   out
 }
+
+#' Parse manually entered times and concentrations (one value per line)
+#' @return list(time, conc, nt, nc, ok): ok when both have the same number of
+#'   values, at least 3, and all are numbers
+parse_manual_entry <- function(time_text, conc_text) {
+  split <- function(x) { v <- trimws(unlist(strsplit(if (is.null(x)) "" else x, "\n"))); v[v != ""] }
+  t_vals <- suppressWarnings(as.numeric(split(time_text)))
+  c_vals <- suppressWarnings(as.numeric(split(conc_text)))
+  list(time = t_vals, conc = c_vals,
+       nt = length(t_vals), nc = length(c_vals),
+       ok = length(t_vals) == length(c_vals) && length(t_vals) >= 3 &&
+            sum(is.na(t_vals)) == 0 && sum(is.na(c_vals)) == 0)
+}

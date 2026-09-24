@@ -526,35 +526,12 @@ path_power_server <- function(id, shared) {
     # ---- Convert % inputs to decimals for PowerTOST -------------------------
     pct_to_dec <- function(pct) pct / 100
 
-    # ---- Compute power for a given N ----------------------------------------
+    # ---- Compute power for a given N (R/designs.R) --------------------------
+    # 10,000 simulations are enough for the curve; the single power value uses
+    # 100,000 (see the power mode below)
     compute_power <- function(n, atype, alpha, theta0_dec, theta1, theta2,
-                              cv_dec, cv_wr_dec, design) {
-      if (is.null(cv_wr_dec) || is.na(cv_wr_dec)) cv_wr_dec <- cv_dec
-      # Scaled methods need c(CVwT, CVwR); see planner_cv() in R/designs.R
-      cv_arg <- planner_cv(atype, cv_dec * 100, cv_wr_dec * 100)
-      tryCatch(
-        switch(atype,
-          "abe"   = power.TOST(alpha = alpha, theta0 = theta0_dec,
-                               theta1 = theta1, theta2 = theta2,
-                               CV = cv_dec, n = n, design = design,
-                               method = "exact"),
-          "abel"  = power.scABEL(alpha = alpha, theta0 = theta0_dec,
-                                 CV = cv_arg, n = n, design = design,
-                                 nsims = 1e4),
-          "rsabe" = power.RSABE(alpha = alpha, theta0 = theta0_dec,
-                                CV = cv_arg, n = n, design = design,
-                                nsims = 1e4),
-          "ntid"  = {
-            if (is.null(ntid_power)) stop("NTID power function not found in PowerTOST")
-            ntid_power(alpha = alpha, theta0 = theta0_dec,
-                       CV = cv_arg, n = n, design = design,
-                       nsims = 1e4)
-          },
-          NA_real_
-        ),
-        error = function(e) NA_real_
-      )
-    }
+                              cv_dec, cv_wr_dec, design, nsims = 1e4)
+      planner_power(n, atype, alpha, theta0_dec, theta1, theta2, cv_dec, cv_wr_dec, design, nsims)
 
     # ---- Main calculation ---------------------------------------------------
     calc_result <- reactiveVal(NULL)
@@ -606,34 +583,13 @@ path_power_server <- function(id, shared) {
       withProgress(message = "Calculating\u2026", value = 0.5, {
         result <- tryCatch({
           if (input$calc_mode == "sample_size") {
-            tp <- pct_to_dec(input$target_power)
-            switch(atype,
-              "abe"   = sampleN.TOST(alpha = alpha, targetpower = tp,
-                                     theta0 = theta0_dec,
-                                     theta1 = theta1, theta2 = theta2,
-                                     CV = cv_dec, design = design,
-                                     method = "exact", print = FALSE),
-              "abel"  = sampleN.scABEL(alpha = alpha, targetpower = tp,
-                                       theta0 = theta0_dec, CV = cv_arg,
-                                       design = design, print = FALSE,
-                                       nsims = 1e5),
-              "rsabe" = sampleN.RSABE(alpha = alpha, targetpower = tp,
-                                      theta0 = theta0_dec, CV = cv_arg,
-                                      design = design, print = FALSE,
-                                      nsims = 1e5),
-              "ntid"  = {
-                if (is.null(ntid_sampleN)) stop("NTID sample size function not found in PowerTOST")
-                ntid_sampleN(alpha = alpha, targetpower = tp,
-                             theta0 = theta0_dec, CV = cv_arg,
-                             design = design, print = FALSE,
-                             nsims = 1e5)
-              }
-            )
+            planner_sample_size(atype, alpha, pct_to_dec(input$target_power), theta0_dec,
+                                theta1, theta2, cv_dec, cv_arg, design)
           } else {
             # Power mode
             n   <- input$n_subjects
             pwr <- compute_power(n, atype, alpha, theta0_dec, theta1, theta2,
-                                 cv_dec, cv_wr_dec, design)
+                                 cv_dec, cv_wr_dec, design, nsims = 1e5)
             if (is.na(pwr)) {
               showNotification(
                 "Power could not be computed with these settings. Check your inputs.",

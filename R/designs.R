@@ -131,3 +131,53 @@ planner_cv_label <- function(analysis_type, design) {
   if (!is.null(analysis_type) && analysis_type %in% c("abel", "rsabe", "ntid")) return("Within-subject CV of the Test product (CV %)")
   "Within-subject variability (CV %)"
 }
+
+#' Sample size for a planner method: the PowerTOST call the app makes
+#' @param cv_dec CV as a fraction (ABE); cv_arg planner_cv() result (scaled)
+#' @return PowerTOST's result data frame (column "Sample size")
+planner_sample_size <- function(atype, alpha, targetpower, theta0, theta1, theta2, cv_dec, cv_arg, design) {
+  switch(atype,
+    "abe"   = PowerTOST::sampleN.TOST(alpha = alpha, targetpower = targetpower, theta0 = theta0,
+                                      theta1 = theta1, theta2 = theta2, CV = cv_dec, design = design,
+                                      method = "exact", print = FALSE),
+    "abel"  = PowerTOST::sampleN.scABEL(alpha = alpha, targetpower = targetpower, theta0 = theta0,
+                                        CV = cv_arg, design = design, print = FALSE, details = FALSE,
+                                        nsims = 1e5),
+    "rsabe" = PowerTOST::sampleN.RSABE(alpha = alpha, targetpower = targetpower, theta0 = theta0,
+                                       CV = cv_arg, design = design, print = FALSE, details = FALSE,
+                                       nsims = 1e5),
+    "ntid"  = {
+      # Renamed between PowerTOST versions (sampleN.NTIDFDA, later sampleN.NTID)
+      ns <- asNamespace("PowerTOST")
+      f <- get0("sampleN.NTIDFDA", envir = ns, inherits = FALSE)
+      if (is.null(f)) f <- get0("sampleN.NTID", envir = ns, inherits = FALSE)
+      if (is.null(f)) stop("NTID sample size function not found in PowerTOST")
+      f(alpha = alpha, targetpower = targetpower, theta0 = theta0, CV = cv_arg, design = design,
+        print = FALSE, details = FALSE, nsims = 1e5)
+    },
+    stop("Unknown study type: ", atype))
+}
+
+#' Power for a planner method and sample size; NA when it cannot be computed
+planner_power <- function(n, atype, alpha, theta0, theta1, theta2, cv_dec, cv_wr_dec, design, nsims = 1e5) {
+  if (is.null(cv_wr_dec) || is.na(cv_wr_dec)) cv_wr_dec <- cv_dec
+  # Scaled methods need c(CVwT, CVwR); see planner_cv()
+  cv_arg <- planner_cv(atype, cv_dec * 100, cv_wr_dec * 100)
+  tryCatch(
+    switch(atype,
+      "abe"   = PowerTOST::power.TOST(alpha = alpha, theta0 = theta0, theta1 = theta1, theta2 = theta2,
+                                      CV = cv_dec, n = n, design = design, method = "exact"),
+      "abel"  = PowerTOST::power.scABEL(alpha = alpha, theta0 = theta0, CV = cv_arg, n = n,
+                                        design = design, nsims = nsims),
+      "rsabe" = PowerTOST::power.RSABE(alpha = alpha, theta0 = theta0, CV = cv_arg, n = n,
+                                       design = design, nsims = nsims),
+      "ntid"  = {
+        ns <- asNamespace("PowerTOST")
+        f <- get0("power.NTIDFDA", envir = ns, inherits = FALSE)
+        if (is.null(f)) f <- get0("power.NTID", envir = ns, inherits = FALSE)
+        if (is.null(f)) stop("NTID power function not found in PowerTOST")
+        f(alpha = alpha, theta0 = theta0, CV = cv_arg, n = n, design = design, nsims = nsims)
+      },
+      NA_real_),
+    error = function(e) NA_real_)
+}
