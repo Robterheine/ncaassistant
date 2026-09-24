@@ -521,3 +521,22 @@ cdisc_codes_ui <- function(params, admin_route, is_ss) {
         }))))
   )
 }
+
+#' Clear a result when a setting that produced it changes
+#'
+#' A result shown next to settings that did not produce it (other units,
+#' another method, another CV) is easy to misread, and a record built then
+#' would pair the result with settings it was not computed with. So any change
+#' clears the result and asks for a new run.
+#' @param settings reactive returning the analysis settings (any value)
+#' @param clear function that clears the result(s)
+#' @param has_result function returning TRUE when there is a result to clear
+#' @param id notification id
+clear_result_on_change <- function(settings, has_result, clear, id) {
+  observeEvent(settings(), {
+    if (!isTRUE(has_result())) return()
+    clear()
+    showNotification("A setting changed after the analysis, so its results were cleared. Run it again.",
+                     type = "message", duration = 6, id = id)
+  }, ignoreInit = TRUE)
+}

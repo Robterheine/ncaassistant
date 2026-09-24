@@ -547,6 +547,12 @@ path_power_server <- function(id, shared) {
 
     # ---- Main calculation ---------------------------------------------------
     calc_result <- reactiveVal(NULL)
+    clear_result_on_change(
+      reactive(list(input$analysis_type, input$design, input$cv, input$cv_wr, input$calc_mode,
+                    input$theta0, input$theta1, input$theta2, input$alpha, input$target_power,
+                    input$n_subjects)),
+      has_result = function() !is.null(calc_result()), clear = function() calc_result(NULL),
+      id = "power_stale")
 
     # ---- Resolve correct limits per study type ------------------------------
     # For NTID, ABEL, and RSABE the acceptance limits are reference-scaled inside

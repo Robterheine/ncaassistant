@@ -3641,6 +3641,45 @@ check("REL-13", "R-06: each path's UI is built once, so settings survive leaving
   "URS-UI-03", critical = TRUE, method = "Static check of app.R; confirmed in the running app (dose 4.02 kept after Home and back)",
   expected = "Every path UI appears once in the page definition and never in a server-side renderUI")
 
+check("REL-14", "R-07: a planner result is cleared when an input changes after the calculation",
+  tryCatch({
+    suppressPackageStartupMessages({ library(shiny); library(bslib); library(plotly); library(DT) })
+    for (f in c("R/help_system.R", "R/mod_path_power.R")) source(f, local = TRUE)
+    ok <- FALSE
+    suppressWarnings(shiny::testServer(path_power_server, args = list(shared = shiny::reactiveValues(be_results = NULL)), {
+      session$setInputs(calc_mode = "sample_size", analysis_type = "abe", design = "2x2", cv = 20, cv_wr = 30,
+                        theta0 = 95, alpha = 0.05, target_power = 80, n_subjects = 24, theta1 = 0.8, theta2 = 1.25)
+      session$setInputs(btn_calc = 1)
+      had <- !is.null(calc_result()) && calc_result()[["Sample size"]] == PowerTOST::sampleN.TOST(CV = 0.2, theta0 = 0.95,
+               design = "2x2", print = FALSE)[["Sample size"]]
+      session$setInputs(cv = 40)
+      ok <<- had && is.null(calc_result())
+    }))
+    ok
+  }, error = function(e) FALSE),
+  "URS-PWR-01", critical = TRUE, method = "shiny::testServer on the planner: calculate at CV 20%, then change the CV to 40%",
+  expected = "N from PowerTOST after Calculate; no result after the CV changes (was N = 20 shown next to a CV of 40%)")
+
+check("REL-15", "R-07: NCA and bioequivalence results are cleared when their settings change",
+  tryCatch({
+    rd <- function(f) paste(readLines(f, warn = FALSE), collapse = "\n")
+    watched <- function(src, inputs) {
+      i <- regexpr("clear_result_on_change(", src, fixed = TRUE)
+      blk <- substr(src, i, i + regexpr("_stale\")", substring(src, i), fixed = TRUE))
+      i > 0 && all(vapply(inputs, function(i) grepl(paste0("input$", i), blk, fixed = TRUE), logical(1)))
+    }
+    units <- c("dose_unit", "time_unit", "conc_unit", "trap_method", "admin_route", "is_ss", "tau")
+    multi <- rd("R/mod_path_multi_nca.R"); single <- rd("R/mod_path_single_nca.R"); be <- rd("R/mod_path_be.R")
+    watched(multi, c(units, "r2adj", "dose_source")) && watched(single, c(units, "r2adj", "dose")) &&
+      watched(be, c(units, "ci_level", "be_lower", "be_upper", "be_reference", "model_type")) &&
+      grepl("ran <- isolate(be_run_settings()$be$parameters)", be, fixed = TRUE) &&
+      grepl("be_result(NULL); balance_result(NULL)", be, fixed = TRUE) &&
+      grepl("v %in% names(raw_data())", rd("R/mod_data_upload.R"), fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-NCA-05", critical = TRUE,
+  method = "Static check of the modules; checked in the running app (unit change cleared the All Subjects table, CI level change cleared the BE results, parameters kept after a run)",
+  expected = "Units, method, route, steady state, limits, CI level, Reference and model are watched; BE keeps the compared parameters; a half-life recalculation clears the BE result; mappings only name columns of the current file")
+
 end_section("REL")
 
 # =============================================================================

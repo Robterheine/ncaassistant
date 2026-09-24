@@ -301,6 +301,13 @@ path_multi_nca_server <- function(id, shared) {
     nca_excl_note <- reactiveVal(NULL)  # persists degenerate-profile exclusion warnings
     pauc_spec     <- partial_auc_server("pauc")
     pauc_notes    <- reactiveVal(character(0))
+
+    clear_result_on_change(
+      reactive(list(input$admin_route, input$dose, input$inf_dur, input$is_ss, input$tau,
+                    input$dose_unit, input$time_unit, input$conc_unit, input$trap_method,
+                    input$r2adj, input$mw, input$dose_norm, input$dose_source, pauc_spec())),
+      has_result = function() !is.null(nca_result()), clear = function() nca_result(NULL),
+      id = "multi_nca_stale")
     
     # Run NCA
     observeEvent(input$run_nca, {

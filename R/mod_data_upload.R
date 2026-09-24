@@ -439,10 +439,15 @@ data_upload_server <- function(id, shared) {
         time    = input$col_time,
         conc    = input$col_conc
       )
-      if (input$col_treatment != "") col_map$treatment <- input$col_treatment
-      if (input$col_period != "")    col_map$period    <- input$col_period
-      if (input$col_sequence != "")  col_map$sequence  <- input$col_sequence
-      if (input$col_dose != "")      col_map$dose      <- input$col_dose
+      # A dropdown can still hold a column of the previous file (a selectize
+      # input keeps its value when the new choices have no match), so only
+      # columns of this file are accepted
+      in_file <- function(v) length(v) == 1 && nzchar(v) && v %in% names(raw_data())
+      col_map <- col_map[vapply(col_map, in_file, logical(1))]
+      if (in_file(input$col_treatment)) col_map$treatment <- input$col_treatment
+      if (in_file(input$col_period))    col_map$period    <- input$col_period
+      if (in_file(input$col_sequence))  col_map$sequence  <- input$col_sequence
+      if (in_file(input$col_dose))      col_map$dose      <- input$col_dose
       
       # Validate
       val <- validate_mapping(col_map)

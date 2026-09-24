@@ -411,6 +411,12 @@ path_single_nca_server <- function(id, shared) {
     # NCA
     nca_res <- reactiveVal(NULL)
     pauc_spec <- partial_auc_server("pauc")
+    clear_result_on_change(
+      reactive(list(input$admin_route, input$dose, input$inf_dur, input$is_ss, input$tau,
+                    input$dose_unit, input$time_unit, input$conc_unit, input$trap_method,
+                    input$r2adj, input$mw, pauc_spec())),
+      has_result = function() !is.null(nca_res()), clear = function() nca_res(NULL),
+      id = "single_nca_stale")
     pauc_notes <- reactiveVal(character(0))
     # NCA settings from the inputs, in the shape run_single_nca() expects
     single_settings <- function() {

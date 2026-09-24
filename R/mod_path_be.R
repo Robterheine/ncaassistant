@@ -361,16 +361,17 @@ path_be_server <- function(id, shared) {
         c("CMAX","AUCTAU","AUCLST","AUCIFO","AUCIFP","TMAX","LAMZHL"), names(r)), pauc_params)
       # At steady state AUCTAU (AUC from 0 to tau) is the primary exposure
       # parameter; AUC to infinity has no meaning during repeated dosing.
-      default <- if (isTRUE(input$is_ss)) {
-        intersect(c("CMAX","AUCTAU"), available)
-      } else {
-        intersect(c("CMAX","AUCLST","AUCIFO"), available)
+      # After a run the boxes show what that run compared (at steady state
+      # AUCtau replaced AUClast and AUCinf); never a reset to the defaults
+      ran <- isolate(be_run_settings()$be$parameters)
+      selected <- if (length(ran) > 0) intersect(ran, available) else {
+        c(if (isTRUE(isolate(input$is_ss))) intersect(c("CMAX","AUCTAU"), available)
+          else intersect(c("CMAX","AUCLST","AUCIFO"), available), pauc_params)
       }
-      default <- c(default, pauc_params)
       updateCheckboxGroupInput(session, "be_params",
                                choiceNames = unname(sapply(available, friendly_name)),
                                choiceValues = available,
-                               selected = default)
+                               selected = selected)
     })
     
     # NCA results (run as part of BE)
@@ -384,6 +385,17 @@ path_be_server <- function(id, shared) {
     be_nca_settings <- reactiveVal(NULL)   # NCA settings of the last run (for recalculation)
     pauc_spec  <- partial_auc_server("pauc", show_role = TRUE)
     pauc_notes <- reactiveVal(character(0))
+    # The parameters to compare are not watched: after a run their boxes are
+    # set to what was compared, and each result row names its parameter
+    clear_result_on_change(
+      reactive(list(input$admin_route, input$dose, input$dose_source, input$is_ss, input$tau,
+                    input$dose_unit, input$time_unit, input$conc_unit, input$trap_method,
+                    input$r2adj_be, input$mw, input$be_design, input$be_reference, input$model_type,
+                    input$log_transform, input$ci_level, input$be_lower, input$be_upper,
+                    input$pe_constraint, pauc_spec())),
+      has_result = function() !is.null(be_result()) || !is.null(be_nca_result()),
+      clear = function() { be_result(NULL); be_nca_result(NULL); be_run_settings(NULL); balance_result(NULL) },
+      id = "be_stale")
 
     # Offer (and select) the interval metrics as soon as the intervals are
     # valid, so the first run already compares them
@@ -1317,13 +1329,17 @@ path_be_server <- function(id, shared) {
         if (!is.null(r)) {
           be_nca_result(r)
           shared$nca_results <- r
+          # The confidence intervals came from the old NCA: they, their
+          # downloads and the record must not be shown next to the new values
+          be_result(NULL); balance_result(NULL)
         }
       }
       
       showNotification(
         paste0("Recalculated: t\u00BD = ", signif(hl_new, 4), " h (",
                if (!is.na(r2adj)) paste0("R\u00B2 = ", signif(r2adj, 4)) else "R\u00B2 = N/A",
-               ", ", n_pts, " pts). Click 'Run Complete BE Analysis' again to update confidence intervals."),
+               ", ", n_pts, " pts). The bioequivalence results were cleared: click 'Run Complete BE ",
+               "Analysis' again to compare with the new half-life."),
         type = "message", duration = 10)
     })
     
