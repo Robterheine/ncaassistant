@@ -402,25 +402,36 @@ path_power_server <- function(id, shared) {
     # sample size, so it is not offered.
     output$cv_from_nca <- renderUI({
       ci <- if (!is.null(shared$be_results)) shared$be_results$ci_table else NULL
-      cv_est <- within_cv_from_be(ci, "CMAX")
-      if (is.na(cv_est)) {
+      metrics <- if (is.null(ci)) character(0) else
+        ci$Parameter[grepl("^Ratio", ci$Scale) & is.finite(ci$MSE) & !ci$Parameter %in% BE_NO_VERDICT_PARAMS]
+      if (length(metrics) == 0) {
         if (is.null(shared$nca_results)) return(NULL)
         return(tags$p(class = "text-muted small mb-2",
           "To use the within-subject CV from your own data, run the Bioequivalence analysis ",
           "(log-transformed). The spread of Cmax across subjects in batch results is not a ",
           "within-subject CV."))
       }
-      actionButton(
-        ns("use_nca_cv"),
-        paste0("Use Cmax within-subject CV from my BE analysis (\u2248 ", round(cv_est, 1), "%)"),
-        class = "btn-outline-info btn-sm w-100 mt-1",
-        icon  = icon("arrow-right")
-      )
+      m <- if (isTRUE(input$cv_metric %in% metrics)) input$cv_metric else metrics[1]
+      offer <- planner_cv_offer(shared$be_results, input$analysis_type, input$design, m)
+      tagList(
+        if (length(metrics) > 1)
+          selectInput(ns("cv_metric"), "Metric from the BE analysis",
+                      choices = stats::setNames(metrics, vapply(metrics, friendly_name, character(1))),
+                      selected = m),
+        if (!is.null(offer$note)) tags$p(class = "text-muted small mb-2", offer$note)
+        else if (!is.null(offer)) actionButton(ns("use_nca_cv"), offer$label,
+                                               class = "btn-outline-info btn-sm w-100 mt-1",
+                                               icon = icon("arrow-right")))
     })
 
     observeEvent(input$use_nca_cv, {
-      cv_est <- within_cv_from_be(shared$be_results$ci_table, "CMAX")
-      if (!is.na(cv_est)) updateNumericInput(session, "cv", value = round(cv_est, 1))
+      ci <- shared$be_results$ci_table
+      m <- if (!is.null(input$cv_metric)) input$cv_metric else
+        ci$Parameter[grepl("^Ratio", ci$Scale) & is.finite(ci$MSE) & !ci$Parameter %in% BE_NO_VERDICT_PARAMS][1]
+      offer <- planner_cv_offer(shared$be_results, input$analysis_type, input$design, m)
+      if (is.null(offer) || !is.null(offer$note)) return()
+      updateNumericInput(session, "cv", value = round(offer$cv, 1))
+      if (!is.na(offer$cv_wr)) updateNumericInput(session, "cv_wr", value = round(offer$cv_wr, 1))
     })
 
     # The first CV is the Test CV for scaled methods and the total CV for a

@@ -1040,8 +1040,9 @@ check("UI-BEL-01", "Configurable BE limits (BE-07)",
       "URS-BE-07", method="BE limits configurable via input", expected="be_lower/be_upper in code", critical=FALSE)
 
 check("UI-CVB-01", "CV bridge to power uses the BE within-subject CV (PWR-05)",
-      { l<-readLines("R/mod_path_power.R",warn=FALSE); any(grepl("within_cv_from_be\\(",l)) && !any(grepl("sd\\(log\\(cmax_vals",l)) },
-      "URS-PWR-05", method="Power module takes the CV from within_cv_from_be()", expected="BE-based CV; no between-subject spread", critical=FALSE)
+      { l<-readLines("R/mod_path_power.R",warn=FALSE); o <- deparse(planner_cv_offer)
+        any(grepl("planner_cv_offer\\(",l)) && any(grepl("within_cv_from_be(", o, fixed = TRUE)) && !any(grepl("sd\\(log\\(cmax_vals",l)) },
+      "URS-PWR-05", method="Power module takes the CV from planner_cv_offer(), which uses within_cv_from_be()", expected="BE-based CV; no between-subject spread", critical=FALSE)
 
 check("UI-JSN-01", "Settings exported as JSON (EXP-03)",
       { l<-readLines("R/export_record.R",warn=FALSE); any(grepl("toJSON|analysis_settings\\.json",l)) },
@@ -3806,6 +3807,26 @@ check("REL-22", "R-12: units stated in the data are pre-selected and a contradic
   }, error = function(e) FALSE),
   "URS-NCA-05", critical = TRUE, method = "ADNCA example with AVALU ug/mL and RRLTU DAYS; flat file with ConcUnit and TimeUnit columns",
   expected = "Units mapped to the app's choices; ng/mL and h refused with the column named; the paths pre-select and check them")
+
+check("REL-23", "R-13: the planner gets the kind of CV its design and method need",
+  tryCatch({
+    ci <- data.frame(Parameter = c("CMAX", "AUCLST"), Scale = "Ratio T/R (%)", MSE = c(log(0.2^2 + 1), log(0.15^2 + 1)))
+    cx <- list(ci_table = ci, design = "2x2x2")
+    rep <- list(ci_table = ci, design = "2x2x4",
+                cv_table = data.frame(Parameter = "CMAX", CVwR = 45, CVwT = 35))
+    par <- list(ci_table = ci, design = "parallel")
+    a <- planner_cv_offer(cx, "abe", "2x2", "CMAX")
+    b <- planner_cv_offer(cx, "abe", "parallel", "CMAX")
+    c2 <- planner_cv_offer(par, "abe", "parallel", "CMAX")
+    d <- planner_cv_offer(par, "abe", "2x2", "CMAX")
+    e <- planner_cv_offer(rep, "abel", "2x2x4", "CMAX")
+    f <- planner_cv_offer(cx, "abel", "2x2x4", "AUCLST")
+    abs(a$cv - 20) < 1e-9 && grepl("within-subject", a$label) && !is.null(b$note) && is.null(b$cv) &&
+      grepl("total", c2$label) && !is.null(d$note) && e$cv == 35 && e$cv_wr == 45 &&
+      abs(f$cv - 15) < 1e-9 && abs(f$cv_wr - 15) < 1e-9 && grepl("pooled", f$label)
+  }, error = function(e) FALSE),
+  "URS-PWR-01", critical = TRUE, method = "planner_cv_offer() for crossover, parallel and replicate analyses and planner designs",
+  expected = "Within-subject CV only for crossover designs, total CV only from a parallel analysis; ABEL gets CVwT 35 and CVwR 45 (was CVwT only)")
 
 end_section("REL")
 

@@ -622,3 +622,39 @@ be_m13a_checks <- function(pk_data, col_map, nca_res, ci_df, is_ss = FALSE) {
   }
   out
 }
+
+#' What the study planner may take from a bioequivalence analysis
+#'
+#' The residual CV of a crossover or replicate analysis is a within-subject
+#' CV; that of a parallel analysis is a total CV. Each is offered only to a
+#' planner design that needs that kind. Scaled methods get CVwT and CVwR from
+#' the replicate variability table (the pooled CV for both when the analysis
+#' had no replicated reference).
+#' @param be_results list with ci_table, cv_table and design (analysed code)
+#' @return NULL when there is no CV for this metric; list(note) when the
+#'   kind does not fit the planner design; otherwise list(cv, cv_wr, label)
+planner_cv_offer <- function(be_results, analysis_type, planner_design, param = "CMAX") {
+  cv <- within_cv_from_be(be_results$ci_table, param)
+  if (is.na(cv)) return(NULL)
+  be_parallel <- identical(be_design_model(if (is.null(be_results$design)) "2x2x2" else be_results$design), "parallel")
+  pl_parallel <- identical(planner_design, "parallel")
+  if (be_parallel && !pl_parallel)
+    return(list(note = paste0("Your bioequivalence analysis had parallel groups, so its CV is a total CV. ",
+                              "The selected design needs a within-subject CV.")))
+  if (!be_parallel && pl_parallel)
+    return(list(note = paste0("A parallel design needs the total CV. Your bioequivalence analysis was a ",
+                              "crossover, which gives only the within-subject CV.")))
+  scaled <- analysis_type %in% c("abel", "rsabe", "ntid")
+  name <- if (exists("friendly_name")) friendly_name(param) else param
+  if (!scaled)
+    return(list(cv = cv, cv_wr = NA_real_,
+                label = sprintf("Use the %s %s CV from my BE analysis (%.1f%%)", name,
+                                if (pl_parallel) "total" else "within-subject", cv)))
+  vt <- be_results$cv_table
+  i <- if (is.null(vt)) NA else match(param, vt$Parameter)
+  cvwr <- if (is.na(i)) cv else vt$CVwR[i]
+  cvwt <- if (is.na(i) || is.na(vt$CVwT[i])) cv else vt$CVwT[i]
+  list(cv = cvwt, cv_wr = cvwr,
+       label = sprintf("Use %s CVwT %.1f%% and CVwR %.1f%% from my BE analysis%s", name, cvwt, cvwr,
+                       if (is.na(i)) " (pooled: no replicated reference)" else ""))
+}

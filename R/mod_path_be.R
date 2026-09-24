@@ -765,7 +765,7 @@ path_be_server <- function(id, shared) {
                                            ifelse(pe >= 80 & pe <= 125, "YES", "NO"))
         }
 
-        be_result(list(ci_table = ci_df, anova = anova_results, cv_table = cv_df,
+        be_result(list(ci_table = ci_df, anova = anova_results, cv_table = cv_df, design = design_used$design,
                        m13a = be_m13a_checks(shared$pk_data, shared$col_map, nca_res,
                                              ci_df[ci_df$Parameter %in% setdiff(params, c(supportive, BE_NO_VERDICT_PARAMS)), ],
                                              isTRUE(input$is_ss))))
