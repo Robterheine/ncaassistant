@@ -35,7 +35,9 @@ run_interlocks <- function(data, col_map, scope = "all") {
   if (scope %in% c("all", "mapped")) {
     out <- c(out, list(interlock_time_format(data, col_map),
                        interlock_profile_start(data, col_map),
-                       interlock_stacked_profiles(data, col_map)))
+                       interlock_stacked_profiles(data, col_map),
+                       interlock_second_dose(data, col_map),
+                       interlock_unmapped_period(data, col_map)))
   }
   do.call(rbind, c(list(.no_findings()), out))
 }
@@ -204,4 +206,56 @@ interlock_stacked_profiles <- function(data, col_map) {
              "average duplicates when they are genuine replicate measurements of the ",
              "same sample.")
     })
+}
+
+#' Warn about a second rise after a long gap within one profile
+#'
+#' With time counted from the first dose and no Period column mapped, two
+#' periods become one profile: the concentrations fall, sampling pauses (the
+#' washout) and they rise again after the next dose. The first-sample check
+#' cannot see this, because such a profile does start at time zero. A double
+#' peak during absorption has no long gap before it, so it is not flagged.
+interlock_second_dose <- function(data, col_map) {
+  tc <- col_map$time; cc <- col_map$conc
+  if (is.null(tc) || is.null(cc) || !all(c(tc, cc, col_map$subject) %in% names(data))) return(.no_findings())
+  t <- suppressWarnings(as.numeric(as.character(data[[tc]])))
+  y <- suppressWarnings(as.numeric(as.character(data[[cc]])))
+  key <- profile_key(data, col_map)
+  labels <- profile_labels(key$parts)
+  hit <- character(0)
+  for (lab in unique(labels)) {
+    i <- which(labels == lab & !is.na(t) & !is.na(y)); i <- i[order(t[i])]
+    if (length(i) < 5) next
+    tt <- t[i]; yy <- y[i]; gaps <- diff(tt)
+    g <- which.max(gaps)
+    if (gaps[g] <= 3 * stats::median(gaps)) next
+    after <- yy[(g + 1):length(yy)]
+    if (max(after) > 2 * yy[g] && max(after) > 0.2 * max(yy) && which.max(after) > 1) hit <- c(hit, lab)
+  }
+  if (length(hit) == 0) return(.no_findings())
+  .finding("WARNING", "Time",
+    paste0(length(hit), " profile(s) rise again after a long sampling gap (a second dose in one profile?)"),
+    paste0("Profiles: ", paste(head(hit, 5), collapse = "; "), if (length(hit) > 5) paste0("; + ", length(hit) - 5, " more") else ""),
+    paste0("If subjects were dosed more than once (periods or occasions), map the Period column and use time ",
+           "since the dose of each period. A column named Visit or Occasion is not recognised automatically. ",
+           "Disregard this for a genuine double peak."))
+}
+
+#' Warn about an unmapped column that looks like a period or occasion
+interlock_unmapped_period <- function(data, col_map) {
+  if (!is.null(col_map$period) && nzchar(col_map$period)) return(.no_findings())
+  sc <- col_map$subject
+  if (is.null(sc) || !sc %in% names(data)) return(.no_findings())
+  cand <- setdiff(names(data)[grepl("^(visit|avisit|occ|occasion|aperiod|period|trtseqp|day|aday)", names(data),
+                                    ignore.case = TRUE)], unlist(col_map))
+  multi <- cand[vapply(cand, function(cc) {
+    n <- tapply(as.character(data[[cc]]), as.character(data[[sc]]), function(v) length(unique(v[!is.na(v)])))
+    any(n > 1)
+  }, logical(1))]
+  if (length(multi) == 0) return(.no_findings())
+  .finding("WARNING", "Design",
+    paste0("Column '", multi[1], "' takes more than one value per subject, but no Period column is mapped"),
+    if (length(multi) > 1) paste0("Also: ", paste(multi[-1], collapse = ", ")) else "",
+    paste0("If it marks periods or dosing occasions, map it as Period; otherwise the profiles of different ",
+           "periods are merged into one."))
 }

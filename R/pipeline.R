@@ -257,7 +257,8 @@ auto_detect_columns <- function(cols) {
   out <- list(
     subject   = detect(c("^subj", "^id$", "^subject", "^usubjid", "^patid",
                           "^pat$", "^proband", "^teilnehmer"), 1, "subject"),
-    time      = detect(c("^time", "^tpt", "^hours?$", "^hour", "^apts",
+    # Time after dose before time since the first dose (NONMEM TAD vs TIME)
+    time      = detect(c("^tad$", "^time", "^tpt", "^hours?$", "^hour", "^apts",
                           "^ntim", "^zeit", "^tid"), 2, "time"),
     conc      = detect(c("^conc", "^dv$", "^cp[^a-z]", "^cp$", "^concentration",
                           "^result", "^konz", "^plasma", "ug.l", "ng.ml"), 3, "conc"),

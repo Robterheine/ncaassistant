@@ -3828,6 +3828,23 @@ check("REL-23", "R-13: the planner gets the kind of CV its design and method nee
   "URS-PWR-01", critical = TRUE, method = "planner_cv_offer() for crossover, parallel and replicate analyses and planner designs",
   expected = "Within-subject CV only for crossover designs, total CV only from a parallel analysis; ABEL gets CVwT 35 and CVwR 45 (was CVwT only)")
 
+check("REL-24", "R-14: two periods merged into one profile are flagged, and TAD is preferred over TIME",
+  tryCatch({
+    t1 <- c(0, 0.5, 1, 2, 4, 8, 12, 24); c1 <- c(0, 5, 9, 7, 4, 2, 1, 0.3)
+    d <- data.frame(ID = rep(1:4, each = 16), TIME = rep(c(t1, t1 + 168), 4), DV = rep(c(c1, c1 * 1.3), 4),
+                    Condition = rep(rep(c("A", "B"), each = 8), 4), Visit = rep(rep(1:2, each = 8), 4))
+    cm <- auto_detect_columns(names(d)); cm <- cm[nzchar(unlist(cm))]
+    r <- run_interlocks(d, cm, "mapped")
+    th <- read.csv("data/example_theoph.csv"); cm_th <- auto_detect_columns(names(th)); cm_th <- cm_th[nzchar(unlist(cm_th))]
+    quiet <- nrow(run_interlocks(th, cm_th, "mapped")) == 0 &&
+      nrow(run_interlocks(rel_be, rel_be_cm, "mapped")) == 0
+    any(grepl("rise again after a long sampling gap", r$Message)) && any(grepl("'Visit' takes more than one value", r$Message)) &&
+      quiet && identical(auto_detect_columns(c("ID", "TIME", "TAD", "DV"))$time, "TAD")
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = FALSE,
+  method = "Interaction study with time since first dose (period 2 at 168 h) and an unmapped Visit column; theophylline and 2x2x2 fixture",
+  expected = "Two warnings for the merged profiles; none for the example data; TAD chosen as time")
+
 end_section("REL")
 
 # =============================================================================
