@@ -471,15 +471,24 @@ path_multi_nca_server <- function(id, shared) {
     output$excl_note <- renderUI({
       msgs <- nca_excl_note()
       if (is.null(msgs) || length(msgs) == 0) return(NULL)
-      tags$div(
-        class = "alert alert-warning py-2 small mb-2",
-        icon("triangle-exclamation", class = "me-1"),
-        tags$strong("Profiles excluded from analysis: "),
-        paste(msgs, collapse = " | "),
-        tags$br(),
-        tags$span(class = "text-muted",
-                  "These profiles had fewer than 2 positive concentration values (no meaningful NCA output possible). ",
-                  "Check the raw data for these subjects/treatments.")
+      # Each kind of message gets its own alert: a profile left out of the
+      # analysis is not the same as a half-life that was not reported
+      excluded <- startsWith(msgs, "Excluded ")
+      tagList(
+        if (any(excluded)) tags$div(
+          class = "alert alert-warning py-2 small mb-2",
+          icon("triangle-exclamation", class = "me-1"),
+          tags$strong("Profiles excluded from analysis: "),
+          paste(msgs[excluded], collapse = " | "),
+          tags$br(),
+          tags$span(class = "text-muted",
+                    "These profiles had fewer than 2 positive concentration values (no meaningful NCA output possible). ",
+                    "Check the raw data for these subjects/treatments.")),
+        if (any(!excluded)) tags$div(
+          class = "alert alert-warning py-2 small mb-2",
+          icon("triangle-exclamation", class = "me-1"),
+          tags$strong("Notes from the analysis: "),
+          tags$ul(class = "mb-0", lapply(msgs[!excluded], tags$li)))
       )
     })
 

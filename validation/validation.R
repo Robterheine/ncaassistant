@@ -4039,6 +4039,19 @@ check("REL-35", "R-24: steady state without a pre-dose sample is reported",
   "URS-NCA-07", critical = FALSE, method = "Steady state (tau 12 h) with and without a sample at time 0; batch and single profile",
   expected = "A warning naming the profile when there is no pre-dose sample; none when there is one")
 
+check("REL-36", "R-31: a half-life note is not presented as an excluded profile",
+  tryCatch({
+    src <- paste(readLines("R/mod_path_multi_nca.R", warn = FALSE), collapse = "\n")
+    w <- character(0)
+    withCallingHandlers(run_nca(theoph[theoph$Subject %in% 1:3, ], theoph_cm, modifyList(theoph_settings, list(r2adj_threshold = 0.9999))),
+                        warning = function(x) { w <<- c(w, conditionMessage(x)); invokeRestart("muffleWarning") })
+    grepl('excluded <- startsWith(msgs, "Excluded ")', src, fixed = TRUE) &&
+      grepl('"Notes from the analysis: "', src, fixed = TRUE) &&
+      any(startsWith(w, "Half-life not reported")) && !any(startsWith(w[startsWith(w, "Half-life")], "Excluded "))
+  }, error = function(e) FALSE),
+  "URS-UI-04", critical = FALSE, method = "All Subjects alert code; run_nca with a minimum R2 of 0.9999",
+  expected = "Exclusions and other notes in separate alerts; the R2 note is a note, not an exclusion")
+
 end_section("REL")
 
 # =============================================================================
