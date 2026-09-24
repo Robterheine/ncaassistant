@@ -405,7 +405,8 @@ create_analysis_record <- function(output_path, results, settings, col_map,
   tryCatch({
     wb <- openxlsx::createWorkbook()
     openxlsx::addWorksheet(wb, "Individual_Parameters")
-    openxlsx::writeData(wb, 1, rename_nca_columns(results))
+    openxlsx::writeData(wb, 1, rename_nca_columns(results,
+      units = list(dose = settings$dose_unit, time = settings$time_unit, conc = settings$conc_unit)))
     if (!is.null(summary_stats)) {
       openxlsx::addWorksheet(wb, "Summary_Statistics")
       openxlsx::writeData(wb, 2, rename_summary_columns(summary_stats))

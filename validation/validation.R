@@ -3802,7 +3802,8 @@ check("REL-22", "R-12: units stated in the data are pre-selected and a contradic
       grepl("units     = units_in_data(raw_data())", rd("R/mod_data_upload.R"), fixed = TRUE)
     identical(u$conc$unit, "ug/mL") && identical(u$time$unit, "day") && identical(u$dose$unit, "mg") &&
       grepl("ug/mL \\(column AVALU\\)", msg) && ok_msg &&
-      identical(flat$conc$unit, "ng/mL") && identical(flat$time$unit, "h") && is.null(flat$dose) && wired
+      identical(flat$conc$unit, "ng/mL") && identical(flat$time$unit, "h") && is.null(flat$dose) && wired &&
+      identical(units_in_data(data.frame(AVALU = "\u00b5g/mL"))$conc$unit, "ug/mL")
   }, error = function(e) FALSE),
   "URS-NCA-05", critical = TRUE, method = "ADNCA example with AVALU ug/mL and RRLTU DAYS; flat file with ConcUnit and TimeUnit columns",
   expected = "Units mapped to the app's choices; ng/mL and h refused with the column named; the paths pre-select and check them")
@@ -4063,6 +4064,22 @@ check("REL-37", "R-25: a negative concentration blocks the analysis without an L
   }, error = function(e) FALSE),
   "URS-DAT-03", critical = TRUE, method = "Profile with -0.1 at t = 0, LLOQ 0 and 0.5",
   expected = "ERROR naming the subject without an LLOQ (NonCompart would return no parameters); WARNING that the BLQ rule handles it with an LLOQ")
+
+check("REL-38", "R-26: exports carry the units of the run; half-life is not labelled in hours when time is in minutes",
+  tryCatch({
+    st <- modifyList(theoph_settings, list(time_unit = "min"))
+    r <- rec_build(df = theoph, cm = theoph_cm, st = st)
+    x <- openxlsx::read.xlsx(file.path(r$ex, "results.xlsx"), sheet = 1, check.names = FALSE, sep.names = " ")
+    lab <- names(rename_nca_columns(data.frame(LAMZHL = 1, CLFO = 1, AUCLST = 1),
+                                    units = list(dose = "mg", time = "min", conc = "ng/mL")))
+    all_src <- paste(vapply(c(list.files("R", "\\.R$", full.names = TRUE)), function(f)
+      paste(readLines(f, warn = FALSE), collapse = "\n"), character(1)), collapse = "\n")
+    "Half-Life (min)" %in% names(x) && !any(grepl("Half-Life (h)", names(x), fixed = TRUE)) &&
+      all(enc2utf8(lab) == enc2utf8(c("Half-Life (min)", "Apparent Clearance (CL/F) (L/min)", "AUC to Last Point (ng/mL\u00b7min)"))) &&
+      !grepl('"Half-Life (h)"', all_src, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-EXP-01", critical = FALSE, method = "Theophylline record with time in minutes; rename_nca_columns() with units",
+  expected = "results.xlsx says Half-Life (min) (was Half-Life (h) over values in minutes); units on every labelled column")
 
 end_section("REL")
 

@@ -95,7 +95,7 @@ pk_param_labels <- c(
   "TLAG"     = "Lag Time",
   
   # Terminal phase
-  "LAMZHL"   = "Half-Life (h)",
+  "LAMZHL"   = "Half-Life",
   "LAMZ"     = "Elimination Rate Constant",
   "LAMZLL"   = "Lambda_z Lower Time",
   "LAMZUL"   = "Lambda_z Upper Time",
@@ -189,7 +189,9 @@ partial_auc_label <- function(name) {
 #' Rename columns of an NCA result data frame to friendly names
 #' @param df Data frame with NonCompart column names
 #' @return Data frame with renamed columns
-rename_nca_columns <- function(df) {
+#' @param units Optional list(dose, time, conc): appends each column's unit,
+#'   as the exports need (the column labels themselves carry none)
+rename_nca_columns <- function(df, units = NULL) {
   if (is.null(df) || nrow(df) == 0) return(df)
   nm <- names(df)
   for (i in seq_along(nm)) {
@@ -197,6 +199,8 @@ rename_nca_columns <- function(df) {
     if (is.na(label)) label <- partial_auc_label(nm[i])
     if (!is.na(label)) nm[i] <- label
   }
+  if (!is.null(units)) nm <- add_units_to_labels(nm, dose_unit = units$dose, time_unit = units$time,
+                                                 conc_unit = units$conc)
   names(df) <- nm
   df
 }
@@ -366,7 +370,7 @@ add_units_to_labels <- function(labels, dose_unit = "mg", time_unit = "h", conc_
     "Average Concentration (Cavg)"       = conc_unit,
     "Trough Concentration (Cmin)"        = conc_unit,
     "Dosing Interval (tau)"              = time_unit,
-    "Half-Life (h)"                      = time_unit,
+    "Half-Life"                          = time_unit,
     "Elimination Rate Constant"          = paste0("1/", time_unit),
     "Apparent Clearance (CL/F)"          = cl_unit,
     "Apparent Volume (Vz/F)"             = "L",
@@ -379,10 +383,7 @@ add_units_to_labels <- function(labels, dose_unit = "mg", time_unit = "h", conc_
                        if (grepl("^Cmax [0-9.]+\u2013", labels[i])) conc_unit else
                        if (grepl("^Tmax [0-9.]+\u2013", labels[i])) time_unit else NA
     if (is.na(u)) next
-    # "Half-Life (h)" already carries a unit: replace it rather than append
-    # a second one ("Half-Life (h) (h)"), and use the actual time unit.
-    labels[i] <- if (labels[i] == "Half-Life (h)") paste0("Half-Life (", u, ")")
-                 else paste0(labels[i], " (", u, ")")
+    labels[i] <- paste0(labels[i], " (", u, ")")
   }
   labels
 }
@@ -560,7 +561,16 @@ units_in_data <- function(data) {
     }
     NULL
   }
-  norm <- function(u) gsub("µ|μ|mc(?=g)", "u", tolower(gsub("\\s", "", u)), perl = TRUE)
+  # The micro sign (U+00B5 or Greek mu, U+03BC) is replaced by its UTF-8 bytes:
+  # a pattern with the character itself fails or is mangled in a C locale
+  norm <- function(u) {
+    u <- as.character(u)
+    for (m in c("\xc2\xb5", "\xce\xbc")) u <- gsub(m, "u", u, fixed = TRUE, useBytes = TRUE)
+    # useBytes can mark the result as bytes, which match() treats as
+    # different from the same plain text
+    u <- vapply(u, function(z) rawToChar(charToRaw(z)), character(1), USE.NAMES = FALSE)
+    gsub("mcg", "ug", tolower(gsub(" ", "", u, fixed = TRUE)), fixed = TRUE)
+  }
   map <- function(hit, choices, aliases = character(0)) {
     if (is.null(hit)) return(NULL)
     u <- norm(hit$found)

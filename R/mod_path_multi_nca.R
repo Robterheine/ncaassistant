@@ -515,7 +515,7 @@ path_multi_nca_server <- function(id, shared) {
       p <- ggplot(d, aes(x = .data[[cm$time]], y = .data[[cm$conc]], group = .profile)) +
         geom_line(alpha = 0.4, color = "#3498DB") +
         scale_y_log10() +
-        labs(x = "Time", y = "Concentration (log)") +
+        labs(x = paste0("Time (", input$time_unit, ")"), y = "Concentration (log)") +
         theme_minimal(base_size = 11)
       ggplotly(p)
     })
@@ -538,7 +538,7 @@ path_multi_nca_server <- function(id, shared) {
         geom_line(linewidth = 0.8) +
         geom_point(size = 2.5) +
         labs(colour = NULL) +
-        labs(x = "Time", y = "Mean ± SD") +
+        labs(x = paste0("Time (", input$time_unit, ")"), y = "Mean ± SD") +
         theme_minimal(base_size = 11)
       ggplotly(p)
     })
@@ -555,7 +555,7 @@ path_multi_nca_server <- function(id, shared) {
               "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
               "AUC Within Dosing Interval", "Average Concentration (Cavg)",
               "Trough Concentration (Cmin)", "Peak-Trough Fluctuation (%)",
-              "Half-Life (h)", "Apparent Clearance (CL/F)",
+              "Half-Life", "Apparent Clearance (CL/F)",
               "Adjusted R-squared"),
             names(display_df))
         } else {
@@ -565,7 +565,7 @@ path_multi_nca_server <- function(id, shared) {
               "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
               "AUC to Last Point", "AUC to Infinity (observed)",
               "AUC % Extrapolated (observed)",
-              "Half-Life (h)", "Elimination Rate Constant",
+              "Half-Life", "Elimination Rate Constant",
               "Points Used for Half-Life",
               "Apparent Clearance (CL/F)",
               "Apparent Volume (Vz/F)", "Adjusted R-squared"),
@@ -726,7 +726,7 @@ path_multi_nca_server <- function(id, shared) {
           facet_wrap(reformulate(cm$subject), scales = "free_y") +
           scale_y_log10() +
           theme_minimal(base_size = 9) +
-          labs(x = "Time", y = "Concentration (log)")
+          labs(x = paste0("Time (", input$time_unit, ")"), y = "Concentration (log)")
         ggplotly(p)
       }, error = function(e) plotly_empty())
     })
@@ -749,7 +749,7 @@ path_multi_nca_server <- function(id, shared) {
         badge <- if (!is.null(lz_state$override))
           tags$span(class = "badge bg-info ms-2", "manually adjusted") else NULL
         tags$div(class="alert alert-success py-2",
-                 tags$small(paste0("Half-life: ", signif(lz$half_life,4), " h | R\u00B2: ",
+                 tags$small(paste0("Half-life: ", signif(lz$half_life,4), " ", input$time_unit, " | R\u00B2: ",
                                    signif(lz$r2adj,4), " | ", lz$n_points, " pts")),
                  badge)
       }
@@ -774,7 +774,7 @@ path_multi_nca_server <- function(id, shared) {
       }
       df$Status <- ifelse(df$used, "Used for half-life", "Not used")
       df <- df[!is.na(df$ln_Conc), ]
-      df$tooltip <- paste0("Time: ", round(df$Time, 2), " h\n",
+      df$tooltip <- paste0("Time: ", round(df$Time, 2), " ", input$time_unit, "\n",
                            "Conc: ", signif(df$Conc, 4), "\n",
                            "ln(Conc): ", round(df$ln_Conc, 3))
       
@@ -783,7 +783,7 @@ path_multi_nca_server <- function(id, shared) {
         scale_color_manual(values = c("Used for half-life" = "#E74C3C",
                                       "Not used" = "#BDC3C7")) +
         theme_minimal(base_size = 11) +
-        labs(x = "Time", y = "ln(Concentration)") +
+        labs(x = paste0("Time (", input$time_unit, ")"), y = "ln(Concentration)") +
         theme(legend.position = "none", plot.margin = margin(5, 10, 5, 5))
       
       if (!is.na(lz$lambda_z)) {
@@ -877,7 +877,7 @@ path_multi_nca_server <- function(id, shared) {
       }
       
       showNotification(
-        sprintf("Recalculated: t\u00BD = %.3f h (%s, %d pts)",
+        sprintf(paste0("Recalculated: t\u00BD = %.3f ", input$time_unit, " (%s, %d pts)"),
                 hl_new,
                 if (!is.na(r2adj)) sprintf("R\u00B2 = %.4f", r2adj) else "R\u00B2 = N/A",
                 n_pts),
@@ -889,7 +889,7 @@ path_multi_nca_server <- function(id, shared) {
       filename = function() paste0("NCA_results_", Sys.Date(), ".csv"),
       content = function(file) {
         req(nca_result())
-        write.csv(rename_nca_columns(nca_result()), file, row.names=FALSE)
+        write.csv(rename_nca_columns(nca_result(), units = list(dose = input$dose_unit, time = input$time_unit, conc = input$conc_unit)), file, row.names=FALSE)
       }
     )
     output$dl_params_xlsx <- downloadHandler(
@@ -898,7 +898,7 @@ path_multi_nca_server <- function(id, shared) {
         req(nca_result())
         wb <- createWorkbook()
         addWorksheet(wb, "Individual_Parameters")
-        writeData(wb, 1, rename_nca_columns(nca_result()))
+        writeData(wb, 1, rename_nca_columns(nca_result(), units = list(dose = input$dose_unit, time = input$time_unit, conc = input$conc_unit)))
         r <- nca_result()
         add_cdisc_code_sheet(wb, names(r)[vapply(r, is.numeric, logical(1))],
                              input$admin_route, isTRUE(input$is_ss))

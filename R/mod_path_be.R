@@ -1098,12 +1098,15 @@ path_be_server <- function(id, shared) {
             "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
             "AUC to Last Point", "AUC to Infinity (observed)",
             "AUC % Extrapolated (observed)",
-            "Half-Life (h)", "Apparent Clearance (CL/F)",
+            "Half-Life", "Apparent Clearance (CL/F)",
             "Apparent Volume (Vz/F)", "Adjusted R-squared"),
           names(display_nca))
         key_cols <- c(key_cols, unname(friendly_name(partial_auc_cols(names(be_nca_result())))))
         display_nca <- display_nca[, key_cols, drop = FALSE]
       }
+      # Units after the column selection, which matches the plain labels
+      names(display_nca) <- add_units_to_labels(names(display_nca), dose_unit = input$dose_unit,
+                                                time_unit = input$time_unit, conc_unit = input$conc_unit)
       
       aucpeo_col <- "AUC % Extrapolated (observed)"
       has_aucpeo <- aucpeo_col %in% names(display_nca)
@@ -1160,7 +1163,7 @@ path_be_server <- function(id, shared) {
                          group = profile_group(d, cm))) +
         geom_line(alpha = 0.4) + geom_point(alpha = 0.5, size = 1.5) +
         scale_y_log10() + scale_color_brewer(palette = "Set1") +
-        labs(x = "Time", y = "Concentration (log)", color = "Treatment") +
+        labs(x = paste0("Time (", input$time_unit, ")"), y = "Concentration (log)", color = "Treatment") +
         theme_minimal(base_size = 11) + theme(legend.position = "bottom")
       ggplotly(p) %>% layout(legend = list(orientation="h", y=-0.15))
     })
@@ -1208,7 +1211,7 @@ path_be_server <- function(id, shared) {
           scale_y_log10() +
           scale_color_brewer(palette = "Set1") +
           theme_minimal(base_size = 9) +
-          labs(x = "Time", y = "Concentration (log)", color = "Treatment") +
+          labs(x = paste0("Time (", input$time_unit, ")"), y = "Concentration (log)", color = "Treatment") +
           theme(legend.position = "bottom")
         ggplotly(p) %>% layout(legend = list(orientation = "h", y = -0.1))
       }, error = function(e) plotly_empty())
@@ -1256,7 +1259,7 @@ path_be_server <- function(id, shared) {
       badge <- if (!is.null(lz_state$override))
         tags$span(class = "badge bg-info ms-1", "User-adjusted") else NULL
       tags$div(
-        tags$small(paste0("Half-life: ", signif(lz$half_life, 4), " h | R\u00B2: ",
+        tags$small(paste0("Half-life: ", signif(lz$half_life, 4), " ", input$time_unit, " | R\u00B2: ",
                           if (!is.na(lz$r2adj)) signif(lz$r2adj, 4) else "N/A",
                           " | ", lz$n_points, " points")),
         badge)
@@ -1279,7 +1282,7 @@ path_be_server <- function(id, shared) {
         }
         df$Status <- ifelse(df$used, "Used for half-life", "Not used")
         df <- df[!is.na(df$ln_Conc), ]
-        df$tooltip <- paste0("Time: ", round(df$Time, 2), " h\n",
+        df$tooltip <- paste0("Time: ", round(df$Time, 2), " ", input$time_unit, "\n",
                              "Conc: ", signif(df$Conc, 4), "\n",
                              "ln(Conc): ", round(df$ln_Conc, 3))
         p <- ggplot(df, aes(x = Time, y = ln_Conc, color = Status, text = tooltip)) +
@@ -1287,7 +1290,7 @@ path_be_server <- function(id, shared) {
           scale_color_manual(values = c("Used for half-life" = "#E74C3C",
                                         "Not used" = "#BDC3C7")) +
           theme_minimal(base_size = 11) +
-          labs(x = "Time", y = "ln(Concentration)") +
+          labs(x = paste0("Time (", input$time_unit, ")"), y = "ln(Concentration)") +
           theme(legend.position = "none")
         if (!is.na(lz$lambda_z)) {
           tr <- range(lz$time_used)
@@ -1383,7 +1386,7 @@ path_be_server <- function(id, shared) {
       }
       
       showNotification(
-        paste0("Recalculated: t\u00BD = ", signif(hl_new, 4), " h (",
+        paste0("Recalculated: t\u00BD = ", signif(hl_new, 4), " ", input$time_unit, " (",
                if (!is.na(r2adj)) paste0("R\u00B2 = ", signif(r2adj, 4)) else "R\u00B2 = N/A",
                ", ", n_pts, " pts). The bioequivalence results were cleared: click 'Run Complete BE ",
                "Analysis' again to compare with the new half-life."),
@@ -1400,7 +1403,8 @@ path_be_server <- function(id, shared) {
         writeData(wb, 1, rename_be_columns(be_result()$ci_table, ci_level = run_ci_level()))
         if (!is.null(be_nca_result())) {
           addWorksheet(wb, "NCA_Parameters")
-          writeData(wb, 2, rename_nca_columns(be_nca_result()))
+          writeData(wb, 2, rename_nca_columns(be_nca_result(),
+                    units = list(dose = input$dose_unit, time = input$time_unit, conc = input$conc_unit)))
         }
         if (!is.null(be_nca_result())) {
           r <- be_nca_result()

@@ -579,7 +579,7 @@ path_single_nca_server <- function(id, shared) {
         badge <- if (!is.null(local$lz_override))
           tags$span(class = "badge bg-info ms-2", "manually adjusted") else NULL
         tags$div(class="alert alert-success py-2",
-                 tags$small(paste0("Half-life: ", signif(lz$half_life,4), " h | R\u00B2: ",
+                 tags$small(paste0("Half-life: ", signif(lz$half_life,4), " ", input$time_unit, " | R\u00B2: ",
                                    signif(lz$r2adj,4), " | ", lz$n_points, " points")),
                  badge)
       }
@@ -606,7 +606,7 @@ path_single_nca_server <- function(id, shared) {
       df <- df[!is.na(df$ln_Conc), ]
       
       df$tooltip <- paste0(
-        "Time: ", round(df$Time, 2), " h\n",
+        "Time: ", round(df$Time, 2), " ", input$time_unit, "\n",
         "Conc: ", signif(df$Conc, 4), "\n",
         "ln(Conc): ", round(df$ln_Conc, 3)
       )
@@ -698,7 +698,7 @@ path_single_nca_server <- function(id, shared) {
       }
       
       showNotification(
-        sprintf("Recalculated: t\u00BD = %.3f h (%s, %d points)",
+        sprintf(paste0("Recalculated: t\u00BD = %.3f ", input$time_unit, " (%s, %d points)"),
                 half_life_new,
                 if (!is.na(r2adj)) sprintf("R\u00B2 = %.4f", r2adj) else "R\u00B2 = N/A",
                 n_pts),
