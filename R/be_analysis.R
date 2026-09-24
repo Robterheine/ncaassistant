@@ -124,6 +124,11 @@ BE_NO_VERDICT_PARAMS <- c("LAMZHL")
 #'                  the point estimate within 80.00-125.00% (as ABEL and RSABE
 #'                  do). Ignored for limits within 80-125%, where the CI
 #'                  already implies it.
+#' @param widened_scope Which metrics widened limits (wider than 80-125%)
+#'                  apply to: "cmax" (reference-scaled bioequivalence: EMA
+#'                  1401/98 Rev.1 section 4.1.10 widens Cmax only; every other
+#'                  metric is judged against 80.00-125.00%) or "all" (e.g.
+#'                  drug-interaction no-effect boundaries)
 #' @param diff_unit Unit label for an untransformed difference, e.g. "h"
 #' @param verdict   FALSE for a supportive metric: ratio and CI without a verdict
 #' @return list(row      = one-row data frame for the CI table,
@@ -134,7 +139,8 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
                              trt_col, subj_col, per_col = NULL, seq_col = NULL,
                              log_transform = TRUE, ci_level = 90,
                              be_lower = 80, be_upper = 125,
-                             pe_constraint = TRUE, diff_unit = NULL, verdict = TRUE) {
+                             pe_constraint = TRUE, widened_scope = "cmax",
+                             diff_unit = NULL, verdict = TRUE) {
 
   out <- list(row = NULL, anova = NULL, estimate = NULL, reason = NULL)
   trt_levels <- levels(be_data[[trt_col]])
@@ -156,6 +162,9 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   scale_label <- if (is_ratio) "Ratio T/R (%)" else
     paste0("Difference T\u2212R", if (!is.null(diff_unit)) paste0(" (", diff_unit, ")") else "")
   widened <- be_lower < 80 || be_upper > 125
+  if (widened && !identical(widened_scope, "all") && param != "CMAX") {
+    be_lower <- 80; be_upper <- 125; widened <- FALSE
+  }
 
   # Every row carries the same columns, so rows for parameters that could not
   # be estimated bind with the rest instead of breaking rbind().
@@ -549,7 +558,8 @@ be_variability_diagnostic <- function(be_data, param, trt_col, subj_col,
   t <- within_subject_variability(be_data, param, test_level, trt_col, subj_col, per_col, seq_col)
   t_replicated <- any(table(as.character(be_data[[subj_col]][
     as.character(be_data[[trt_col]]) == test_level])) >= 2)
-  lim <- abel_limits(r$cv)
+  # EMA widens the limits for Cmax only
+  lim <- if (param == "CMAX") abel_limits(r$cv) else c(NA_real_, NA_real_)
   data.frame(
     Parameter = param,
     swR = r$sw, CVwR = r$cv, df_R = r$df, n_R = r$n_subjects,
@@ -560,6 +570,6 @@ be_variability_diagnostic <- function(be_data, param, trt_col, subj_col,
       "not estimable from these data",
     sw_ratio = if (is.null(t)) NA_real_ else t$sw / r$sw,
     ABEL_lower = lim[1], ABEL_upper = lim[2],
-    ABEL_widened = r$cv > 30,
+    ABEL_widened = param == "CMAX" && r$cv > 30,
     stringsAsFactors = FALSE)
 }

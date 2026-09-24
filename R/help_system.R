@@ -343,6 +343,10 @@ help_be_limits <- info_btn("help_be_limits", "What are the BE limits?",
   than 80–125%, the app applies that constraint by default. This app does not
   calculate scaled limits; they must come from your protocol.
   <br><br>
+  Under the EMA guideline wider limits apply to <b>Cmax only</b>; AUC is still judged
+  against 80–125%. The app does the same unless you choose <i>All compared metrics</i>,
+  for example for drug-interaction no-effect boundaries.
+  <br><br>
   <em>Use 80–125% unless your regulatory guidance says otherwise.</em>")
 
 help_be_design <- info_btn("help_be_design", "What design is my study?",

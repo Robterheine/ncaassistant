@@ -152,6 +152,10 @@ path_be_ui <- function(id) {
               conditionalPanel(
                 condition = sprintf("input['%s'] < 80 || input['%s'] > 125",
                                     ns("be_lower"), ns("be_upper")),
+                radioButtons(ns("widened_scope"), "Widened limits apply to",
+                             choices = c("Cmax only (reference-scaled bioequivalence)" = "cmax",
+                                         "All compared metrics (e.g. no-effect boundaries)" = "all"),
+                             selected = "cmax"),
                 checkboxInput(ns("pe_constraint"),
                               "Also require the point estimate within 80.00\u2013125.00%",
                               value = TRUE),
@@ -392,7 +396,7 @@ path_be_server <- function(id, shared) {
                     input$dose_unit, input$time_unit, input$conc_unit, input$trap_method,
                     input$r2adj_be, input$mw, input$be_design, input$be_reference, input$model_type,
                     input$log_transform, input$ci_level, input$be_lower, input$be_upper,
-                    input$pe_constraint, pauc_spec())),
+                    input$pe_constraint, input$widened_scope, pauc_spec())),
       has_result = function() !is.null(be_result()) || !is.null(be_nca_result()),
       clear = function() { be_result(NULL); be_nca_result(NULL); be_run_settings(NULL); balance_result(NULL) },
       id = "be_stale")
@@ -693,6 +697,7 @@ path_be_server <- function(id, shared) {
             be_lower      = input$be_lower,
             be_upper      = input$be_upper,
             pe_constraint = !identical(input$pe_constraint, FALSE),
+            widened_scope = if (identical(input$widened_scope, "all")) "all" else "cmax",
             diff_unit     = diff_unit_for(param),
             verdict       = !param %in% supportive)
           if (!is.na(fit_out$row$Model) && grepl("mixed model failed", fit_out$row$Model)) {
@@ -756,6 +761,7 @@ path_be_server <- function(id, shared) {
             ci_level          = input$ci_level,
             acceptance_limits = c(input$be_lower, input$be_upper),
             pe_constraint     = !identical(input$pe_constraint, FALSE),
+            widened_scope     = if (identical(input$widened_scope, "all")) "all" else "cmax",
             parameters        = params)))
         shared$be_results <- be_result()
         balance_result(balance_info)  # persist for the alert panel
@@ -955,8 +961,9 @@ path_be_server <- function(id, shared) {
           tags$td(if (is.na(x$CVwT)) tags$span(class = "text-muted", x$CVwT_note)
                   else paste0(fmt(x$CVwT, 1), "%")),
           tags$td(fmt(x$sw_ratio, 3)),
-          tags$td(paste0(fmt(x$ABEL_lower), "\u2013", fmt(x$ABEL_upper), "%",
-                         if (isTRUE(x$ABEL_widened)) "" else " (not widened)")),
+          tags$td(if (is.na(x$ABEL_lower)) tags$span(class = "text-muted", "not applicable (EMA widens Cmax only)")
+                  else paste0(fmt(x$ABEL_lower), "\u2013", fmt(x$ABEL_upper), "%",
+                              if (isTRUE(x$ABEL_widened)) "" else " (not widened)")),
           tags$td(ifelse(is.na(x$PE_within_80_125), "\u2014", x$PE_within_80_125)))
       })
       tags$div(

@@ -3680,6 +3680,26 @@ check("REL-15", "R-07: NCA and bioequivalence results are cleared when their set
   method = "Static check of the modules; checked in the running app (unit change cleared the All Subjects table, CI level change cleared the BE results, parameters kept after a run)",
   expected = "Units, method, route, steady state, limits, CI level, Reference and model are watched; BE keeps the compared parameters; a half-life recalculation clears the BE result; mappings only name columns of the current file")
 
+check("REL-16", "R-08: widened limits apply to Cmax only unless all metrics are chosen",
+  tryCatch({
+    b <- build_be_data(suppressWarnings(run_nca(rel_be, rel_be_cm, rel_st(trap = "linear"))), rel_be, rel_be_cm, "Reference")
+    b$data$AUCLST[b$data$Treatment == "Test"] <- b$data$AUCLST[b$data$Treatment == "Test"] * 0.90
+    fit <- function(p, scope) fit_be_parameter(b$data, p, design = "2x2x2", trt_col = b$trt_col, subj_col = b$subj_col,
+                                               per_col = b$per_col, seq_col = b$seq_col, be_lower = 69.84,
+                                               be_upper = 143.19, widened_scope = scope)$row
+    auc_c <- fit("AUCLST", "cmax"); auc_a <- fit("AUCLST", "all"); cmax_c <- fit("CMAX", "cmax")
+    hv <- read.csv("validation/fixtures/be_2x2x4_highly_variable.csv", stringsAsFactors = FALSE)
+    cm4 <- rel_be_cm
+    bh <- build_be_data(suppressWarnings(run_nca(hv, cm4, rel_st(trap = "linear"))), hv, cm4, "Reference")
+    vd <- function(p) be_variability_diagnostic(bh$data, p, bh$trt_col, bh$subj_col, bh$per_col, bh$seq_col)
+    auc_c$BE_Lower == 80 && auc_c$BE_Upper == 125 && auc_c$Bioequivalent == "NO" &&
+      auc_a$BE_Lower == 69.84 && auc_a$Bioequivalent == "YES" && cmax_c$BE_Lower == 69.84 &&
+      !is.na(vd("CMAX")$ABEL_lower) && is.na(vd("AUCLST")$ABEL_lower)
+  }, error = function(e) FALSE),
+  "URS-BE-07", critical = TRUE,
+  method = "Limits 69.84-143.19% with Test AUClast scaled by 0.90; variability panel on the highly variable fixture",
+  expected = "AUClast judged against 80-125% (NO) unless 'all metrics' (YES); Cmax keeps the widened limits; implied ABEL limits for Cmax only")
+
 end_section("REL")
 
 # =============================================================================
