@@ -4192,6 +4192,13 @@ check("REL-46", "R-36: a new upload clears the analysis state of the previous fi
   "URS-DAT-01", critical = FALSE, method = "shiny::testServer on the upload module with state from an earlier analysis",
   expected = "BE results, partial AUC intervals and figure settings cleared when a new file is chosen")
 
+check("REL-47", "R-37: the navbar wraps on a phone instead of widening the page",
+  tryCatch(grepl("nav.navbar > .container-fluid { flex-wrap: wrap;",
+                 paste(readLines("www/custom.css", warn = FALSE), collapse = "\n"), fixed = TRUE),
+           error = function(e) FALSE),
+  "URS-UI-03", critical = FALSE, method = "custom.css; checked in the running app at 375 px (every page 375 px wide, was 457)",
+  expected = "Navbar items wrap")
+
 end_section("REL")
 
 # =============================================================================

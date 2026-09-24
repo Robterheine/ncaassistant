@@ -330,3 +330,12 @@ table.dataTable.compact td {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Narrow screens: the navbar buttons wrap onto a second line instead of
+   widening the page (at 375 px the page was 457 px wide) */
+nav.navbar > .container-fluid { flex-wrap: wrap; row-gap: 6px; }
+nav.navbar > .container-fluid > .d-flex { flex-wrap: wrap; row-gap: 6px; }
+@media (max-width: 576px) {
+  nav.navbar > .container-fluid > .d-flex .btn.ms-2,
+  nav.navbar > .container-fluid > .d-flex .btn.ms-3 { margin-left: 0 !important; margin-right: 6px; }
+}
