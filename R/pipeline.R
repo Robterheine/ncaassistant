@@ -332,10 +332,10 @@ profile_data_rows <- function(data, col_map, label) {
 #'   Rule 1: Pre-first-quantifiable set to 0; post-last-quantifiable set to Missing
 #'   Rule 2: All BLQ set to 0
 #'   Rule 3: All BLQ set to Missing (NA)
-#'   Rule 4: All BLQ set to LLOQ/2
+#'   Rule 4: All BLQ set to LLOQ/2 (a pre-dose sample at time <= 0: 0)
 #'   Rule 5: Pre-Cmax BLQ = 0; post-Cmax BLQ = Missing
-#'   Rule 6: Pre-first-quantifiable set to LLOQ/2; all other BLQ set to 0
-#'           (for drugs with absorption lag; used in ROSIE and similar studies)
+#'   Rule 6: After dosing and before the first quantifiable value: LLOQ/2;
+#'           all other BLQ (including a pre-dose sample) set to 0
 #'
 #' @param data Data frame with subject/time/concentration
 #' @param col_map Column mapping list
@@ -369,6 +369,7 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
   # interval rests on values this rule set. A column of this name in the
   # uploaded file is replaced.
   data[[BLQ_FLAG_COLUMN]] <- !is.na(data[[conc_col]]) & data[[conc_col]] < lloq
+  predose <- !is.na(data[[time_col]]) & suppressWarnings(as.numeric(data[[time_col]])) <= 0
   
   if (rule == "rule2") {
     # All BLQ -> 0
@@ -379,8 +380,10 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
     data[[conc_col]][data[[BLQ_FLAG_COLUMN]]] <- NA
     
   } else if (rule == "rule4") {
-    # All BLQ -> LLOQ/2
+    # All BLQ -> LLOQ/2, except before dosing: a BLQ pre-dose sample is 0, as
+    # LLOQ/2 there would mean drug before the dose (and remove the lag time)
     data[[conc_col]][data[[BLQ_FLAG_COLUMN]]] <- lloq / 2
+    data[[conc_col]][data[[BLQ_FLAG_COLUMN]] & predose] <- 0
     
   } else if (rule == "rule5") {
     # Pre-Cmax BLQ -> 0; post-Cmax BLQ -> NA
@@ -401,8 +404,8 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
     }
     
   } else if (rule == "rule6") {
-    # Rule 6: Pre-first-quantifiable BLQ -> LLOQ/2; all other BLQ -> 0
-    # Appropriate for drugs with absorption lag where first samples may be BLQ
+    # Rule 6: BLQ after dosing and before the first quantifiable value ->
+    # LLOQ/2; all other BLQ (including a pre-dose sample) -> 0
     for (s in unique(prof_key)) {
       idx <- profile_idx(s)
       sub <- data[idx, ]
@@ -424,6 +427,7 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
       from_quant <- idx[first_quant:length(idx)]
       data[[conc_col]][intersect(from_quant, which(data[[BLQ_FLAG_COLUMN]]))] <- 0
     }
+    data[[conc_col]][data[[BLQ_FLAG_COLUMN]] & predose] <- 0
     
   } else {
     # Rule 1 (default): pre-first-quantifiable -> 0, post-last-quantifiable -> NA
@@ -491,6 +495,35 @@ override_use_points <- function(data, col_map, nca_key, final_keys, lz_overrides
     if (length(chosen) >= 2) { out[[i]] <- chosen; any_set <- TRUE }
   }
   if (any_set) out else NULL
+}
+
+#' Terminal-phase fit without values set by a BLQ rule
+#'
+#' ICH M13A (2.2.2.2) leaves values below the LLOQ out of kel and t1/2. A BLQ
+#' rule that sets them to LLOQ/2 (Rules 4 and 6) makes them positive, so
+#' NonCompart's automatic search could fit a flat imputed tail. When its fit
+#' would use such a value, the search is repeated on the measured values only.
+#' @param time,conc One profile, in time order; is_blq flag per sample
+#' @param adm NonCompart adm value
+#' @return NULL when NonCompart's own fit uses no imputed value (nothing to
+#'   change); otherwise list(points = indices after NA removal, as sNCA's
+#'   UsePoints, or integer(0) when the measured values allow no fit; fit =
+#'   NonCompart::BestSlope result or NULL)
+blq_free_slope <- function(time, conc, is_blq, adm) {
+  if (is.null(is_blq)) return(NULL)
+  ok <- !is.na(time) & !is.na(conc)
+  x <- time[ok]; y <- conc[ok]; f <- is_blq[ok] %in% TRUE
+  if (!any(f & y > 0)) return(NULL)
+  upto <- seq_len(max(which(y > 0)))
+  pos <- upto[y[upto] > 0]
+  auto <- tryCatch(NonCompart::BestSlope(x[pos], y[pos], adm = adm), error = function(e) NULL)
+  if (is.null(auto) || !any(f[pos][attr(auto, "UsedPoints")])) return(NULL)
+  cand <- pos[!f[pos]]
+  fit <- if (length(cand) >= 3) tryCatch(NonCompart::BestSlope(x[cand], y[cand], adm = adm),
+                                         error = function(e) NULL)
+  if (is.null(fit) || is.na(fit["LAMZ"]) || fit["LAMZ"] <= 0 || length(attr(fit, "UsedPoints")) < 2)
+    return(list(points = integer(0), fit = NULL))
+  list(points = cand[attr(fit, "UsedPoints")], fit = fit)
 }
 
 #' Parameters that depend on the terminal slope (lambda-z)
@@ -638,6 +671,10 @@ run_single_nca <- function(time, conc, settings, time_used = NULL, is_blq = NULL
     use <- which(yf > 0 & vapply(xf, function(t) any(abs(t - tu) <= 1e-9 * max(1, abs(t))), logical(1)))
     if (length(use) < 2) use <- NULL
   }
+  # Without a manual selection, keep values set by a BLQ rule out of the fit
+  blq_fit <- if (is.null(use)) blq_free_slope(t_num, c_num, is_blq, adm)
+  no_fit <- !is.null(blq_fit) && length(blq_fit$points) == 0
+  nc_points <- if (!is.null(use)) use else if (!is.null(blq_fit) && !no_fit) blq_fit$points
   num0 <- function(v) { v <- suppressWarnings(as.numeric(v)); if (length(v) == 0 || is.na(v)) 0 else v }
   ss <- isTRUE(settings$is_steady_state)
   tau <- steady_state_tau(settings)
@@ -658,13 +695,13 @@ run_single_nca <- function(time, conc, settings, time_used = NULL, is_blq = NULL
                    doseUnit = settings$dose_unit, timeUnit = settings$time_unit,
                    concUnit = settings$conc_unit, SS = isTRUE(settings$is_steady_state),
                    # R2ADJ = 0 avoids NonCompart's interactive slope picker (see run_nca)
-                   R2ADJ = 0, MW = num0(settings$mw), UsePoints = use,
+                   R2ADJ = 0, MW = num0(settings$mw), UsePoints = nc_points,
                    iAUC = if (is.null(iauc)) "" else iauc)
   r <- fix_log_down_zeros(r, t_num, c_num, adm, down,
                           dur = if (adm == "Infusion") num0(settings$infusion_duration) else 0, ss = ss)
   # The analyst's R2 threshold applies to the automatic fit, not to points
   # chosen by hand
-  low <- is.null(use) && below_r2_threshold(r["R2ADJ"], settings$r2adj_threshold)
+  low <- is.null(use) && (no_fit || below_r2_threshold(r["R2ADJ"], settings$r2adj_threshold))
   if (low) r[lamz_dependent_cols(names(r), settings$is_steady_state)] <- NA
   if (ss) r <- steady_state_parameters(r, t_all, c_all, tau, lamz_rejected = low)
   if (!is.null(pauc)) {
@@ -1095,6 +1132,20 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
   # extrapolated %, AUMC, MRT, CL, V, predicted-Clast variants) are computed by
   # NonCompart itself, with its unit conversions, exactly as for automatic fits.
   use_points <- override_use_points(data, col_map, nca_key, final_keys, lz_overrides)
+  manual <- if (is.null(use_points)) rep(FALSE, length(final_keys)) else !vapply(use_points, is.null, logical(1))
+  # Without a manual selection, keep values set by a BLQ rule out of the fit
+  no_fit <- rep(FALSE, length(final_keys))
+  if (BLQ_FLAG_COLUMN %in% names(data)) {
+    for (i in which(!manual)) {
+      rows <- data[[nca_key]] == final_keys[i]
+      bf <- blq_free_slope(data[[col_map$time]][rows], data[[col_map$conc]][rows],
+                           data[[BLQ_FLAG_COLUMN]][rows], adm)
+      if (is.null(bf)) next
+      if (length(bf$points) == 0) { no_fit[i] <- TRUE; next }
+      if (is.null(use_points)) use_points <- vector("list", length(final_keys))
+      use_points[[i]] <- bf$points
+    }
+  }
 
   # Run NCA via NonCompart
   result <- tryCatch({
@@ -1156,11 +1207,8 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
   # below the threshold is not reliable enough for half-life and everything
   # derived from it. Profiles with a manual selection are exempt.
   if (!is.null(result) && "R2ADJ" %in% names(result)) {
-    low <- below_r2_threshold(result$R2ADJ, settings$r2adj_threshold)
-    if (!is.null(use_points)) {
-      manual <- !vapply(use_points, is.null, logical(1))
-      low <- low & !manual[match(as.character(result[[1]]), as.character(final_keys))]
-    }
+    k <- match(as.character(result[[1]]), as.character(final_keys))
+    low <- (below_r2_threshold(result$R2ADJ, settings$r2adj_threshold) | no_fit[k]) & !manual[k]
     if (ss) {
       # Steady-state parameters per profile, before any rows are blanked
       for (n in c("TAU", "CAVG", "CMIN_SS", "FLUCTP", "SWING")) if (!n %in% names(result)) result[[n]] <- NA_real_

@@ -568,7 +568,7 @@ path_single_nca_server <- function(id, shared) {
     output$lz_info <- renderUI({
       d <- tc(); req(length(d$time) >= 3)
       lz <- if (!is.null(local$lz_override)) local$lz_override
-            else estimate_lambda_z(d$time, d$conc, input$r2adj, route = input$admin_route)
+            else estimate_lambda_z(d$time, d$conc, input$r2adj, route = input$admin_route, is_blq = d$is_blq)
       if (is.na(lz$lambda_z))
         tags$div(class="alert alert-warning py-2", tags$small(tags$strong("Not estimable. "), lz$message))
       else {
@@ -585,7 +585,7 @@ path_single_nca_server <- function(id, shared) {
       d <- tc(); req(length(d$time) >= 3)
       tryCatch({
       lz <- if (!is.null(local$lz_override)) local$lz_override
-            else estimate_lambda_z(d$time, d$conc, input$r2adj, route = input$admin_route)
+            else estimate_lambda_z(d$time, d$conc, input$r2adj, route = input$admin_route, is_blq = d$is_blq)
       df <- data.frame(
         Time = d$time,
         ln_Conc = ifelse(d$conc > 0, log(d$conc), NA),
@@ -644,7 +644,7 @@ path_single_nca_server <- function(id, shared) {
         if (!is.null(local$lz_override)) {
           sel <- as.character(which(term)[d$time[term] %in% local$lz_override$time_used])
         } else {
-          lz <- estimate_lambda_z(d$time, d$conc, input$r2adj, route = input$admin_route)
+          lz <- estimate_lambda_z(d$time, d$conc, input$r2adj, route = input$admin_route, is_blq = d$is_blq)
           sel <- if (length(lz$time_used) > 0)
             as.character(which(term)[d$time[term] %in% lz$time_used]) else NULL
         }
@@ -768,7 +768,7 @@ path_single_nca_server <- function(id, shared) {
           # the automatic fit at the current R-squared threshold).
           lz_override <- NULL
           if (!is.null(local$lz_override) && length(d$time) >= 3) {
-            auto <- tryCatch(estimate_lambda_z(d$time, d$conc, input$r2adj, route = input$admin_route),
+            auto <- tryCatch(estimate_lambda_z(d$time, d$conc, input$r2adj, route = input$admin_route, is_blq = d$is_blq),
                              error = function(e) NULL)
             lz_override <- list(
               profile            = subject_label,

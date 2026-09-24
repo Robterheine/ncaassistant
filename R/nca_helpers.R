@@ -44,7 +44,7 @@ profile_parts <- function(result, label) {
 #' @return list(lambda_z, half_life, r2adj, intercept, n_points, time_used,
 #'   conc_used, all_time, all_conc, valid_mask, message)
 estimate_lambda_z <- function(time, conc, r2adj_threshold = 0.7,
-                              exclude_indices = NULL, route = "extravascular") {
+                              exclude_indices = NULL, route = "extravascular", is_blq = NULL) {
   time <- suppressWarnings(as.numeric(as.character(time)))
   conc <- suppressWarnings(as.numeric(as.character(conc)))
   valid <- !is.na(conc) & conc > 0
@@ -55,16 +55,21 @@ estimate_lambda_z <- function(time, conc, r2adj_threshold = 0.7,
 
   keep <- !is.na(time) & !is.na(conc)
   x <- time[keep]; y <- conc[keep]
-  ord <- order(x); x <- x[ord]; y <- y[ord]
+  f <- if (is.null(is_blq)) NULL else (is_blq[keep] %in% TRUE)
+  ord <- order(x); x <- x[ord]; y <- y[ord]; if (!is.null(f)) f <- f[ord]
   adm <- switch(route, "iv_bolus" = "Bolus", "iv_infusion" = "Infusion", "Extravascular")
   # As in run_nca(): an IV bolus analysis sets aside samples at or before 0
-  if (adm == "Bolus") { y <- y[x > 0]; x <- x[x > 0] }
+  if (adm == "Bolus") { post <- x > 0; y <- y[post]; if (!is.null(f)) f <- f[post]; x <- x[post] }
   if (sum(y > 0) < 3) return(empty("Fewer than 3 non-zero points available"))
 
-  bs <- tryCatch(NonCompart::BestSlope(x, y, adm = adm), error = function(e) NULL)
+  # As in run_nca(): values set by a BLQ rule stay out of the fit
+  bf <- blq_free_slope(x, y, f, adm)
+  if (!is.null(bf) && length(bf$points) == 0)
+    return(empty("No terminal phase could be fitted from the measured concentrations (values set by the BLQ rule are not used)"))
+  bs <- if (!is.null(bf)) bf$fit else tryCatch(NonCompart::BestSlope(x, y, adm = adm), error = function(e) NULL)
   if (is.null(bs) || is.na(bs["LAMZ"]) || bs["LAMZ"] <= 0)
     return(empty("No terminal phase could be fitted"))
-  used <- attr(bs, "UsedPoints")
+  used <- if (!is.null(bf)) bf$points else attr(bs, "UsedPoints")
   r2adj <- unname(bs["R2ADJ"])
   if (!is.null(r2adj_threshold) && !is.na(r2adj_threshold) && r2adj < r2adj_threshold)
     return(empty(paste0("Best adj R\u00b2 = ", round(r2adj, 4), " < threshold ", r2adj_threshold,

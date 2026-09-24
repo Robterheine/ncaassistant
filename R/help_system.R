@@ -155,11 +155,11 @@ help_blq_rules <- info_btn("help_blq_rules", "Which BLQ rule should I use?",
   <br><br>
   <b>Rule 3</b>: Treat all BLQ as missing. Early BLQ samples no longer anchor the start of the curve.
   <br><br>
-  <b>Rule 4</b>: Set all BLQ to half the LLOQ (LLOQ/2). Adds a little area wherever it is used.
+  <b>Rule 4</b>: Set all BLQ after dosing to half the LLOQ (LLOQ/2). These values are not used for the half-life.
   <br><br>
   <b>Rule 5</b>: Before Cmax → 0; after Cmax → missing.
   <br><br>
-  <b>Rule 6</b>: Before the first measurable value → LLOQ/2; all later BLQ → 0. For drugs with an absorption lag.
+  <b>Rule 6</b>: Between dosing and the first measurable value → LLOQ/2; all other BLQ → 0.
   <br><br>
   <em>Rule 1 is the usual choice in NCA. Follow your analysis plan if it specifies a rule.</em>")
 

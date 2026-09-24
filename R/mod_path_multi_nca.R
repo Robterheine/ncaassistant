@@ -709,13 +709,13 @@ path_multi_nca_server <- function(id, shared) {
       req(input$lz_profile, shared$pk_data, shared$col_map)
       d <- shared$pk_data; cm <- shared$col_map; sel <- input$lz_profile
       sub_d <- d[profile_data_rows(d, cm, sel), ]
-      list(time = sub_d[[cm$time]], conc = sub_d[[cm$conc]])
+      list(time = sub_d[[cm$time]], conc = sub_d[[cm$conc]], is_blq = sub_d[[BLQ_FLAG_COLUMN]])
     })
     
     output$lz_info <- renderUI({
       sd <- lz_sub_data(); req(length(sd$time) >= 3)
       lz <- if (!is.null(lz_state$override)) lz_state$override
-            else estimate_lambda_z(sd$time, sd$conc, input$r2adj, route = input$admin_route)
+            else estimate_lambda_z(sd$time, sd$conc, input$r2adj, route = input$admin_route, is_blq = sd$is_blq)
       if (is.na(lz$lambda_z)) {
         tags$div(class="alert alert-warning py-2", tags$small(lz$message))
       } else {
@@ -732,7 +732,7 @@ path_multi_nca_server <- function(id, shared) {
       sd <- lz_sub_data(); req(length(sd$time) >= 3)
       tryCatch({
       lz <- if (!is.null(lz_state$override)) lz_state$override
-            else estimate_lambda_z(sd$time, sd$conc, input$r2adj, route = input$admin_route)
+            else estimate_lambda_z(sd$time, sd$conc, input$r2adj, route = input$admin_route, is_blq = sd$is_blq)
       df <- data.frame(
         Time = sd$time,
         ln_Conc = ifelse(sd$conc > 0, log(sd$conc), NA),
@@ -785,7 +785,7 @@ path_multi_nca_server <- function(id, shared) {
         if (!is.null(lz_state$override)) {
           sel <- as.character(which(term)[sd$time[term] %in% lz_state$override$time_used])
         } else {
-          lz <- estimate_lambda_z(sd$time, sd$conc, input$r2adj, route = input$admin_route)
+          lz <- estimate_lambda_z(sd$time, sd$conc, input$r2adj, route = input$admin_route, is_blq = sd$is_blq)
           sel <- if (length(lz$time_used) > 0)
             as.character(which(term)[sd$time[term] %in% lz$time_used]) else NULL
         }
@@ -821,7 +821,7 @@ path_multi_nca_server <- function(id, shared) {
       
       # Log the override for audit trail
       sel <- input$lz_profile
-      orig_lz <- estimate_lambda_z(sd$time, sd$conc, input$r2adj, route = input$admin_route)
+      orig_lz <- estimate_lambda_z(sd$time, sd$conc, input$r2adj, route = input$admin_route, is_blq = sd$is_blq)
       lz_state$overrides_log[[sel]] <- c(list(
         profile = sel),
         # Subject / treatment / period, so the reproduction script can replay

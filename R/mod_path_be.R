@@ -187,6 +187,7 @@ path_be_ui <- function(id) {
         tagList(
           uiOutput(ns("be_status")),
           uiOutput(ns("ss_note")),
+          uiOutput(ns("blq_rule_note")),
           uiOutput(ns("pauc_note")),
           uiOutput(ns("balance_note")),
           uiOutput(ns("design_summary")),
@@ -908,6 +909,19 @@ path_be_server <- function(id, shared) {
       )
     })
 
+    output$blq_rule_note <- renderUI({
+      si <- shared$study_info
+      if (is.null(be_result()) || is.null(si) || !isTRUE(si$lloq > 0) ||
+          !isTRUE(si$blq_rule %in% c("rule3", "rule4", "rule5", "rule6"))) return(NULL)
+      tags$div(
+        class = "alert alert-warning py-2 small mb-2",
+        icon("triangle-exclamation", class = "me-1"),
+        tags$strong("BLQ rule: "),
+        "ICH M13A sets values below the LLOQ to zero in bioequivalence analyses (Rules 1 and 2 do this). ",
+        "The rule used here (", sub("rule", "Rule ", si$blq_rule), ") needs a justification in the protocol."
+      )
+    })
+
     # CI table
     output$ci_table <- renderDT({
       req(be_result())
@@ -1201,14 +1215,14 @@ path_be_server <- function(id, shared) {
       req(input$lz_profile, shared$pk_data, shared$col_map)
       d <- shared$pk_data; cm <- shared$col_map; sel <- input$lz_profile
       sub_d <- d[profile_data_rows(d, cm, sel), ]
-      list(time = sub_d[[cm$time]], conc = sub_d[[cm$conc]])
+      list(time = sub_d[[cm$time]], conc = sub_d[[cm$conc]], is_blq = sub_d[[BLQ_FLAG_COLUMN]])
     })
     
     # Half-life status
     output$lz_status <- renderUI({
       sd <- lz_sub_data(); req(length(sd$time) >= 3)
       lz <- if (!is.null(lz_state$override)) lz_state$override
-            else estimate_lambda_z(sd$time, sd$conc, input$r2adj_be, route = input$admin_route)
+            else estimate_lambda_z(sd$time, sd$conc, input$r2adj_be, route = input$admin_route, is_blq = sd$is_blq)
       if (is.na(lz$lambda_z)) {
         badge <- tags$span(class = "badge bg-warning", "Not estimable")
         return(tags$div(tags$small("Half-life could not be estimated"), badge))
@@ -1227,7 +1241,7 @@ path_be_server <- function(id, shared) {
       sd <- lz_sub_data(); req(length(sd$time) >= 3)
       tryCatch({
         lz <- if (!is.null(lz_state$override)) lz_state$override
-              else estimate_lambda_z(sd$time, sd$conc, input$r2adj_be, route = input$admin_route)
+              else estimate_lambda_z(sd$time, sd$conc, input$r2adj_be, route = input$admin_route, is_blq = sd$is_blq)
         df <- data.frame(Time = sd$time,
                          ln_Conc = ifelse(sd$conc > 0, log(sd$conc), NA),
                          Conc = sd$conc, used = FALSE)
@@ -1274,7 +1288,7 @@ path_be_server <- function(id, shared) {
           paste0("t=", round(sd$time[term_idx], 2), "  C=", round(sd$conc[term_idx], 3))
         )
         lz <- if (!is.null(lz_state$override)) lz_state$override
-              else estimate_lambda_z(sd$time, sd$conc, input$r2adj_be, route = input$admin_route)
+              else estimate_lambda_z(sd$time, sd$conc, input$r2adj_be, route = input$admin_route, is_blq = sd$is_blq)
         sel <- if (length(lz$time_used) > 0) {
           as.character(term_idx[sd$time[term_idx] %in% lz$time_used])
         } else NULL
@@ -1307,7 +1321,7 @@ path_be_server <- function(id, shared) {
       t_sel   <- override$time_used
       
       # Get original λz for audit logging
-      orig_lz <- estimate_lambda_z(sd$time, sd$conc, input$r2adj_be, route = input$admin_route)
+      orig_lz <- estimate_lambda_z(sd$time, sd$conc, input$r2adj_be, route = input$admin_route, is_blq = sd$is_blq)
       
       lz_state$override <- override
       

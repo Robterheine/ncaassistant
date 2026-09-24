@@ -240,17 +240,17 @@ check("DAT-BLQ-03", "BLQ Rule 3: all=NA",
       { d <- apply_blq_rules(bb,bc,"rule3",bl); all(is.na(d$Conc[c(1,2,6,7)])) },
       "URS-DAT-04", method="Rule 3", expected="BLQ=NA", critical=TRUE)
 
-check("DAT-BLQ-04", "BLQ Rule 4: all=LLOQ/2",
-      { d <- apply_blq_rules(bb,bc,"rule4",bl); all(d$Conc[c(1,2,6,7)]==0.5) },
-      "URS-DAT-04", method="Rule 4", expected="BLQ=0.5", critical=TRUE)
+check("DAT-BLQ-04", "BLQ Rule 4: all=LLOQ/2 after dosing, pre-dose=0",
+      { d <- apply_blq_rules(bb,bc,"rule4",bl); d$Conc[1]==0 && all(d$Conc[c(2,6,7)]==0.5) },
+      "URS-DAT-04", method="Rule 4", expected="BLQ=0.5; BLQ at t=0 -> 0", critical=TRUE)
 
 check("DAT-BLQ-05", "BLQ Rule 5: pre-Cmax=0 post=NA",
       { d <- apply_blq_rules(bb,bc,"rule5",bl); d$Conc[1]==0 && d$Conc[2]==0 && is.na(d$Conc[6]) && is.na(d$Conc[7]) },
       "URS-DAT-04", method="Rule 5", expected="Pre [0,0] post [NA,NA]", critical=TRUE)
 
-check("DAT-BLQ-06", "BLQ Rule 6: pre=LLOQ/2 rest=0",
-      { d <- apply_blq_rules(bb,bc,"rule6",bl); d$Conc[1]==0.5 && d$Conc[2]==0.5 && d$Conc[6]==0 && d$Conc[7]==0 },
-      "URS-DAT-04", method="Rule 6", expected="Pre [0.5,0.5] post [0,0]", critical=TRUE)
+check("DAT-BLQ-06", "BLQ Rule 6: after dosing and before first quantifiable=LLOQ/2, rest=0",
+      { d <- apply_blq_rules(bb,bc,"rule6",bl); d$Conc[1]==0 && d$Conc[2]==0.5 && d$Conc[6]==0 && d$Conc[7]==0 },
+      "URS-DAT-04", method="Rule 6", expected="t=0 [0], t=0.5 [0.5], post [0,0]", critical=TRUE)
 
 check("DAT-BLQ-07", "BLQ: Multi-subject independent",
       { d2 <- rbind(data.frame(Subject="A",Time=c(0,1,2),Conc=c(0.3,5,0.3)), data.frame(Subject="B",Time=c(0,1,2),Conc=c(0.3,8,0.3))); o <- apply_blq_rules(d2,bc,"rule1",bl); o$Conc[1]==0 && is.na(o$Conc[3]) && o$Conc[4]==0 && is.na(o$Conc[6]) },
@@ -296,11 +296,11 @@ check("DAT-PREP-03", "BLQ text ('<x', 'BLQ') reaches the BLQ rule",
     ds <- prepare_pk_dataset(prep_raw, prep_cm, list(lloq = 0.5, blq_rule = "rule4"))
     d <- ds$data
     ds$blq$text_tokens_converted == 3 &&
-      identical(d$Conc[d$Subject == 2 & d$Time %in% c(0, 4)], c(0.25, 0.25)) &&
+      identical(d$Conc[d$Subject == 2 & d$Time %in% c(0, 4)], c(0, 0.25)) &&
       identical(d$Conc[d$Subject == 1 & d$Time == 2], 0.25)
   }, error = function(e) FALSE),
   "URS-DAT-04", critical = TRUE, method = "rule 4 (LLOQ/2) with '<0.5', '<0,5' and 'BLQ'",
-  expected = "'<' entries and 'BLQ' -> 0.25")
+  expected = "'<' entries and 'BLQ' -> 0.25 after dosing; the pre-dose '<0.5' at t = 0 -> 0")
 check("DAT-PREP-04", "Without an LLOQ no BLQ rule is applied and text becomes missing",
   tryCatch({
     ds <- prepare_pk_dataset(prep_raw, prep_cm, list(lloq = 0))
@@ -3699,6 +3699,38 @@ check("REL-16", "R-08: widened limits apply to Cmax only unless all metrics are 
   "URS-BE-07", critical = TRUE,
   method = "Limits 69.84-143.19% with Test AUClast scaled by 0.90; variability panel on the highly variable fixture",
   expected = "AUClast judged against 80-125% (NO) unless 'all metrics' (YES); Cmax keeps the widened limits; implied ABEL limits for Cmax only")
+
+check("REL-17", "R-09: values set by a BLQ rule are not used for the terminal half-life",
+  tryCatch({
+    tt <- c(0, 0.5, 1, 2, 4, 6, 8, 12, 16, 24, 36, 48)
+    cc <- 100 * (exp(-0.2 * tt) - exp(-1.5 * tt)); cc[tt >= 24] <- 0.5
+    d <- data.frame(ID = "1", T = tt, C = cc)
+    st <- rel_st(trap = "linear"); st$r2adj_threshold <- 0.7
+    hl <- function(rule) {
+      p <- prepare_pk_dataset(d, rel_cm, list(lloq = 2, blq_rule = rule))$data
+      c(batch = suppressWarnings(run_nca(p, rel_cm, st))$LAMZHL,
+        single = suppressWarnings(run_single_nca(p$T, p$C, st, is_blq = p$BLQ_flag))[["LAMZHL"]],
+        review = estimate_lambda_z(p$T, p$C, 0.7, is_blq = p$BLQ_flag)$half_life)
+    }
+    r1 <- hl("rule1"); r4 <- hl("rule4")
+    all(abs(r4 - r1) < 1e-9) && abs(r1[["batch"]] - log(2) / 0.2) < 0.02
+  }, error = function(e) FALSE),
+  "URS-NCA-04", critical = TRUE,
+  method = "Oral profile, k = 0.2/h, BLQ at 24-48 h (LLOQ 2); Rule 1 and Rule 4; batch, single profile and Half-Life Review",
+  expected = "Rule 4 half-life equal to Rule 1 (3.47 h, true 3.47) in all three (was 7.27 h with the LLOQ/2 tail in the fit)")
+
+check("REL-18", "R-09: a BLQ pre-dose sample is not imputed, and BE notes Rules 3-6",
+  tryCatch({
+    d <- data.frame(ID = "1", T = c(0, 0.5, 1, 2, 4, 8), C = c("BLQ", "BLQ", 3, 8, 5, 2), stringsAsFactors = FALSE)
+    lag <- function(rule) suppressWarnings(run_nca(prepare_pk_dataset(d, rel_cm, list(lloq = 0.5, blq_rule = rule))$data,
+                                                   rel_cm, rel_st(trap = "linear")))$TLAG
+    be <- paste(readLines("R/mod_path_be.R", warn = FALSE), collapse = "\n")
+    lag("rule1") == 0.5 && lag("rule6") == 0 && lag("rule4") == 0 &&
+      prepare_pk_dataset(d, rel_cm, list(lloq = 0.5, blq_rule = "rule4"))$data$C[1] == 0 &&
+      grepl("output$blq_rule_note", be, fixed = TRUE) && grepl("ICH M13A sets values below the LLOQ to zero", be, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-DAT-04", critical = TRUE, method = "BLQ at 0 and 0.5 h (LLOQ 0.5) under Rules 1, 4 and 6; BE module text",
+  expected = "The t = 0 sample stays 0 under Rules 4 and 6; the BE results note the rule when it is 3-6")
 
 end_section("REL")
 
