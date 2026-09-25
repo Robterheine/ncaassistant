@@ -183,9 +183,10 @@ adnca_convert <- function(d, time, paramcd = NULL, pcspec = NULL, zero_predose =
                                 sum(t < 0)))
       t[t < 0] <- 0
     } else {
-      refuse(sum(t < 0), " negative ", time, " value(s) (pre-dose samples). Either use MRRLT, or ",
-             "choose to set pre-dose times to 0 (in R: zero_predose = TRUE). A pre-dose sample at ",
-             "a negative time changes AUC.")
+      refuse(sum(t < 0), " negative ", time, " value(s) (pre-dose samples). ",
+             if ("MRRLT" %in% names(d)) "Either use MRRLT, or set" else "Set",
+             " pre-dose times to 0 (tick 'Set pre-dose times to 0' on the Upload page; in the converter: ",
+             "zero_predose = TRUE). A pre-dose sample at a negative time changes AUC.")
     }
   }
   notes <- c(notes, sprintf("Time: %s (%s).", time,

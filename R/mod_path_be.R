@@ -902,7 +902,7 @@ path_be_server <- function(id, shared) {
         style = "border-left: 3px solid #3498DB;",
         icon("info-circle", class = "text-info me-1"),
         tags$strong("Design detected from data: "),
-        tags$span(design_type),
+        tags$span(design_label(design_type)),
         tags$span(class = "text-muted ms-3",
                   paste0(n_profiles, " profile(s)")),
         if (n_trt > 0) {

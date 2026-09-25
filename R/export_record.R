@@ -1185,7 +1185,7 @@ generate_viz_script <- function(viz_settings, col_map) {
 dose_vals <- suppressWarnings(as.numeric(d[[', deparse(col_map$dose), ']]))
 dose_vals[is.na(dose_vals) | dose_vals <= 0] <- NA
 d$.conc <- d$.conc / dose_vals
-y_label <- "Dose-normalized concentration (C/Dose)"
+y_label <- "Dose-normalised concentration (C/Dose)"
 ')
   } else {
     '\ny_label <- "Concentration"\n'

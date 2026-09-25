@@ -92,7 +92,7 @@ path_multi_nca_ui <- function(id) {
                           tagList("Minimum R² for half-life estimation", help_r2adj),
                           min = 0, max = 1, value = 0.7, step = 0.05),
               checkboxInput(ns("dose_norm"),
-                            tagList("Calculate dose-normalized parameters", help_dose_norm),
+                            tagList("Calculate dose-normalised parameters", help_dose_norm),
                             FALSE)
             )
           ),
@@ -453,7 +453,7 @@ path_multi_nca_server <- function(id, shared) {
       # One entry per profile: subject | treatment | period (as mapped)
       updateSelectInput(session, "lz_profile", choices = result_profile_labels(result))
       
-      showNotification(paste("NCA complete:", nrow(result), "profiles analyzed."),
+      showNotification(paste("NCA complete:", nrow(result), "profiles analysed."),
                        type = "message")
     })
     

@@ -286,7 +286,7 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
       add("ERROR", "Concentration",
           paste(n_other_str, "unrecognized text values in Concentration column"),
           paste0("Examples: ", paste(head(bad_conc, 5), collapse = ", ")),
-          "These are not recognized as BLQ. Fix or remove before analysis.")
+          "These are not recognised as BLQ. Fix or remove before analysis.")
     }
   }
   

@@ -359,7 +359,7 @@ path_viz_server <- function(id, shared) {
       cm <- shared$col_map
       if (!is.null(cm$dose) && cm$dose %in% names(shared$pk_data))
         checkboxInput(ns("dose_norm"),
-                      "Normalize to dose (show C/Dose)", value = FALSE)
+                      "Normalise to dose (show C/Dose)", value = FALSE)
     })
 
     # ---- Export: which-plot selector (only visible when "both") ------------

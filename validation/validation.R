@@ -4323,6 +4323,17 @@ check("REL-56", "R-48: LICENSE is the verbatim GPL-3 text and the About page lis
   "URS-GEN-01", critical = FALSE, method = "LICENSE against R's copy of GPL-3; About page package table",
   expected = "Identical licence text (was missing the title, preamble and FSF notice); licence column shown")
 
+check("REL-57", "R-50: on-screen text uses words, not codes, and consistent spelling",
+  tryCatch({
+    txt <- paste(vapply(c(list.files("R", "\\.R$", full.names = TRUE)), function(f)
+      paste(readLines(f, warn = FALSE), collapse = "\n"), character(1)), collapse = "\n")
+    identical(design_label("single_arm"), "Single arm") && identical(design_label("parallel"), BE_DESIGNS$label[BE_DESIGNS$code == "parallel"]) &&
+      grepl("design_label(info$design$type)", txt, fixed = TRUE) && !grepl("in R: zero_predose", txt, fixed = TRUE) &&
+      !grepl("\"Calculate dose-normalized", txt, fixed = TRUE) && !grepl("Half-Life Review</b> tab", txt, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-UI-01", critical = FALSE, method = "design_label(); module and help text",
+  expected = "Design shown in words; British spelling in prose; help and refusal texts match the app")
+
 end_section("REL")
 
 # =============================================================================

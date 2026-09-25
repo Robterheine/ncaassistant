@@ -54,7 +54,7 @@ path_data_server <- function(id, shared) {
                         value = sum(is.na(d[[cm$conc]])),
                         theme = if (sum(is.na(d[[cm$conc]])) > 0) "warning" else "success",
                         showcase = icon("triangle-exclamation")),
-              value_box(title = "Study Design", value = info$design$type,
+              value_box(title = "Study Design", value = design_label(info$design$type),
                         theme = "secondary", showcase = icon("sitemap"))
             )
           )

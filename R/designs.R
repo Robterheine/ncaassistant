@@ -185,3 +185,10 @@ planner_power <- function(n, atype, alpha, theta0, theta1, theta2, cv_dec, cv_wr
       NA_real_),
     error = function(e) NA_real_)
 }
+
+#' A detected or selected design code in words, for the screen
+design_label <- function(code) {
+  if (is.null(code) || length(code) != 1 || is.na(code)) return("")
+  if (code %in% BE_DESIGNS$code) return(BE_DESIGNS$label[BE_DESIGNS$code == code])
+  switch(code, single_arm = "Single arm", unknown = "Not determined", code)
+}

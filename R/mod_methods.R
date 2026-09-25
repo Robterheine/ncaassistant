@@ -202,11 +202,11 @@ methods_ui <- function() {
         
         tags$h6(class = "fw-semibold mt-3", "Dose Normalization"),
         tags$p(class = "small",
-               "When subjects received different doses, dose-normalized parameters were ",
+               "When subjects received different doses, dose-normalised parameters were ",
                "computed by dividing the parameter value by the individual dose ",
                "(e.g., C", tags$sub("max"), "/Dose, AUC/Dose). ",
                "Dose normalization assumes dose-proportional (linear) pharmacokinetics. ",
-               "If exposure does not scale proportionally with dose, dose-normalized ",
+               "If exposure does not scale proportionally with dose, dose-normalised ",
                "parameters should be interpreted with caution."),
         
                 tags$p(class = "small",

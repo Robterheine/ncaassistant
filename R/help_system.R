@@ -215,8 +215,9 @@ help_lambda_z <- info_btn("help_lambda_z", "What is Lambda Z?",
   <li><b>AUC extrapolated to infinity</b></li>
   <li><b>Clearance and Volume of distribution</b></li>
   </ul>
-  The <b>Half-Life Review</b> tab lets you see which points were used and 
-  change them if needed.")
+  The <b>Half-Life Review</b> (in All Subjects and Bioequivalence; the points
+  panel in One Subject at a Time) shows which points were used and lets you
+  change them.")
 
 help_r2adj <- info_btn("help_r2adj", "What is Adjusted R²?",
   "<b>Adjusted R²</b> measures how well a straight line fits the terminal phase 
