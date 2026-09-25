@@ -427,7 +427,7 @@ server <- function(input, output, session) {
                 tags$h5(class = "fw-bold mb-0", "4. One Subject at a Time")
               ),
               tags$p(class = "text-muted mb-2",
-                     "Inspect and analyze PK profiles subject by subject. ",
+                     "Inspect and analyse PK profiles subject by subject. ",
                      "Ideal for dose-escalation studies and quality review."),
               tags$p(class = "small text-muted mb-0",
                      "Interactive half-life adjustment for each profile.")
