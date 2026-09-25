@@ -3751,12 +3751,13 @@ check("REL-18", "R-09: a BLQ pre-dose sample is not imputed, and BE notes Rules 
     lag <- function(rule) suppressWarnings(run_nca(prepare_pk_dataset(d, rel_cm, list(lloq = 0.5, blq_rule = rule))$data,
                                                    rel_cm, rel_st(trap = "linear")))$TLAG
     be <- paste(readLines("R/mod_path_be.R", warn = FALSE), collapse = "\n")
-    lag("rule1") == 0.5 && lag("rule6") == 0 && lag("rule4") == 0 &&
+    # an imputed LLOQ/2 at 0.5 h is not a measured concentration (P-02, MRV-02)
+    lag("rule1") == 0.5 && lag("rule6") == 0.5 && lag("rule4") == 0.5 &&
       prepare_pk_dataset(d, rel_cm, list(lloq = 0.5, blq_rule = "rule4"))$data$C[1] == 0 &&
       grepl("output$blq_rule_note", be, fixed = TRUE) && grepl("ICH M13A sets values below the LLOQ to zero", be, fixed = TRUE)
   }, error = function(e) FALSE),
   "URS-DAT-04", critical = TRUE, method = "BLQ at 0 and 0.5 h (LLOQ 0.5) under Rules 1, 4 and 6; BE module text",
-  expected = "The t = 0 sample stays 0 under Rules 4 and 6; the BE results note the rule when it is 3-6")
+  expected = "The t = 0 sample stays 0 under Rules 4 and 6, and Tlag is 0.5 h under Rules 1, 4 and 6; the BE results note the rule when it is 3-6")
 
 check("REL-19", "R-10: ICH M13A checks flag a high pre-dose value, fewer than 12 subjects and poor AUC coverage",
   tryCatch({
@@ -4416,6 +4417,28 @@ check("MRV-01", "P-01: a period without measurable concentrations is counted as 
   "URS-BE-11", critical = TRUE,
   method = "example_be_crossover.csv with subject 1's Test period all BLQ; subject 2's Reference period at 3%; unchanged file",
   expected = "Profiles missing (Test) 1 (was 0) and the profile named with M13A 2.2.1.1; the 3% period flagged; no note for the clean file")
+
+check("MRV-02", "P-02: values set by a BLQ rule do not end the lag time, and Rule 6 leaves an all-BLQ profile at 0",
+  tryCatch({
+    tt <- c(0, 0.5, 1, 1.5, 2, 3, 4, 6, 8, 12, 24)
+    d <- rbind(data.frame(Subject = "LAG", Time = tt, Concentration = c("BLQ", "BLQ", "BLQ", 5, 20, 30, 22, 12, 6, 2, "BLQ")),
+               data.frame(Subject = "NONE", Time = tt, Concentration = rep("BLQ", 11)))
+    cm <- list(subject = "Subject", time = "Time", conc = "Concentration")
+    tl <- vapply(paste0("rule", 1:6), function(rule) {
+      dd <- prepare_pk_dataset(d, cm, list(lloq = 1, blq_rule = rule))$data
+      r <- suppressWarnings(run_nca(dd, cm, mrv_st()))
+      as.numeric(r$TLAG[r$Subject == "LAG"])
+    }, numeric(1))
+    d6 <- prepare_pk_dataset(d, cm, list(lloq = 1, blq_rule = "rule6"))$data
+    r6 <- suppressWarnings(run_nca(d6, cm, mrv_st()))
+    d4 <- prepare_pk_dataset(d, cm, list(lloq = 1, blq_rule = "rule4"))$data; l4 <- d4$Subject == "LAG"
+    s4 <- run_single_nca(d4$Time[l4], d4$Concentration[l4], mrv_st(), is_blq = d4$BLQ_flag[l4])
+    all(tl == 1) && all(d6$Concentration[d6$Subject == "NONE"] == 0) && !"NONE" %in% r6$Subject &&
+      as.numeric(s4[["TLAG"]]) == 1
+  }, error = function(e) FALSE),
+  "URS-DAT-04", critical = TRUE,
+  method = "BLQ at 0, 0.5 and 1 h, first measurable at 1.5 h (LLOQ 1), and a profile BLQ throughout; Rules 1 to 6, batch and single profile",
+  expected = "Tlag 1 h under every rule (Rules 3, 4 and 6 gave 0); the all-BLQ profile stays 0 under Rule 6 (was LLOQ/2, Cmax 0.5) and gets no NCA row")
 
 end_section("MRV")
 

@@ -385,7 +385,8 @@ profile_data_rows <- function(data, col_map, label) {
 #'           sample at time <= 0: 0); after the last measurable value Missing
 #'   Rule 5: Pre-Cmax BLQ = 0; post-Cmax BLQ = Missing
 #'   Rule 6: After dosing and before the first quantifiable value: LLOQ/2;
-#'           all other BLQ (including a pre-dose sample) set to 0
+#'           all other BLQ (including a pre-dose sample, and a profile
+#'           without any quantifiable value) set to 0
 #'
 #' @param data Data frame with subject/time/concentration
 #' @param col_map Column mapping list
@@ -477,8 +478,10 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
       sub <- data[idx, ]
       quant_idx <- which(!sub[[BLQ_FLAG_COLUMN]] & !is.na(sub[[conc_col]]))
       
+      # No measurable value at all (placebo, non-absorber): 0, as ICH M13A
+      # treats BLQ; LLOQ/2 would turn the profile into a flat curve with a Cmax
       if (length(quant_idx) == 0) {
-        data[[conc_col]][idx[data[[BLQ_FLAG_COLUMN]][idx]]] <- lloq / 2
+        data[[conc_col]][idx[data[[BLQ_FLAG_COLUMN]][idx]]] <- 0
         next
       }
       
@@ -740,11 +743,15 @@ fix_predicted_clast <- function(r, adm, dur = 0) {
 #'
 #' NonCompart takes the last zero before Tlast, so a BLQ value set to 0
 #' between measurable samples became the lag time. Not used for IV bolus.
-fix_tlag <- function(r, time, conc, adm) {
+fix_tlag <- function(r, time, conc, adm, is_blq = NULL) {
   if (toupper(adm) == "BOLUS" || !"TLAG" %in% names(r)) return(r)
-  ok <- !is.na(time) & !is.na(conc)
-  x <- time[ok]; y <- conc[ok]
-  first <- which(y > 0)[1]
+  # A value a BLQ rule set (LLOQ/2 under Rules 4 and 6, or removed under
+  # Rule 3) is not a measured concentration: it must not end the lag time
+  blq <- if (is.null(is_blq)) rep(FALSE, length(time)) else is_blq %in% TRUE
+  ok <- !is.na(time) & (!is.na(conc) | blq)
+  o <- order(time[ok])
+  x <- time[ok][o]; y <- conc[ok][o]; b <- blq[ok][o]
+  first <- which(!b & !is.na(y) & y > 0)[1]
   if (is.na(first)) return(r)
   r[["TLAG"]] <- if (first == 1) 0 else x[first - 1]
   r
@@ -809,7 +816,7 @@ run_single_nca <- function(time, conc, settings, time_used = NULL, is_blq = NULL
                           dur = if (adm == "Infusion") num0(settings$infusion_duration) else 0, ss = ss)
   if (!is.null(nc_points))
     r <- fix_predicted_clast(r, adm, dur = if (adm == "Infusion") num0(settings$infusion_duration) else 0)
-  r <- fix_tlag(r, t_num, c_num, adm)
+  r <- fix_tlag(r, t_num, c_num, adm, is_blq)
   # The analyst's R2 threshold applies to the automatic fit, not to points
   # chosen by hand
   low <- is.null(use) && (no_fit || below_r2_threshold(r["R2ADJ"], settings$r2adj_threshold))
@@ -1336,7 +1343,8 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
       k <- match(as.character(result[[1]][i]), as.character(final_keys))
       if (!is.null(use_points) && !is.na(k) && !is.null(use_points[[k]]))
         fixed <- fix_predicted_clast(fixed, adm, dur = if (adm == "Infusion") dur_num else 0)
-      fixed <- fix_tlag(fixed, data[[col_map$time]][rows], data[[col_map$conc]][rows], adm)
+      fixed <- fix_tlag(fixed, data[[col_map$time]][rows], data[[col_map$conc]][rows], adm,
+                        if (BLQ_FLAG_COLUMN %in% names(data)) data[[BLQ_FLAG_COLUMN]][rows])
       for (n in names(fixed)) if (!identical(fixed[[n]], row[[n]])) result[[n]][i] <- fixed[[n]]
     }
   }

@@ -348,13 +348,14 @@ tags$h6(class = "fw-semibold mt-3", "Descriptive Statistics"),
                             " were treated as missing (excluded from analysis).")),
             tags$tr(tags$td(tags$strong("Rule 6")),
                     tags$td("BLQ concentrations after dosing and before the first quantifiable ",
-                            "concentration were replaced by LLOQ / 2. A BLQ pre-dose sample and all ",
-                            "later BLQ concentrations were set to zero."))
+                            "concentration were replaced by LLOQ / 2. A BLQ pre-dose sample, all ",
+                            "later BLQ concentrations and a profile without any quantifiable ",
+                            "concentration were set to zero."))
           )
         ),
         
         tags$p(class = "small",
-               "Values set by a BLQ rule were not used to estimate \u03BBz (ICH M13A, 2.2.2.2). ",
+               "Values set by a BLQ rule were not used to estimate \u03BBz (ICH M13A, 2.2.2.2) or the lag time. ",
                "ICH M13A sets BLQ values to zero in bioequivalence analyses, as Rules 1 and 2 do; ",
                "Rules 3 to 6 need a justification in the protocol."),
         tags$p(class = "small",
