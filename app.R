@@ -1180,6 +1180,10 @@ server <- function(input, output, session) {
     filename = function() "example_be_parallel.csv",
     content = function(file) file.copy("data/example_be_parallel.csv", file)
   )
+  output$dl_example_blq <- downloadHandler(
+    filename = function() "example_blq.csv",
+    content = function(file) file.copy("data/example_blq.csv", file)
+  )
   output$dl_example_replicate <- downloadHandler(
     filename = function() "example_be_replicate_2x2x4.csv",
     content = function(file) file.copy("data/example_be_replicate_2x2x4.csv", file)

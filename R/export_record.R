@@ -409,7 +409,8 @@ create_analysis_record <- function(output_path, results, settings, col_map,
                                     viz_settings = NULL,
                                     read_args = NULL,
                                     adnca = NULL,
-                                    checks = NULL) {
+                                    checks = NULL,
+                                    data_copy_note = NULL) {
   
   # The name comes from the browser: keep only the file name, never a path
   original_file_name <- basename(original_file_name)
@@ -492,6 +493,7 @@ create_analysis_record <- function(output_path, results, settings, col_map,
       analysis_type   = analysis_type,
       input_file      = original_file_name,
       data_sha256     = data_sha256,
+      data_copy       = if (is.null(data_copy_note)) "the uploaded file" else data_copy_note,
       pipeline_sha256 = pipeline_sha256,
       read_args       = if (is.null(read_args)) list() else read_args,
       column_mapping  = col_map,
@@ -1100,6 +1102,16 @@ run_reproduction_check <- function(rec_dir, script, outputs = "reproduced_result
   writeLines(lines, file.path(rec_dir, "reproduction_check.txt"))
   unlink(file.path(rec_dir, c(outputs, figure)))
   verdict
+}
+
+#' What the record says when it holds a rewritten copy instead of the upload
+#'
+#' Its name and SHA-256 differ from the uploaded file's, so a reader must be
+#' told; the record states it in settings and in its Checks.
+fallback_copy_note <- function(uploaded_name) {
+  paste0("The uploaded file (", basename(uploaded_name), ") was no longer available when the record was ",
+         "made, so the record holds the table as the app read it, written as CSV. Its name and SHA-256 differ ",
+         "from the uploaded file's: keep the original source file with the record.")
 }
 
 #' Path for a fallback copy of the uploaded data, in a folder of its own

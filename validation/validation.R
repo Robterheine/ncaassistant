@@ -4477,8 +4477,8 @@ check("MRV-04", "R-10: the Analysis Record holds the data quality findings and t
     sum(ck$Message == note) == 1 && sum(ck$Source == "Data quality check") == nrow(qc$findings) &&
       any(sh$Message == note) && grepl("10. Checks and Notes", html, fixed = TRUE) &&
       grepl("does not accept a pivotal study", html, fixed = TRUE) &&
-      grepl("checks         = record_checks(shared$qc_result, be_result()$m13a)", src, fixed = TRUE) &&
-      grepl("checks         = record_checks(shared$qc_result, c(nca_excl_note(), pauc_notes()))", src, fixed = TRUE)
+      grepl("checks         = record_checks(shared$qc_result, c(be_result()$m13a, copy_note))", src, fixed = TRUE) &&
+      grepl("checks         = record_checks(shared$qc_result, c(nca_excl_note(), pauc_notes(), copy_note))", src, fixed = TRUE)
   }, error = function(e) FALSE),
   "URS-EXP-01", critical = FALSE,
   method = "Record of the crossover example with its quality findings and an M13A note (given twice and once missing)",
@@ -4558,6 +4558,48 @@ check("MRV-08", "T-07: every output column has a label, and every column with a 
   "URS-UI-01", critical = FALSE,
   method = "all NonCompart and app columns for extravascular, IV bolus and IV infusion, single dose and steady state, with dose normalisation",
   expected = "no raw code as a label (C0, AUCPBEO, VZP, CLP, MRTIV*, VSSO/P were); a unit on every column with a dimension (about 20 had none)")
+
+check("MRV-09", "R-22: a record that holds a rewritten copy of the data says so",
+  tryCatch({
+    mk <- function(note) {
+      wd <- file.path(tempdir(), paste0("mrv09", as.integer(runif(1, 1, 1e7)))); dir.create(wd)
+      f <- file.path(wd, "copy.csv"); write.csv(mrv_xo, f, row.names = FALSE)
+      d <- prepare_pk_dataset(read_pk_file(f), mrv_cm, list(lloq = 0, blq_rule = "rule1"))$data
+      zp <- file.path(wd, "rec.zip")
+      suppressWarnings(create_analysis_record(zp, suppressWarnings(run_nca(d, mrv_cm, mrv_st())), mrv_st(), mrv_cm, f,
+        "copy.csv", blq_rule = "rule1", lloq = 0, checks = record_checks(NULL, note), data_copy_note = note))
+      ex <- rec_unzip(zp)
+      list(js = jsonlite::fromJSON(file.path(ex, "analysis_settings.json")),
+           html = paste(readLines(file.path(ex, "analysis_summary.html"), warn = FALSE), collapse = " "))
+    }
+    note <- fallback_copy_note("study_upload.xlsx")
+    a <- mk(note); b <- mk(NULL)
+    src <- paste(c(readLines("R/mod_path_be.R", warn = FALSE), readLines("R/mod_path_multi_nca.R", warn = FALSE)), collapse = " ")
+    identical(a$js$data_copy, note) && grepl("study_upload.xlsx", a$html, fixed = TRUE) &&
+      identical(b$js$data_copy, "the uploaded file") && lengths(regmatches(src, gregexpr("data_copy_note = copy_note", src, fixed = TRUE))) == 2
+  }, error = function(e) FALSE),
+  "URS-EXP-03", critical = FALSE,
+  method = "records with and without the fallback copy of the data; both analysis paths",
+  expected = "settings and summary say the record holds a rewritten CSV whose name and hash differ (the record was silent)")
+
+check("MRV-10", "T-16, T-01: an example file with BLQ results, and an installation with the validated package versions",
+  tryCatch({
+    raw <- read_pk_file("data/example_blq.csv"); cm <- list(subject = "Subject", time = "Time", conc = "Concentration")
+    q0 <- run_data_quality_check(raw, cm, lloq = 0); q5 <- run_data_quality_check(raw, cm, lloq = 0.5)
+    d <- prepare_pk_dataset(raw, cm, list(lloq = 0.5, blq_rule = "rule1"))$data
+    r <- suppressWarnings(run_nca(d, cm, mrv_st()))
+    inst <- paste(readLines("install_and_run.R", warn = FALSE), collapse = "\n")
+    gd <- paste(readLines("R/mod_data_guide.R", warn = FALSE), collapse = " ")
+    ap <- paste(readLines("app.R", warn = FALSE), collapse = " ")
+    sum(raw$Concentration == "<0.5") == 22 && length(unique(raw$Subject)) == 8 &&
+      any(q0$findings$Severity == "ERROR") && !any(q5$findings$Severity == "ERROR") && nrow(r) == 8 &&
+      r$TLAG[r$Subject == "5"] == 0.5 &&
+      grepl("--validated", inst, fixed = TRUE) && grepl("renv::restore(lockfile = lock", inst, fixed = TRUE) &&
+      grepl("dl_example_blq", gd, fixed = TRUE) && grepl("output$dl_example_blq", ap, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-UI-02", critical = FALSE,
+  method = "data/example_blq.csv through the quality check (LLOQ 0 and 0.5) and the NCA; install_and_run.R; Data Guide download",
+  expected = "22 '<0.5' entries in 8 subjects; LLOQ 0 is refused, 0.5 passes; subject 5's lag time 0.5 h; a --validated install from validation/renv.lock")
 
 end_section("MRV")
 

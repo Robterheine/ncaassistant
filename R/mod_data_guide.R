@@ -129,7 +129,15 @@ data_guide_ui <- function() {
             downloadButton("dl_example_adnca", "example_adnca.csv",
                            class = "btn-outline-primary btn-sm")
           ),
-          tags$div()
+          tags$div(
+            tags$h6(class = "fw-semibold", "BLQ results"),
+            tags$p(class = "small text-muted",
+                   "8 subjects, one oral dose of 100 mg, with results reported as '<0.5' (LLOQ 0.5 ng/mL), ",
+                   "some lag times and one BLQ result between measurable samples. Use it to practise setting ",
+                   "the LLOQ and choosing a BLQ rule."),
+            downloadButton("dl_example_blq", "example_blq.csv",
+                           class = "btn-outline-primary btn-sm")
+          )
         )
       )
     ),

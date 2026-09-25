@@ -5,6 +5,10 @@
 # Run this script once to install all dependencies, then launch the app.
 # Usage: Rscript install_and_run.R
 #    or: source("install_and_run.R") from within R/RStudio
+# For a qualified installation, install the package versions the release was
+# validated with (validation/renv.lock) instead of the latest CRAN versions:
+#        Rscript install_and_run.R --validated
+#    or: NCA_VALIDATED <- TRUE; source("install_and_run.R")
 
 cat("
 ======================================================
@@ -35,6 +39,20 @@ required_packages <- c(
   # Export / reproducibility
   "jsonlite", "digest"
 )
+
+# --- Validated package versions (optional) ----------------------------------
+use_validated <- "--validated" %in% commandArgs(trailingOnly = TRUE) ||
+  isTRUE(get0("NCA_VALIDATED", envir = globalenv()))
+if (use_validated) {
+  lock <- file.path("validation", "renv.lock")
+  if (!file.exists(lock))
+    stop("validation/renv.lock not found. Run this script from the root folder of a tagged release.")
+  if (!requireNamespace("renv", quietly = TRUE))
+    install.packages("renv", repos = "https://cloud.r-project.org")
+  cat("Installing the validated package versions from", lock, "into", .libPaths()[1], "\n",
+      "(packages already installed in other versions are replaced there).\n\n")
+  renv::restore(lockfile = lock, library = .libPaths()[1])
+}
 
 # --- Install missing packages -----------------------------------------------
 cat("Checking package dependencies...\n")
