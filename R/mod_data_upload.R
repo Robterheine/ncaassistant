@@ -89,9 +89,12 @@ data_upload_ui <- function(id) {
             selectInput(ns("col_conc"), "Concentration", choices = NULL)
           ),
           
+          # Open by default: a Dose, Treatment or Period column mapped
+          # automatically must be visible, not hidden in a closed panel
           tags$details(
+            open = NA,
             tags$summary(class = "fw-semibold small mb-2",
-                         "Additional columns (for crossover / BE studies)"),
+                         "Additional columns (Treatment, Period, Sequence, Dose)"),
             layout_columns(
               col_widths = c(3, 3, 3, 3),
               selectInput(ns("col_treatment"), "Treatment / Formulation",
