@@ -1,6 +1,6 @@
 # NCA Assistant — Validation Package
 
-This folder contains the validation package for NCA Assistant v1.5.0. It follows a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles for custom software used in a regulated pharmaceutical environment.
+This folder contains the validation package for NCA Assistant v1.6.0. It follows a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles for custom software used in a regulated pharmaceutical environment.
 
 ---
 
@@ -13,7 +13,11 @@ This folder contains the validation package for NCA Assistant v1.5.0. It follows
 | `NCA_Assistant_URS.docx` | User Requirement Specification — 63 requirements across 8 categories |
 | `NCA_Assistant_IQOQPQ.docx` | IQ/OQ/PQ protocol — every test listed individually with method, expected result, URS cross-reference, and criticality |
 | `fixtures/` | Committed test data (crossover, replicate and ADNCA-shaped files, plus reference values from `replicateBE`) and the deterministic scripts that generate them |
+| `make_release_files.R` | Writes `renv.lock` and `release_manifest.csv` when a release is tagged |
+| `renv.lock` | The package versions the release was validated with. `renv::restore(lockfile = "validation/renv.lock")` rebuilds that library. It sits here rather than in the project root, where rsconnect would pick it up when deploying |
+| `release_manifest.csv` | SHA-256 of every file the app runs on (`app.R`, `R/`, `converters/`, `cdisc/`, `www/`), with the app version. Checks IQ-REL-01 and IQ-REL-02 compare an installation with this file and with `renv.lock` |
 | `validation_results.csv` | Generated on each run: pass/fail record with timestamps and environment details. Not committed, see below |
+| `validation_environment.txt` | Generated on each run: R and package versions, the SHA-256 of every tested file, and `sessionInfo()`. Not committed |
 
 ---
 
@@ -67,11 +71,11 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **361 automated tests** in eighteen sections, each mapped to a URS requirement:
+The script runs **421 automated tests** in nineteen sections, each mapped to a URS requirement:
 
 | Section | Code | Tests | Tests cover |
 |---------|------|------:|-------------|
-| Installation Qualification | IQ | 20 | R version, package availability (analysis and interface packages), every source file parses, file integrity (SHA-256 hashes) |
+| Installation Qualification | IQ | 22 | R version, package availability (analysis and interface packages), every source file parses, file integrity (SHA-256 hashes), the installed files and package versions against the release manifest and lockfile |
 | Data Handling | DAT | 63 | Column auto-detection, data quality checks, BLQ rules 1–6 per profile, BLQ text, study design detection, the shared data pipeline, interlocks (IL: CDISC-shaped flat files, mixed units, date/clock time, time since first dose, stacked profiles) and decimal-comma reading |
 | NCA Accuracy | NCA | 40 | Analytical ground truth (mono-exponential IV bolus), Theoph and Indometh datasets, lambda-z, routes, trapezoid methods, dose normalisation, steady state, edge cases, manual data entry, crossover profiles |
 | Bioequivalence | BE | 10 | CI construction, TOST logic, crossover ANOVA, mixed model, paired and parallel designs |
@@ -89,6 +93,7 @@ The script runs **361 automated tests** in eighteen sections, each mapped to a U
 | Second review (2) | REV3 | 14 | Minimum R² applied to results, half-life review equal to NonCompart’s fit, results cleared on new data or profile, empty LLOQ, figure legend, help and Methods wording, warning when no Subject column is recognised, no references to commercial NCA software, half-life without a verdict |
 | Statistical audit | REV4 | 8 | Steady state with an entered dosing interval (AUCτ from 0 to τ, CL/F and Vz/F from AUCτ, Cavg, fluctuation and swing in all paths, records), planner defaults per method and total CV for parallel designs, Methods page statements, figure labels |
 | Partial AUC | PAUC | 22 | Intervals with a fixed end or an end at the last measurable concentration (t), hand-calculated trapezoids, interpolated cutoffs, no extrapolation past Tlast, steady-state limits, Cmax and Tmax within an interval, notes for zeros and for BLQ-dependent or sparse windows, bioequivalence with pivotal and supportive roles (agreement with `replicateBE`), records, labels, the CDISC code AUCINT, figure shading and the app text |
+| Release review v1.5.0 | REL | 58 | One or more regression tests per finding of the five-reviewer review of v1.5.0 (R-01 to R-50), each built from the failing case: log-down AUC with an embedded zero, IV bolus with a time-0 sample, thousands separators in decimal-comma files, subject IDs per sequence, crossover without Period, settings kept across pages, results cleared on changed settings, widened limits for Cmax only, BLQ values kept out of the half-life, ICH M13A checks, units from the data, reproduction verdict with file integrity, Method B against `replicateBE`, an independent AUC calculation, colour contrast and keyboard access, locale-safe labels, Rule 4 Tlast, and more |
 
 In addition, **49 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload (flat and CDISC ADNCA), column mapping, interlock messages, the half-life review and minimum-R² note, choosing the Reference treatment, the replicate variability table, planning with both CVs, CDISC parameter codes, partial AUC intervals in the batch and bioequivalence paths (including an invalid interval, a suppressed metric and the shaded figure), the Complete Analysis Record download and its reproduction check, and the Visualize Figure Record. They are included in the script for traceability but are marked SKIP in automated runs.
 
@@ -112,17 +117,19 @@ Visualisation tests (URS-VIZ) are classified SUPPORTIVE because graphical output
 A passing run produces:
 
 ```
-Total: 410 (auto: 361, manual: 49)
-  PASS: 361 | FAIL: 0 | ERROR: 0 | SKIP: 49
+Total: 470 (auto: 421, manual: 49)
+  PASS: 421 | FAIL: 0 | ERROR: 0 | SKIP: 49
 
 ALL CRITICAL TESTS PASSED
 
-URS: 63/63 covered
+URS: 63/63 covered (59 by automated tests; manual tests only: URS-BE-06, URS-BE-08, URS-PWR-04, URS-UI-02)
 
 Results: validation/validation_results.csv
 ```
 
-Of the 361 automated tests, 268 are CRITICAL and 93 SUPPORTIVE.
+Of the 421 automated tests, 298 are CRITICAL and 123 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
+
+IQ-REL-01 and IQ-REL-02 pass only on an unchanged release: after any edit to a file listed in the manifest, IQ-REL-01 fails until `make_release_files.R` is run again for a new release.
 
 If any critical test fails, the script lists the affected test IDs under `CRITICAL FAILURES` and prints `STATUS: FAILED`. Supportive failures are counted separately and require a written risk assessment before the system can be signed off.
 
@@ -134,7 +141,7 @@ The `validation_results.csv` file records each test's ID, name, section, classif
 
 The validation package is provided as a starting point. Before use in a regulated environment:
 
-1. **Execute the validation script** in your target environment and retain the console output and `validation_results.csv` as evidence.
+1. **Execute the validation script** in your target environment and retain the console output, `validation_results.csv` and `validation_environment.txt` as evidence. Install from a tagged release, so that IQ-REL-01 and IQ-REL-02 can confirm the files and package versions are the validated ones.
 2. **Complete the manual tests** in `NCA_Assistant_IQOQPQ.docx` using a running app instance. Record the actual results and tester signatures in the protocol.
 3. **Review the URS** (`NCA_Assistant_URS.docx`) against your organisation's requirements. Add or remove requirements as appropriate and re-run the validation script to confirm coverage.
 4. **Perform a risk assessment** for any SUPPORTIVE test failures or requirements not applicable to your use case.
@@ -146,7 +153,7 @@ The documents name the application version they were produced for, but carry no 
 
 ## File Integrity
 
-The validation script computes SHA-256 hashes of `validation.R` itself and the core R source files it tests (`R/utils.R`, `R/nca_helpers.R`, `R/data_quality.R`, `R/export_record.R`, `R/mod_data_upload.R`, `R/designs.R`, `R/be_analysis.R`, `R/pipeline.R`, `R/interlocks.R`, `R/adnca_import.R`, `R/cdisc_terms.R`, `converters/adnca_to_flat.R`). These hashes are printed at the start of each run and recorded in `validation_results.csv`. Retain these alongside the results as evidence that the validated source files were not modified between qualification and use.
+The validation script computes SHA-256 hashes of `validation.R` itself and the core R source files it tests (`R/utils.R`, `R/nca_helpers.R`, `R/data_quality.R`, `R/export_record.R`, `R/mod_data_upload.R`, `R/designs.R`, `R/be_analysis.R`, `R/pipeline.R`, `R/interlocks.R`, `R/adnca_import.R`, `R/cdisc_terms.R`, `converters/adnca_to_flat.R`). These hashes are printed at the start of each run and written to `validation_environment.txt`. Check IQ-REL-01 compares every file the app runs on, including `www/`, with `release_manifest.csv`. Retain these alongside the results as evidence that the validated source files were not modified between qualification and use.
 
 ---
 

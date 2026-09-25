@@ -146,6 +146,30 @@ check("IQ-APP-02", "Packages the app loads are installed", length(app_pkgs_missi
       "URS-GEN-01", method = "requireNamespace for every package app.R loads", expected = "All installed",
       critical = TRUE, detail = if (length(app_pkgs_missing)) paste("Missing:", paste(app_pkgs_missing, collapse = ", ")) else "")
 
+# The installation against the release it claims to be: every app file is the
+# released one (SHA-256 in validation/release_manifest.csv, written by
+# validation/make_release_files.R when the release is tagged), and the
+# packages are the versions the release was validated with (validation/renv.lock)
+check("IQ-REL-01", "App files match the release manifest",
+  tryCatch({
+    m <- read.csv("validation/release_manifest.csv", stringsAsFactors = FALSE)
+    all(m$app_version == APP_VERSION) &&
+      all(vapply(seq_len(nrow(m)), function(i) file.exists(m$file[i]) &&
+                   identical(digest(file = m$file[i], algo = "sha256"), m$sha256[i]), logical(1)))
+  }, error = function(e) FALSE),
+  "URS-GEN-01", method = "SHA-256 of app.R, R/, converters/, cdisc/ and www/ against validation/release_manifest.csv",
+  expected = "Every file matches the manifest of this version", critical = TRUE)
+check("IQ-REL-02", "Installed packages are the validated versions",
+  tryCatch({
+    lock <- jsonlite::fromJSON("validation/renv.lock")$Packages
+    direct <- intersect(c("NonCompart", "PowerTOST", "nlme", "digest", "openxlsx", "jsonlite", "readxl", "dplyr",
+                          "shiny", "bslib", "shinyWidgets", "DT", "plotly", "ggplot2", "htmltools", "tidyr"), names(lock))
+    length(direct) > 0 && all(vapply(direct, function(p)
+      identical(utils::packageDescription(p)$Version, lock[[p]]$Version), logical(1)))
+  }, error = function(e) FALSE),
+  "URS-GEN-01", method = "Installed package versions (DESCRIPTION) against validation/renv.lock",
+  expected = "Same versions; a difference needs a risk assessment", critical = FALSE)
+
 end_section("IQ")
 
 # =============================================================================
