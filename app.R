@@ -740,7 +740,7 @@ server <- function(input, output, session) {
                         tags$span(class = paste("badge", badge_class), nc$label),
                         tags$div(class = "text-muted", style = "font-size: 0.85em;",
                                  "Kim et al. 2018; ",
-                                 "app validated with NonCompart ", NONCOMPART_TESTED_VERSION, ".")
+                                 "app tested with NonCompart ", NONCOMPART_TESTED_VERSION, ".")
                       ))
             }),
             tags$tr(tags$td(class = "fw-bold", "BE engine:"),
@@ -1077,7 +1077,7 @@ server <- function(input, output, session) {
               tags$li("Bioequivalence module: configurable R\u00B2 threshold for half-life estimation (was hardcoded to 0.70)"),
               tags$li("Bioequivalence module: half-life review with interactive point selection, \u03BBz plot, and recalculation"),
               tags$li("Bioequivalence module: individual profiles tab (per-subject panels with Test vs Reference overlay, paginated)"),
-              tags$li("Lambda-z override audit trail in Complete Analysis Record (both batch NCA and BE): overrides logged in settings JSON, applied in reproducibility script, and displayed in HTML summary"),
+              tags$li("Lambda-z override log in Complete Analysis Record (both batch NCA and BE): overrides logged in settings JSON, applied in reproducibility script, and displayed in HTML summary"),
               tags$li("Design mismatch detection: warns when single-sequence data is used with a multi-sequence crossover design"),
               tags$li("Defensive fixes: log-scale plot crash with zero concentrations, R\u00B2adj division by zero with 2 points, negative \u03BBz rejection, infusion duration validation"),
               tags$li("Forest plot rendering fix (overlapping axis labels)"),

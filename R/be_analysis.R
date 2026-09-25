@@ -74,6 +74,9 @@ build_be_data <- function(nca_res, pk_data, col_map, reference = NULL) {
        per_col = if ("Period" %in% keys) "Period" else NULL, seq_col = seq_col)
 }
 
+#' The widened-limit scope chosen in the app, as fit_be_parameter() takes it
+widened_scope_value <- function(x) if (isTRUE(x %in% c("all", "cmax_pauc"))) x else "cmax"
+
 #' Suggest which treatment is the Reference from its name
 #'
 #' Only names that unambiguously mean "reference" are recognised (R, Ref,
@@ -131,7 +134,10 @@ BE_NO_VERDICT_PARAMS <- c("LAMZHL")
 #' @param widened_scope Which metrics widened limits (wider than 80-125%)
 #'                  apply to: "cmax" (reference-scaled bioequivalence: EMA
 #'                  1401/98 Rev.1 section 4.1.10 widens Cmax only; every other
-#'                  metric is judged against 80.00-125.00%) or "all" (e.g.
+#'                  metric is judged against 80.00-125.00%), "cmax_pauc" (Cmax
+#'                  and the partial metrics, as the EMA modified-release
+#'                  guideline allows for a partial AUC; AUC to last point and
+#'                  to infinity stay at 80.00-125.00%) or "all" (e.g.
 #'                  drug-interaction no-effect boundaries)
 #' @param diff_unit Unit label for an untransformed difference, e.g. "h"
 #' @param verdict   FALSE for a supportive metric: ratio and CI without a verdict
@@ -166,7 +172,9 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   scale_label <- if (is_ratio) "Ratio T/R (%)" else
     paste0("Difference T\u2212R", if (!is.null(diff_unit)) paste0(" (", diff_unit, ")") else "")
   widened <- be_lower < 80 || be_upper > 125
-  if (widened && !identical(widened_scope, "all") && param != "CMAX") {
+  widen_here <- identical(widened_scope, "all") || param == "CMAX" ||
+    (identical(widened_scope, "cmax_pauc") && length(partial_auc_cols(param)) == 1)
+  if (widened && !widen_here) {
     be_lower <- 80; be_upper <- 125; widened <- FALSE
   }
 
@@ -640,8 +648,8 @@ be_m13a_checks <- function(pk_data, col_map, nca_res, ci_df, is_ss = FALSE) {
     gone <- setdiff(unique(pk$key), nk)
     if (length(gone) > 0) {
       lab <- profile_labels(pk$parts[match(gone, pk$key), , drop = FALSE])
-      out <- c(out, paste0(length(gone), " profile(s) have fewer than 2 measurable concentrations, so no NCA ",
-                           "result, and are counted as missing: ", paste(head(lab, 5), collapse = "; "),
+      out <- c(out, paste0(length(gone), " profile(s) have fewer than 2 measurable concentrations and no NCA ",
+                           "result; they are counted as missing: ", paste(head(lab, 5), collapse = "; "),
                            if (length(lab) > 5) " and more" else "", ". Their subjects leave the comparison. ",
                            "ICH M13A (2.2.1.1) accepts this only as an exception planned in the protocol, in ",
                            "general for no more than one subject."))

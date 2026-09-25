@@ -4484,6 +4484,39 @@ check("MRV-04", "R-10: the Analysis Record holds the data quality findings and t
   method = "Record of the crossover example with its quality findings and an M13A note (given twice and once missing)",
   expected = "results.xlsx has a Checks sheet and the summary a Checks and Notes section with the note once (the record had neither)")
 
+check("MRV-05", "T-02, R-02, R-05, R-11, R-15: the app's wording matches what it does and claims no more",
+  tryCatch({
+    rd <- function(f) paste(readLines(f, warn = FALSE), collapse = " ")
+    up <- rd("R/mod_data_upload.R"); gd <- rd("R/mod_data_guide.R"); ap <- rd("app.R"); be <- rd("R/mod_path_be.R")
+    grepl("Click 'Set LLOQ to", up, fixed = TRUE) && grepl("then click Process Data again", up, fixed = TRUE) &&
+      !grepl("Apply LLOQ", gd, fixed = TRUE) && grepl("'Set LLOQ to 0.5'", gd, fixed = TRUE) &&
+      !grepl("apply and process", up, fixed = TRUE) &&
+      grepl("anonymised", DATA_PROTECTION_NOTICE, fixed = TRUE) &&
+      grepl("still personal", DATA_PROTECTION_NOTICE, fixed = TRUE) && !grepl("use pseudonymised IDs", DATA_PROTECTION_NOTICE) &&
+      !grepl("override audit trail", ap, fixed = TRUE) && !grepl("validated with NonCompart", ap, fixed = TRUE) &&
+      !grepl("reference-scaled bioequivalence)\" = \"cmax", be, fixed = TRUE) && grepl("\"Cmax only\" = \"cmax\"", be, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-GEN-07", critical = FALSE, method = "search the upload module, Data Guide, About page, data notice and BE settings",
+  expected = "LLOQ steps as the app works ('Set LLOQ to', then Process Data); notice asks for anonymised data; no 'audit trail' or 'validated' claim; Cmax scope label without 'reference-scaled'")
+
+check("MRV-06", "R-08: widened limits can apply to Cmax and the partial AUCs without widening AUC",
+  tryCatch({
+    iv <- data.frame(start = 0, end = "1", cmax = TRUE, role = "pivotal", stringsAsFactors = FALSE)
+    st <- mrv_st(); st$partial_aucs <- iv
+    d <- mrv_prep(mrv_xo); r <- suppressWarnings(run_nca(d, mrv_cm, st))
+    bd <- build_be_data(r, d, mrv_cm, reference = "Reference")
+    lim <- function(p, scope) fit_be_parameter(bd$data, p, design = "2x2x2", trt_col = bd$trt_col, subj_col = bd$subj_col,
+                                                per_col = bd$per_col, seq_col = bd$seq_col, be_lower = 69.84,
+                                                be_upper = 143.19, widened_scope = scope)$row$BE_Lower
+    m <- sapply(c("cmax", "cmax_pauc", "all"), function(sc) sapply(c("CMAX", "AUC_0_1", "CMAX_0_1", "AUCLST"), lim, scope = sc))
+    all(m["CMAX", ] == 69.84) && all(m[c("AUC_0_1", "CMAX_0_1", "AUCLST"), "cmax"] == 80) &&
+      all(m[c("AUC_0_1", "CMAX_0_1"), "cmax_pauc"] == 69.84) && m["AUCLST", "cmax_pauc"] == 80 &&
+      all(m[, "all"] == 69.84) && widened_scope_value("cmax_pauc") == "cmax_pauc" && widened_scope_value(NULL) == "cmax"
+  }, error = function(e) FALSE),
+  "URS-BE-11", critical = TRUE,
+  method = "crossover example with a 0-1 h interval; limits 69.84-143.19 under the three scopes",
+  expected = "Cmax only: AUC and partial metrics at 80; Cmax and partial AUCs: partial metrics widened, AUClast at 80 (no such choice before); all: every metric widened")
+
 end_section("MRV")
 
 # =============================================================================

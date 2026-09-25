@@ -498,8 +498,8 @@ data_upload_server <- function(id, shared) {
           paste0(n_blq_text, " BLQ entr", if (n_blq_text == 1) "y" else "ies",
                  " detected but LLOQ is not set. ",
                  if (!is.null(detected_lloq))
-                   paste0("LLOQ auto-detected as ", detected_lloq,
-                          ". Use the button below the LLOQ field to apply and process.")
+                   paste0("LLOQ auto-detected as ", detected_lloq, ". Click 'Set LLOQ to ", detected_lloq,
+                          "' below the LLOQ field, then click Process Data again.")
                  else
                    "Set an LLOQ value above 0 and click Process Data again."),
           type = "error", duration = 12)

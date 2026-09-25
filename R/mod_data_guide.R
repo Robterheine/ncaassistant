@@ -736,8 +736,9 @@ data_guide_ui <- function() {
           class = "alert alert-warning py-2 small",
           tags$strong("Set the LLOQ when the data contain BLQ text. "),
           "Use the value from the bioanalytical validation report (for example 0.5 ng/mL). With the LLOQ ",
-          "left at 0 the app stops with an error. When it finds entries such as '<0.5' (or '<0,5'), it ",
-          "offers a button 'Apply LLOQ = 0.5 and process'; check the value before clicking."
+          "left at 0 the app stops with an error when it finds BLQ text. If the entries look like '<0.5' ",
+          "(or '<0,5'), it then shows the value it found and a button 'Set LLOQ to 0.5'. The button only ",
+          "fills in the field: check the value, then click Process Data again."
         ),
         ex_table(data.frame(
           Subject = rep("S01", 8),
@@ -791,7 +792,8 @@ data_guide_ui <- function() {
                  "24 h is usually normal timing; a much larger gap often means a missed sample."),
           tags$p(tags$strong("BLQ entries detected but LLOQ is not set.")),
           tags$p(class = "text-muted",
-                 "Set the LLOQ, or use the 'Apply LLOQ' button when the app found '<X' entries."),
+                 "Set the LLOQ and click Process Data again. When the app found '<X' entries, the button ",
+                 "'Set LLOQ to X' below the LLOQ field fills in the value for you."),
           tags$p(tags$strong("Tmax = 0 in one or more subjects.")),
           tags$p(class = "text-muted",
                  "The highest concentration is at time 0. After an oral dose this usually means a mislabelled ",

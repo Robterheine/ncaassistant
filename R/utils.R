@@ -619,8 +619,9 @@ check_units_against_data <- function(found, dose_unit, time_unit, conc_unit) {
 #' Where uploaded data go (upload page and About page)
 DATA_PROTECTION_NOTICE <- paste0(
   "On the public instance, uploads are processed on shinyapps.io servers run by Posit PBC (USA). ",
-  "Do not upload data that identify people or that you may not share with a third party: use ",
-  "pseudonymised IDs, or run the app on your own computer for confidential studies.")
+  "Upload only synthetic, example or anonymised data there. Pseudonymised trial data are still personal ",
+  "data under the GDPR. Sending them to a third-party host needs agreements your organisation must have ",
+  "in place, and may breach sponsor confidentiality. For real study data, run the app on your own computer.")
 
 #' A file-reading error in words a user can act on
 friendly_read_error <- function(msg) {

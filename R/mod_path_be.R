@@ -152,7 +152,8 @@ path_be_ui <- function(id) {
                 condition = sprintf("input['%s'] < 80 || input['%s'] > 125",
                                     ns("be_lower"), ns("be_upper")),
                 radioButtons(ns("widened_scope"), "Widened limits apply to",
-                             choices = c("Cmax only (reference-scaled bioequivalence)" = "cmax",
+                             choices = c("Cmax only" = "cmax",
+                                         "Cmax and partial AUCs (not AUC to last point or to infinity)" = "cmax_pauc",
                                          "All compared metrics (e.g. no-effect boundaries)" = "all"),
                              selected = "cmax"),
                 checkboxInput(ns("pe_constraint"),
@@ -723,7 +724,7 @@ path_be_server <- function(id, shared) {
             be_lower      = input$be_lower,
             be_upper      = input$be_upper,
             pe_constraint = !identical(input$pe_constraint, FALSE),
-            widened_scope = if (identical(input$widened_scope, "all")) "all" else "cmax",
+            widened_scope = widened_scope_value(input$widened_scope),
             diff_unit     = diff_unit_for(param),
             verdict       = !param %in% supportive)
           if (!is.na(fit_out$row$Model) && grepl("mixed model failed", fit_out$row$Model)) {
@@ -793,7 +794,7 @@ path_be_server <- function(id, shared) {
             ci_level          = input$ci_level,
             acceptance_limits = c(input$be_lower, input$be_upper),
             pe_constraint     = !identical(input$pe_constraint, FALSE),
-            widened_scope     = if (identical(input$widened_scope, "all")) "all" else "cmax",
+            widened_scope     = widened_scope_value(input$widened_scope),
             parameters        = params)))
         shared$be_results <- be_result()
         balance_result(balance_info)  # persist for the alert panel
