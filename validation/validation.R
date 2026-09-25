@@ -4318,11 +4318,14 @@ check("REL-56", "R-48: LICENSE is the verbatim GPL-3 text and the About page lis
     lic <- readLines("LICENSE", warn = FALSE)
     ref <- readLines(file.path(R.home("share"), "licenses", "GPL-3"), warn = FALSE)
     app <- paste(readLines("app.R", warn = FALSE), collapse = "\n")
+    readme <- paste(readLines("README.md", warn = FALSE), collapse = "\n")
     identical(lic, ref) && grepl('tags$th(style = "width: 10%;", "Licence")', app, fixed = TRUE) &&
+      grepl("# Copyright (C) 2026 Rob ter Heine", app, fixed = TRUE) && grepl("either version 3 of the License, or", app, fixed = TRUE) &&
+      grepl("GPL-3.0-or-later", readme, fixed = TRUE) && grepl("Copyright (C) 2026 Rob ter Heine", readme, fixed = TRUE) &&
       grepl("packageDescription(pkg$name)$License", app, fixed = TRUE)
   }, error = function(e) FALSE),
   "URS-GEN-01", critical = FALSE, method = "LICENSE against R's copy of GPL-3; About page package table",
-  expected = "Identical licence text (was missing the title, preamble and FSF notice); licence column shown")
+  expected = "Identical licence text (was missing the title, preamble and FSF notice); copyright and GPL-3.0-or-later notice in app.R, About and README; licence column shown")
 
 check("REL-57", "R-50: on-screen text uses words, not codes, and consistent spelling",
   tryCatch({

@@ -5,6 +5,13 @@
 # Designed by Rob ter Heine
 # https://www.radboudumc.nl/en/research/research-groups/radboud-applied-pharmacometrics
 #
+# Copyright (C) 2026 Rob ter Heine
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation, either version 3 of the License, or (at your option)
+# any later version. It is distributed WITHOUT ANY WARRANTY; see the GNU
+# General Public License (file LICENSE) for details.
+#
 # 6 workflow paths:
 #   1. Plan a Study (Power & Sample Size)
 #   2. Upload & Check Data
@@ -781,7 +788,8 @@ server <- function(input, output, session) {
             " research group at Radboudumc, Nijmegen, The Netherlands."
           ),
           tags$p("The application and its source code are provided under the ",
-                 tags$strong("GPL-3 license"), ". All R packages used retain ",
+                 tags$strong("GNU General Public License, version 3 or later"),
+                 " (copyright \u00A9 2026 Rob ter Heine). All R packages used retain ",
                  "their original licenses. Source code and documentation are available on ",
                  tags$a(href = "https://github.com/robterheine/ncaassistant",
                         target = "_blank", "GitHub"), "."),
