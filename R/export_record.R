@@ -469,6 +469,7 @@ create_analysis_record <- function(output_path, results, settings, col_map,
       trap_method     = settings$trap_method,
       r2adj_threshold = settings$r2adj_threshold,
       mw              = if (is.null(settings$mw)) 0 else settings$mw,
+      dose_normalised = isTRUE(settings$dose_normalised),
       blq_rule        = blq_rule,
       lloq            = lloq,
       packages = list(
@@ -1064,7 +1065,9 @@ run_reproduction_check <- function(rec_dir, script, outputs = "reproduced_result
 #' Delete the folder (dirname of the path) once the record is built.
 fallback_copy_path <- function(file_name) {
   d <- tempfile("upload_copy_"); dir.create(d)
-  file.path(d, basename(file_name))
+  # The copy is a CSV (write_record_fallback), so it gets a .csv name: an
+  # .xlsx name would make the reproduction read it as Excel
+  file.path(d, paste0(tools::file_path_sans_ext(basename(file_name)), ".csv"))
 }
 
 #' Write the uploaded table when the original upload file is no longer available

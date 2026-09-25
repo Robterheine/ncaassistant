@@ -1513,6 +1513,7 @@ path_be_server <- function(id, shared) {
           if (is.null(original_path) || !file.exists(original_path)) {
             original_path <- fallback_copy_path(original_name)
             fallback_dir <- dirname(original_path)
+            original_name <- basename(original_path)
             if (!is.null(shared$raw_data))
               read_args <- write_record_fallback(shared$raw_data, original_path, read_args)
             else read_args <- list()

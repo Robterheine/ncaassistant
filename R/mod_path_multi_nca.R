@@ -436,6 +436,7 @@ path_multi_nca_server <- function(id, shared) {
           nca_excl_note(NULL)  # clear from previous run
         }
         
+        settings$dose_normalised <- isTRUE(input$dose_norm)
         if (input$dose_norm) {
           # add_dose_normalized() matches a per-subject dose by subject ID
           result <- add_dose_normalized(as.data.frame(result), settings$dose)
@@ -984,6 +985,7 @@ path_multi_nca_server <- function(id, shared) {
           if (is.null(original_path) || !file.exists(original_path)) {
             original_path <- fallback_copy_path(original_name)
             fallback_dir <- dirname(original_path)
+            original_name <- basename(original_path)
             read_args <- if (!is.null(shared$raw_data))
               write_record_fallback(shared$raw_data, original_path, read_args) else list()
             adnca_rec <- NULL

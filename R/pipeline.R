@@ -32,7 +32,24 @@ read_pk_file <- function(path, read_args = list(), ext = tools::file_ext(path)) 
     # a warning. Excel's row limit makes it look at every row.
     readxl::read_excel(path, sheet = sheet, guess_max = EXCEL_MAX_ROWS)
   } else {
-    read.csv(path, sep = sep, dec = dec, stringsAsFactors = FALSE)
+    # Read as text first: a column with a leading zero ("001") stays text, so
+    # IDs 001 and 01 are not both read as 1; the others are converted as
+    # read.csv would. The bytes are read unchanged; when they are not valid
+    # UTF-8 (Excel's "CSV" on Windows writes Windows-1252, e.g. a micro sign)
+    # the file is read as Latin-1 and converted to UTF-8. (fileEncoding would
+    # convert to the session's encoding and truncate the file in a C locale.)
+    rd <- function(enc) utils::read.csv(path, sep = sep, dec = dec, stringsAsFactors = FALSE,
+                                        colClasses = "character", encoding = enc)
+    raw <- rd("unknown")
+    if (any(vapply(raw, function(v) any(!validUTF8(v)), logical(1))) || any(!validUTF8(names(raw)))) {
+      raw <- rd("latin1")
+      raw[] <- lapply(raw, function(v) iconv(v, "latin1", "UTF-8"))
+      names(raw) <- iconv(names(raw), "latin1", "UTF-8")
+    }
+    as.data.frame(lapply(raw, function(v) {
+      w <- trimws(v)
+      if (any(grepl("^0[0-9]", w))) v else utils::type.convert(v, as.is = TRUE, dec = dec)
+    }), stringsAsFactors = FALSE, check.names = FALSE)
   }
 }
 
@@ -168,6 +185,10 @@ prepare_pk_dataset <- function(raw, col_map, opts = list()) {
 
   if (lloq > 0) {
     data <- apply_blq_rules(data, col_map, rule = rule, lloq = lloq)
+  } else {
+    # Without an LLOQ no value is set by a BLQ rule; a column of this name in
+    # the uploaded file must not feed the partial AUC notes
+    data[[BLQ_FLAG_COLUMN]] <- NULL
   }
 
   sha <- if (!is.null(opts$file_path) && file.exists(opts$file_path) &&
@@ -269,6 +290,16 @@ auto_detect_columns <- function(cols) {
     dose      = detect_optional(c("^dose", "^amt$", "^amount", "^dosis"))
   )
   attr(out, "unmatched") <- unmatched
+  # Another column that also looks like the time or the concentration
+  # (TimeNominal and TimeActual, TIME and TAD): the first match is used, and
+  # the upload page says which other one exists
+  alt <- function(pats, chosen) {
+    hits <- unique(unlist(lapply(pats, function(p) cols[grepl(p, cols_lower)])))
+    setdiff(hits, chosen)
+  }
+  attr(out, "alternatives") <- list(
+    time = alt(c("^tad$", "^time", "^tpt", "^hours?$", "^ntim"), out$time),
+    conc = alt(c("^conc", "^dv$", "^cp[^a-z]", "^cp$", "^concentration", "^result"), out$conc))
   out
 }
 

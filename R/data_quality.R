@@ -521,6 +521,20 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
     }
   }
 
+  # Labels that differ only in case or spacing ("Test" and "test") become
+  # separate treatments, periods or sequences
+  for (k in c("treatment", "period", "sequence")) {
+    cc <- col_map[[k]]
+    if (is.null(cc) || !cc %in% names(data)) next
+    v <- unique(as.character(data[[cc]])); v <- v[!is.na(v)]
+    key <- tolower(gsub("\\s+", "", v))
+    dup <- v[key %in% key[duplicated(key)]]
+    if (length(dup) > 0)
+      add("WARNING", "Design", paste0("The ", cc, " column has labels that differ only in case or spacing"),
+          paste0("Labels: ", paste(dup, collapse = ", ")),
+          "These are analysed as different groups. Correct the spelling in the file if they are the same.")
+  }
+
   # One subject ID must mean one person. Subjects numbered 1..n within each
   # sequence give two people the same ID, and the bioequivalence model then
   # treats them as one subject: the confidence interval is wrong.
@@ -548,6 +562,15 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
       }
       add("OK", "Dose",
           paste("Dose values:", paste(sort(doses), collapse = ", ")))
+      # The NCA uses one dose per profile (the highest value in it)
+      pk <- profile_key(data, col_map)
+      n_dose <- tapply(dose_vals, pk$key, function(v) length(unique(v[!is.na(v)])))
+      varying <- names(n_dose)[n_dose > 1]
+      if (length(varying) > 0)
+        add("WARNING", "Dose", paste(length(varying), "profile(s) have more than one dose value"),
+            paste0("Profiles: ", paste(head(profile_labels(pk$parts[match(varying, pk$key), , drop = FALSE]), 5),
+                                       collapse = "; ")),
+            "The NCA uses the highest dose of each profile. Check the Dose column, or map a Period column if these are separate administrations.")
     }
   }
   

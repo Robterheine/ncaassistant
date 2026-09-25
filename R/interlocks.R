@@ -146,7 +146,9 @@ interlock_profile_start <- function(data, col_map) {
   labels <- profile_labels(key$parts)[ok]
   starts <- tapply(t[ok], labels, min); ends <- tapply(t[ok], labels, max)
   n_pts <- tapply(t[ok], labels, length)
-  far <- which(starts > 0 & starts > 0.2 * (ends - starts))
+  # After half the sampled span: a sparse 2, 4, 6 h profile is not flagged,
+  # a second period at 168 h or clock hours (8.5 to 20) are
+  far <- which(starts > 0 & starts > 0.5 * (ends - starts))
   if (length(far) == 0) return(.no_findings())
   # Index by position: a blank subject ID gives an empty label, and indexing a
   # named vector by "" returns NA

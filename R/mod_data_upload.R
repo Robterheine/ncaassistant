@@ -427,6 +427,13 @@ data_upload_server <- function(id, shared) {
                  "for a single profile, add a Subject column to the file."),
           type = "warning", duration = NULL)
       }
+      alts <- attr(guess, "alternatives")
+      for (k in c("time", "conc")) if (length(alts[[k]]) > 0 && !k %in% unmatched)
+        showNotification(
+          paste0(c(time = "Time", conc = "Concentration")[[k]], ": '", guess[[k]], "' was chosen; the file ",
+                 "also has ", paste0("'", alts[[k]], "'", collapse = ", "),
+                 ". Check the column mapping."),
+          type = "message", duration = 12)
       other <- setdiff(unmatched, "subject")
       if (length(other) > 0) {
         showNotification(

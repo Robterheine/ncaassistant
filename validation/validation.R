@@ -3902,7 +3902,7 @@ check("REL-27", "R-17/R-18: records use private folders, and the app states wher
       grepl("fallback_copy_path(original_name)", rd(f), fixed = TRUE) &&
         grepl("unlink(fallback_dir, recursive = TRUE)", rd(f), fixed = TRUE), logical(1))
     grepl("Result: MATCH", rec_check_text(r1$ex)) && length(setdiff(after, before)) == 0 &&
-      basename(fp) == "x.csv" && dir.exists(dirname(fp)) && dirname(fp) != tempdir() &&
+      basename(fallback_copy_path("../y.xlsx")) == "y.csv" && basename(fp) == "x.csv" && dir.exists(dirname(fp)) && dirname(fp) != tempdir() &&
       !grepl('file.path(tmp, "analysis_record")', er, fixed = TRUE) && all(mods) &&
       grepl("DATA_PROTECTION_NOTICE", rd("R/mod_data_upload.R"), fixed = TRUE) &&
       grepl("Intended use", app, fixed = TRUE) && grepl("Posit PBC", DATA_PROTECTION_NOTICE, fixed = TRUE) &&
@@ -4275,6 +4275,32 @@ check("REL-53", "R-45: statistical and NCA wording matches the code",
   }, error = function(e) FALSE),
   "URS-UI-01", critical = FALSE, method = "Search app text for the wordings the review found wrong",
   expected = "None of the incorrect wordings remain")
+
+check("REL-54", "R-46: data-reading edge cases are read correctly or reported",
+  tryCatch({
+    f <- tempfile(fileext = ".csv")
+    con <- file(f, "wb"); writeBin(c(charToRaw("ID;TIME;CONC;ConcUnit\n001;0;0;"), as.raw(0xB5), charToRaw("g/L\n01;1;5;"),
+                                     as.raw(0xB5), charToRaw("g/L\n")), con); close(con)
+    x <- read_pk_file(f, list(sep = ";", dec = "."))
+    ids_ok <- identical(x$ID, c("001", "01")) && is.numeric(x$TIME)
+    enc_ok <- identical(units_in_data(x)$conc$unit, "ug/L")
+    q <- run_data_quality_check(data.frame(S = 1:2, T = 0, C = 1, Trt = c("Test", "test"), D = 1),
+                                list(subject = "S", time = "T", conc = "C", treatment = "Trt"), 0)
+    case_ok <- any(grepl("differ only in case", q$findings$Message))
+    q2 <- run_data_quality_check(data.frame(S = 1, T = c(0, 1, 2), C = c(0, 5, 3), D = c(100, 100, 50)),
+                                 list(subject = "S", time = "T", conc = "C", dose = "D"), 0)
+    dose_ok <- any(grepl("more than one dose value", q2$findings$Message))
+    alt_ok <- identical(attr(auto_detect_columns(c("ID", "TimeNominal", "TimeActual", "Conc")), "alternatives")$time, "TimeActual")
+    sparse <- run_interlocks(data.frame(ID = 1, T = c(2, 4, 6), C = c(5, 3, 1)), list(subject = "ID", time = "T"), "mapped")
+    period2 <- run_interlocks(data.frame(ID = 1, T = c(168, 170, 180), C = c(5, 3, 1)), list(subject = "ID", time = "T"), "mapped")
+    flag <- prepare_pk_dataset(data.frame(ID = 1, T = 0:2, C = c(0, 5, 3), BLQ_flag = TRUE), list(subject = "ID", time = "T", conc = "C"))$data
+    ids_ok && enc_ok && case_ok && dose_ok && alt_ok && nrow(sparse) == 0 && nrow(period2) > 0 &&
+      is.null(flag$BLQ_flag) && grepl("dose_normalised = isTRUE(settings$dose_normalised)",
+                                      paste(readLines("R/export_record.R"), collapse = "\n"), fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-DAT-01", critical = FALSE,
+  method = "Windows-1252 CSV with IDs 001 and 01; case-variant treatments; a dose varying within a profile; two time columns; sparse and late profiles; a user BLQ_flag column",
+  expected = "Latin-1 read with IDs kept distinct; each problem reported; sparse 2-6 h profile accepted, 168 h start refused; user flag dropped; dose normalisation recorded")
 
 end_section("REL")
 
