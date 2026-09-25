@@ -664,3 +664,29 @@ planner_cv_offer <- function(be_results, analysis_type, planner_design, param = 
        label = sprintf("Use %s CVwT %.1f%% and CVwR %.1f%% from my BE analysis%s", name, cvwt, cvwr,
                        if (is.na(i)) " (pooled: no replicated reference)" else ""))
 }
+
+#' Parallel design: the Welch interval as a sensitivity result
+#'
+#' The pooled-variance CI is anti-conservative when the smaller group is the
+#' more variable one. When the Welch CI would give a different verdict, a
+#' message reports it; the pooled result stays the primary one.
+#' @return character vector of messages (empty when they agree)
+parallel_welch_notes <- function(be_data, params, trt_col, be_lower = 80, be_upper = 125) {
+  lv <- levels(factor(be_data[[trt_col]]))
+  if (length(lv) != 2) return(character(0))
+  out <- character(0)
+  for (p in params) {
+    y <- suppressWarnings(log(as.numeric(be_data[[p]])))
+    ok <- is.finite(y)
+    r <- y[ok & be_data[[trt_col]] == lv[1]]; t <- y[ok & be_data[[trt_col]] == lv[2]]
+    if (length(r) < 2 || length(t) < 2) next
+    ci <- function(var_equal) 100 * exp(stats::t.test(t, r, var.equal = var_equal, conf.level = 0.90)$conf.int)
+    pooled <- ci(TRUE); welch <- ci(FALSE)
+    if (be_limits_pass(pooled[1], pooled[2], be_lower, be_upper) != be_limits_pass(welch[1], welch[2], be_lower, be_upper))
+      out <- c(out, sprintf(paste0("%s: the Welch interval (unequal variances), %.2f-%.2f%%, gives a different ",
+                                   "conclusion from the pooled-variance interval, %.2f-%.2f%%. The groups differ in ",
+                                   "size or variability; discuss this sensitivity result."),
+                            if (exists("friendly_name")) friendly_name(p) else p, welch[1], welch[2], pooled[1], pooled[2]))
+  }
+  out
+}

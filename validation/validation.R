@@ -4234,6 +4234,20 @@ check("REL-50", "R-41: single-dose Vss and MRT are not reported at steady state"
   "URS-NCA-07", critical = FALSE, method = "Steady-state IV bolus, single profile and batch",
   expected = "Vss and MRT to last empty (NonCompart's values are single-dose quantities); CL kept")
 
+check("REL-51", "R-42: a parallel study reports the Welch interval when it changes the conclusion",
+  tryCatch({
+    r <- exp(log(100) + qnorm(ppoints(36)) * 0.10); t <- exp(log(109) + qnorm(ppoints(12)) * 0.30)
+    d <- data.frame(Treatment = factor(c(rep("R", 36), rep("T", 12)), levels = c("R", "T")), AUCLST = c(r, t))
+    n <- parallel_welch_notes(d, "AUCLST", "Treatment")
+    eq <- data.frame(Treatment = factor(c(rep("R", 12), rep("T", 12)), levels = c("R", "T")),
+                     AUCLST = exp(log(100) + c(qnorm(ppoints(12)), qnorm(ppoints(12))) * 0.15))
+    w <- stats::t.test(log(t), log(r), conf.level = 0.9)$conf.int
+    length(n) == 1 && grepl(sprintf("%.2f-%.2f%%", 100 * exp(w[1]), 100 * exp(w[2])), n, fixed = TRUE) &&
+      length(parallel_welch_notes(eq, "AUCLST", "Treatment")) == 0
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = FALSE, method = "36 Reference (SD 0.10) vs 12 Test (SD 0.30); equal groups as control",
+  expected = "Welch 93.27-127.39% reported against pooled 99.15-119.83%; nothing when the two agree")
+
 end_section("REL")
 
 # =============================================================================

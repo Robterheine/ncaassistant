@@ -775,9 +775,12 @@ path_be_server <- function(id, shared) {
         }
 
         be_result(list(ci_table = ci_df, anova = anova_results, cv_table = cv_df, design = design_used$design,
-                       m13a = be_m13a_checks(shared$pk_data, shared$col_map, nca_res,
-                                             ci_df[ci_df$Parameter %in% setdiff(params, c(supportive, BE_NO_VERDICT_PARAMS)), ],
-                                             isTRUE(input$is_ss))))
+                       m13a = c(be_m13a_checks(shared$pk_data, shared$col_map, nca_res,
+                                               ci_df[ci_df$Parameter %in% setdiff(params, c(supportive, BE_NO_VERDICT_PARAMS)), ],
+                                               isTRUE(input$is_ss)),
+                                if (identical(be_design_model(design_used$design), "parallel"))
+                                  parallel_welch_notes(be_data, setdiff(params, c("TMAX", BE_NO_VERDICT_PARAMS)), trt_col_be,
+                                                       input$be_lower, input$be_upper))))
         be_run_settings(list(
           nca = settings,
           be  = list(
@@ -954,7 +957,7 @@ path_be_server <- function(id, shared) {
       if (length(msgs) == 0) return(NULL)
       tags$div(class = "alert alert-warning py-2 small mb-2",
                icon("triangle-exclamation", class = "me-1"),
-               tags$strong("ICH M13A checks: "),
+               tags$strong("Checks on this analysis: "),
                tags$ul(class = "mb-0", lapply(msgs, tags$li)))
     })
 
