@@ -4517,6 +4517,26 @@ check("MRV-06", "R-08: widened limits can apply to Cmax and the partial AUCs wit
   method = "crossover example with a 0-1 h interval; limits 69.84-143.19 under the three scopes",
   expected = "Cmax only: AUC and partial metrics at 80; Cmax and partial AUCs: partial metrics widened, AUClast at 80 (no such choice before); all: every metric widened")
 
+check("MRV-07", "P-14, P-15: Ctau,ss is reported apart from Cmin, and nothing extrapolated to infinity is shown at steady state",
+  tryCatch({
+    d <- rbind(data.frame(ID = "A", T = c(0, 0.5, 1, 2, 4, 8, 12), C = c(4, 3.5, 6, 10, 8, 5, 4.2)),
+               data.frame(ID = "B", T = c(0, 0.5, 1, 2, 4, 8, 10), C = c(4, 3.5, 6, 10, 8, 5, 4.6)))
+    r <- suppressWarnings(run_nca(d, rel_cm, rel_st(ss = TRUE, tau = 12)))
+    a <- r[r$ID == "A", ]; b <- r[r$ID == "B", ]
+    s1 <- suppressWarnings(run_single_nca(d$T[d$ID == "A"], d$C[d$ID == "A"], rel_st(ss = TRUE, tau = 12)))
+    inf <- intersect(c("AUCIFO", "AUCIFP", "AUCPEO", "AUCPEP", "AUMCIFO", "MRTEVIFO", "CLFP", "VZFP"), names(r))
+    map <- read.csv("cdisc/pk_parameter_map.csv", stringsAsFactors = FALSE)
+    be <- paste(readLines("R/mod_path_be.R", warn = FALSE), collapse = " ")
+    a$CMIN_SS == 3.5 && a$CTAU_SS == 4.2 && is.na(b$CTAU_SS) && b$CMIN_SS == 3.5 &&
+      as.numeric(s1[["CTAU_SS"]]) == 4.2 && length(inf) > 0 && all(is.na(unlist(r[inf]))) &&
+      all(is.na(unlist(s1[intersect(inf, names(s1))]))) && all(is.finite(r$CLFO)) &&
+      friendly_name("CMIN_SS") == "Minimum Concentration (Cmin)" && friendly_name("CTAU_SS") == "Concentration at Tau (Ctau)" &&
+      "CTAU_SS" %in% map$app_parameter && grepl("\"CMIN_SS\", \"CTAU_SS\"", be, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-NCA-07", critical = TRUE,
+  method = "Steady state, tau 12 h: minimum 3.5 at 0.5 h (after the dose), 4.2 at 12 h; a second profile ending at 10 h",
+  expected = "Cmin 3.5, Ctau 4.2 (no Ctau before), Ctau empty without a sample at tau; AUC to infinity, % extrapolated, AUMC to infinity and predicted CL/V empty (were shown); CL/F kept")
+
 end_section("MRV")
 
 # =============================================================================

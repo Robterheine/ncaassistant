@@ -67,6 +67,7 @@ AUCTAU,any,any,AUCTAU,"AUC from 0 to the entered dosing interval (extrapolated w
 TAU,any,any,TAU,"Dosing interval entered by the user"
 CAVG,any,any,CAVG,"AUC over the dosing interval divided by the dosing interval"
 CMIN_SS,any,any,CMIN,"App column CMIN_SS"
+CTAU_SS,any,any,,"Concentration at the end of the dosing interval: no PK parameter code in this release"
 FLUCTP,any,any,FLUCP,"App column FLUCTP"
 SWING,any,any,SWING,
 AUC_T1_T2,any,any,AUCINT,"Partial AUC columns (AUC_start_end). The interval start and end belong in PPSTINT and PPENINT"

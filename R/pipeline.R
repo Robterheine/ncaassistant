@@ -875,18 +875,30 @@ steady_state_parameters <- function(r, time, conc, tau, lamz_rejected = FALSE) {
   if (isTRUE(lamz_rejected) && !is.na(tlst) && tau > tlst + 1e-9) auctau <- NA_real_
   ok <- !is.na(time) & !is.na(conc) & time <= tau + 1e-9
   cmin  <- if (any(ok)) min(conc[ok]) else NA_real_
+  # C(tau): the observed concentration at the end of the interval. Not the
+  # same as Cmin when the minimum falls after the dose (a lag); empty when
+  # no sample was taken at tau
+  at_tau <- !is.na(time) & !is.na(conc) & abs(time - tau) < 1e-9
+  ctau  <- if (any(at_tau)) conc[max(which(at_tau))] else NA_real_
   cavg  <- if (!is.na(auctau)) auctau / tau else NA_real_
   fluct <- if (!is.na(cavg) && cavg > 0 && !is.na(cmin)) (cmax - cmin) / cavg * 100 else NA_real_
   swing <- if (!is.na(cmin) && cmin > 0) (cmax - cmin) / cmin else NA_real_
   scale <- if (!is.na(auctau) && auctau > 0 && !is.na(auclst)) auclst / auctau else NA_real_
   for (n in intersect(c("CLFO", "CLO", "VZFO", "VZO"), names(r))) r[[n]] <- get(n) * scale
-  # NonCompart's Vss (AUMC/AUC over the samples x CL) and MRT to the last
-  # sample are single-dose quantities; at steady state they are left empty
-  for (n in intersect(c("VSSO", "VSSP", "MRTIVLST", "MRTEVLST"), names(r))) r[[n]] <- NA_real_
+  # NonCompart's Vss (AUMC/AUC over the samples x CL), MRT to the last sample
+  # and everything extrapolated to infinity are single-dose quantities; at
+  # steady state they are left empty (AUC to infinity and its % extrapolated
+  # were shown, with the >20% flag, although AUCtau is the exposure measure)
+  single_dose <- c("VSSO", "VSSP", "MRTIVLST", "MRTEVLST",
+                   "AUCIFO", "AUCIFP", "AUCIFOD", "AUCIFPD", "AUCPEO", "AUCPEP",
+                   "AUMCIFO", "AUMCIFP", "AUMCPEO", "AUMCPEP", "AUCPBEO", "AUCPBEP",
+                   "MRTIVIFO", "MRTIVIFP", "MRTEVIFO", "MRTEVIFP", "CLFP", "CLP", "VZFP", "VZP")
+  for (n in intersect(single_dose, names(r))) r[[n]] <- NA_real_
   r[["AUCTAU"]] <- auctau
   r[["TAU"]] <- tau
   r[["CAVG"]] <- cavg
   r[["CMIN_SS"]] <- cmin
+  r[["CTAU_SS"]] <- ctau
   r[["FLUCTP"]] <- fluct
   r[["SWING"]] <- swing
   r
@@ -1365,7 +1377,7 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
         else keys_ss, adm)
       if (!is.null(note)) warning(note)
       # Steady-state parameters per profile, before any rows are blanked
-      for (n in c("TAU", "CAVG", "CMIN_SS", "FLUCTP", "SWING")) if (!n %in% names(result)) result[[n]] <- NA_real_
+      for (n in c("TAU", "CAVG", "CMIN_SS", "CTAU_SS", "FLUCTP", "SWING")) if (!n %in% names(result)) result[[n]] <- NA_real_
       for (i in seq_len(nrow(result))) {
         rows <- data_all[[nca_key]] == result[[1]][i]
         rr <- steady_state_parameters(as.list(result[i, , drop = FALSE]),
