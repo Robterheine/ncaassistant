@@ -225,6 +225,7 @@ data_guide_ui <- function() {
           ),
           dont_items = c(
             "Use clock times ('08:30', '09:00'); the app refuses them",
+            "Mix decimal points into a decimal-comma file: there a point only separates thousands (12.500 = 12500)",
             "Leave out the pre-dose sample",
             "Mix units (some values in ng/mL, others in µg/L)"
           )
@@ -862,7 +863,7 @@ data_guide_ui <- function() {
           tags$h6(class = "fw-bold text-danger", "4. BLQ replaced by 0 before uploading"),
           tags$p(class = "small",
                  "The BLQ rules treat a BLQ sample according to where it sits in the profile: before the first ",
-                 "or after the last measurable concentration (Rules 1 and 6), or before or after Cmax (Rule 5). ",
+                 "or after the last measurable concentration (Rules 1, 4 and 6), or before or after Cmax (Rule 5). ",
                  "Once you have typed 0, the app cannot tell a BLQ result from a real zero. Leave BLQ as text.")
         ),
         tags$div(
@@ -877,7 +878,8 @@ data_guide_ui <- function() {
           tags$h6(class = "fw-bold text-danger", "6. Subject IDs that are not unique or not consistent"),
           tags$p(class = "small",
                  "'S01' in period 1 and 'S1' in period 2 become two people. Numbering that restarts in each group ",
-                 "or sequence turns two people into one subject. Use one ID per person for the whole study.")
+                 "or sequence turns two people into one subject. Use one ID per person for the whole study; the ",
+                 "app refuses an ID that appears in two sequences or with two treatments in one period.")
         ),
         tags$div(
           class = "border-start border-4 border-danger ps-3 mb-4",
@@ -891,7 +893,8 @@ data_guide_ui <- function() {
           tags$h6(class = "fw-bold text-danger", "8. Mixed or wrong units"),
           tags$p(class = "small",
                  "All concentrations need the same unit, and the units selected in the app must match the file: ",
-                 "they determine the conversion factor for clearance and volume.")
+                 "they determine the conversion factor for clearance and volume. Units stated in the file (a ",
+                 "ConcUnit column, or AVALU in ADNCA) are pre-selected, and a different selection is refused.")
         ),
         tags$div(
           class = "border-start border-4 border-danger ps-3 mb-4",
@@ -900,6 +903,21 @@ data_guide_ui <- function() {
                  "The protocol asks for AUC 0\u201330 min, but samples were taken at 15 and 60 min. The app ",
                  "interpolates the concentration at 30 min, so the value depends on the trapezoidal method and can ",
                  "differ from what a sample at 30 min would have shown. Plan samples at the cutoff times.")
+        ),
+        tags$div(
+          class = "border-start border-4 border-danger ps-3 mb-4",
+          tags$h6(class = "fw-bold text-danger", "10. A crossover without a Period column"),
+          tags$p(class = "small",
+                 "A column named Visit or Occasion is not recognised as the period, so map it on the Upload ",
+                 "page. Without a Period column a crossover gets no bioequivalence verdict.")
+        ),
+        tags$div(
+          class = "border-start border-4 border-danger ps-3 mb-4",
+          tags$h6(class = "fw-bold text-danger", "11. Excluding a subject by editing the file"),
+          tags$p(class = "small",
+                 "The app has no control to exclude a subject or period, so an exclusion means editing the file, ",
+                 "and the Analysis Record then holds only the edited file. Archive the unedited source file with ",
+                 "the reason for each exclusion, as ICH M13A asks.")
         )
       )
     ),

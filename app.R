@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.5.0
+# Non-Compartmental Analysis Assistant v1.6.0
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # Designed by Rob ter Heine
@@ -21,7 +21,7 @@
 #   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.5.0"
+APP_VERSION <- "1.6.0"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 # Mirror APP_VERSION into the global environment. When RStudio runs a single-file
@@ -817,8 +817,48 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.5.0",
+            tags$h6(class = "fw-bold mb-1", "v1.6.0",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "September 2026"),
+            tags$p(class = "mb-1", tags$strong("Results can differ from v1.5.0"),
+                   " where the correctness fixes below apply. They came from a review of the whole app."),
+            tags$ul(class = "mb-0",
+              tags$li(tags$strong("Correctness fix: "), "with the default linear-up/log-down method, a BLQ value ",
+                      "set to 0 between measurable samples removed the area of the fall before it, so AUClast, ",
+                      "AUC\u221E, CL/F, Vz/F, MRT and late partial AUCs were wrong"),
+              tags$li(tags$strong("Correctness fix: "), "for an IV bolus with a pre-dose sample at time 0, C",
+                      tags$sub("0"), " was not back-extrapolated and AUC was about 8% too low. Samples at or ",
+                      "before time 0 are now set aside for an IV bolus"),
+              tags$li(tags$strong("Correctness fix: "), "in a decimal-comma file, 12.500 was read as 12.5. A ",
+                      "point now separates thousands there, and any other point is refused"),
+              tags$li(tags$strong("Correctness fix: "), "subject IDs that restart in each sequence were merged ",
+                      "into one subject, and a crossover without a Period column was analysed without a period ",
+                      "term. The first is refused; the second gets no verdict"),
+              tags$li(tags$strong("Correctness fix: "), "values set by a BLQ rule are no longer used for the ",
+                      "half-life (ICH M13A). Rule 4 no longer imputes after the last measurable concentration, ",
+                      "and a BLQ pre-dose sample is 0 under Rules 4 and 6"),
+              tags$li(tags$strong("Correctness fix: "), "widened acceptance limits apply to Cmax only, unless ",
+                      "you choose all metrics. A verdict is given only for the 90% confidence interval, and not ",
+                      "when the pre-specified mixed model cannot be fitted"),
+              tags$li(tags$strong("Correctness fix: "), "predicted Clast with chosen half-life points, Tlag with ",
+                      "a zero inside the profile, Excel text after row 1000, units stated in the file, the CV ",
+                      "the planner takes from a bioequivalence analysis, and Vss and MRT at steady state"),
+              tags$li(tags$strong("Changed: "), "ICH M13A is cited; Cmax and AUC", tags$sub("0\u2013t"),
+                      " are compared by default. New checks for a pre-dose value above 5% of Cmax, fewer than ",
+                      "12 subjects and low AUC coverage, a Welch interval for parallel designs, and the trough at ",
+                      "steady state as a metric"),
+              tags$li(tags$strong("Changed: "), "settings stay when you leave a page, and results are cleared ",
+                      "when a setting changes. Plots draw one line per profile, exports carry units, and the ",
+                      "record's verdict includes file integrity"),
+              tags$li(tags$strong("New: "), "an intended-use statement, a note on where uploaded data go, and ",
+                      "the pipeline fingerprint on the About page. Better contrast, keyboard access and phone layout"),
+              tags$li("Validation: VALIDATION_COUNTS_PLACEHOLDER")
+            )
+          ),
+
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.5.0"),
             tags$p(class = "text-muted mb-1", "September 2026"),
             tags$p(class = "mb-1", tags$strong("Results do not change"),
                    " for analyses that do not use partial AUCs."),
