@@ -4537,6 +4537,28 @@ check("MRV-07", "P-14, P-15: Ctau,ss is reported apart from Cmin, and nothing ex
   method = "Steady state, tau 12 h: minimum 3.5 at 0.5 h (after the dose), 4.2 at 12 h; a second profile ending at 10 h",
   expected = "Cmin 3.5, Ctau 4.2 (no Ctau before), Ctau empty without a sample at tau; AUC to infinity, % extrapolated, AUMC to infinity and predicted CL/V empty (were shown); CL/F kept")
 
+check("MRV-08", "T-07: every output column has a label, and every column with a dimension has a unit",
+  tryCatch({
+    d <- read.csv(file.path("validation", "fixtures", "be_2x2x2_crossover.csv"), stringsAsFactors = FALSE)
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc", treatment = "Treatment", period = "Period")
+    cols <- character(0)
+    for (route in c("extravascular", "iv_bolus", "iv_infusion")) for (ss in c(FALSE, TRUE)) {
+      st <- rel_st(route = route, ss = ss, tau = if (ss) 24 else NA, dur = 0.5)
+      r <- suppressWarnings(run_nca(d, cm, st)); cols <- union(cols, names(add_dose_normalized(r, 100)))
+    }
+    cols <- setdiff(cols, c("Subject", "Treatment", "Period"))
+    lab <- vapply(cols, friendly_name, character(1))
+    u <- add_units_to_labels(unname(lab), dose_unit = "mg", time_unit = "h", conc_unit = "ng/mL")
+    unitless <- grepl("%|R-squared|Correlation|Points Used|Intercept|Swing", lab)
+    all(lab != cols) && all(u[!unitless] != lab[!unitless]) &&
+      u[lab == "AUMC to Last Point"] == "AUMC to Last Point (ng/mL\u00b7h\u00b2)" &&
+      u[lab == "Initial Concentration (C0)"] == "Initial Concentration (C0) (ng/mL)" &&
+      any(u == "Dose-Normalised Cmax (ng/mL per mg)")
+  }, error = function(e) FALSE),
+  "URS-UI-01", critical = FALSE,
+  method = "all NonCompart and app columns for extravascular, IV bolus and IV infusion, single dose and steady state, with dose normalisation",
+  expected = "no raw code as a label (C0, AUCPBEO, VZP, CLP, MRTIV*, VSSO/P were); a unit on every column with a dimension (about 20 had none)")
+
 end_section("MRV")
 
 # =============================================================================

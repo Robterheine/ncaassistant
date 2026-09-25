@@ -135,11 +135,23 @@ pk_param_labels <- c(
   "VZFP"     = "Apparent Volume (pred)",
   "CLO"      = "Clearance (CL)",
   "VZO"      = "Volume of Distribution (Vz)",
+  "CLP"      = "Clearance (pred)",
+  "VZP"      = "Volume of Distribution (pred)",
+  "VSSO"     = "Volume at Steady State (Vss)",
+  "VSSP"     = "Volume at Steady State (pred)",
+
+  # IV bolus: back-extrapolated start of the curve
+  "C0"       = "Initial Concentration (C0)",
+  "AUCPBEO"  = "AUC % Back-Extrapolated (observed)",
+  "AUCPBEP"  = "AUC % Back-Extrapolated (predicted)",
   
   # MRT
   "MRTEVLST" = "Mean Residence Time (to last)",
   "MRTEVIFO" = "Mean Residence Time (to inf, obs)",
   "MRTEVIFP" = "Mean Residence Time (to inf, pred)",
+  "MRTIVLST" = "Mean Residence Time IV (to last)",
+  "MRTIVIFO" = "Mean Residence Time IV (to inf, obs)",
+  "MRTIVIFP" = "Mean Residence Time IV (to inf, pred)",
   
   # Last observed
   "CLST"     = "Last Measurable Concentration",
@@ -372,8 +384,31 @@ summarize_pk_params <- function(data, params, group_col = NULL) {
 #' @return Character vector with units appended where applicable
 add_units_to_labels <- function(labels, dose_unit = "mg", time_unit = "h", conc_unit = "ng/mL") {
   auc_unit  <- paste0(conc_unit, "\u00b7", time_unit)
+  aumc_unit <- paste0(conc_unit, "\u00b7", time_unit, "\u00b2")
   cl_unit   <- paste0("L/", time_unit)
   unit_map <- c(
+    "Lag Time"                           = time_unit,
+    "Time of Last Measurable Conc"       = time_unit,
+    "Last Measurable Concentration"      = conc_unit,
+    "Predicted Last Concentration"       = conc_unit,
+    "Initial Concentration (C0)"         = conc_unit,
+    "AUC All (incl. trailing zero)"      = auc_unit,
+    "AUC to Infinity (predicted)"        = auc_unit,
+    "AUMC to Last Point"                 = aumc_unit,
+    "AUMC to Infinity (observed)"        = aumc_unit,
+    "AUMC to Infinity (predicted)"       = aumc_unit,
+    "Apparent Clearance (pred)"          = cl_unit,
+    "Clearance (pred)"                   = cl_unit,
+    "Apparent Volume (pred)"             = "L",
+    "Volume of Distribution (pred)"      = "L",
+    "Volume at Steady State (Vss)"       = "L",
+    "Volume at Steady State (pred)"      = "L",
+    "Mean Residence Time (to last)"      = time_unit,
+    "Mean Residence Time (to inf, obs)"  = time_unit,
+    "Mean Residence Time (to inf, pred)" = time_unit,
+    "Mean Residence Time IV (to last)"   = time_unit,
+    "Mean Residence Time IV (to inf, obs)"  = time_unit,
+    "Mean Residence Time IV (to inf, pred)" = time_unit,
     "Peak Concentration (Cmax)"          = conc_unit,
     "Time of Peak (Tmax)"                = time_unit,
     "AUC to Last Point"                  = auc_unit,
@@ -394,7 +429,10 @@ add_units_to_labels <- function(labels, dose_unit = "mg", time_unit = "h", conc_
   )
   for (i in seq_along(labels)) {
     u <- unit_map[labels[i]]
-    if (is.na(u)) u <- if (startsWith(labels[i], "Partial AUC ")) auc_unit else
+    if (is.na(u)) u <- if (startsWith(labels[i], "Dose-Normalised Cmax")) paste0(conc_unit, " per ", dose_unit) else
+                       if (startsWith(labels[i], "Dose-Normalised AUC")) paste0(auc_unit, " per ", dose_unit) else
+                       if (startsWith(labels[i], "Dose-Normalised AUMC")) paste0(aumc_unit, " per ", dose_unit) else
+                       if (startsWith(labels[i], "Partial AUC ")) auc_unit else
                        if (grepl("^Cmax [0-9.]+\u2013", labels[i])) conc_unit else
                        if (grepl("^Tmax [0-9.]+\u2013", labels[i])) time_unit else NA
     if (is.na(u)) next
