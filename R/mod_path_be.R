@@ -1538,7 +1538,8 @@ path_be_server <- function(id, shared) {
             lz_overrides   = if (length(lz_state$overrides_log) > 0) lz_state$overrides_log else NULL,
             viz_settings   = shared$viz_settings,
             read_args      = read_args,
-            adnca          = adnca_rec
+            adnca          = adnca_rec,
+            checks         = record_checks(shared$qc_result, be_result()$m13a)
           )
           notify_reproduction(rec_out)
           if (!is.null(fallback_dir)) unlink(fallback_dir, recursive = TRUE)

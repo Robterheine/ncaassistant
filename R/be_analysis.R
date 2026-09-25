@@ -603,22 +603,34 @@ be_variability_diagnostic <- function(be_data, param, trt_col, subj_col,
 #'   profiles (M13A 2.2.2.2: the validity of the study may need discussion)
 #' @param ci_df CI table of the run (N_Test, N_Ref per parameter)
 #' @return character vector of messages, empty when all checks pass
-be_m13a_checks <- function(pk_data, col_map, nca_res, ci_df, is_ss = FALSE) {
-  out <- character(0)
+#' Single dose: profiles whose pre-dose concentration exceeds 5% of their Cmax
+#'
+#' ICH M13A (2.2.3.3) excludes such a period from the primary analysis. Used
+#' by the bioequivalence checks and the batch NCA.
+#' @param verdict TRUE adds that the verdicts shown are then not the primary analysis
+#' @return one message, or NULL when no profile is affected
+predose_above_5pct_note <- function(pk_data, col_map, verdict = TRUE) {
   pk <- profile_key(pk_data, col_map)
   t <- suppressWarnings(as.numeric(pk_data[[col_map$time]]))
   cc <- suppressWarnings(as.numeric(pk_data[[col_map$conc]]))
-  if (!isTRUE(is_ss)) {
-    pre <- tapply(ifelse(!is.na(t) & t <= 0, cc, NA), pk$key, function(v) suppressWarnings(max(v, na.rm = TRUE)))
-    cmax <- tapply(cc, pk$key, function(v) suppressWarnings(max(v, na.rm = TRUE)))
-    high <- names(pre)[is.finite(pre) & is.finite(cmax) & cmax > 0 & pre > 0.05 * cmax]
-    if (length(high) > 0) {
-      lab <- profile_labels(pk$parts[match(high, pk$key), , drop = FALSE])
-      out <- c(out, paste0("Pre-dose concentration above 5% of Cmax in ", length(high), " profile(s): ",
-                           paste(head(lab, 5), collapse = "; "), if (length(lab) > 5) " and more" else "",
-                           ". ICH M13A (2.2.3.3) excludes such a period from the primary analysis."))
-    }
-  }
+  pre <- tapply(ifelse(!is.na(t) & t <= 0, cc, NA), pk$key, function(v) suppressWarnings(max(v, na.rm = TRUE)))
+  cmax <- tapply(cc, pk$key, function(v) suppressWarnings(max(v, na.rm = TRUE)))
+  high <- names(pre)[is.finite(pre) & is.finite(cmax) & cmax > 0 & pre > 0.05 * cmax]
+  if (length(high) == 0) return(NULL)
+  lab <- profile_labels(pk$parts[match(high, pk$key), , drop = FALSE])
+  paste0("Pre-dose concentration above 5% of Cmax in ", length(high), " profile(s): ",
+         paste(head(lab, 5), collapse = "; "), if (length(lab) > 5) " and more" else "",
+         ". ICH M13A (2.2.3.3) excludes such a period from the primary analysis of a bioequivalence study",
+         if (verdict) paste0(". The verdicts shown include it, so they are not the M13A primary analysis: ",
+                             "exclude the period as the protocol says, keep the unedited source file, and ",
+                             "run the analysis again.") else
+           ". A pre-dose concentration also points to carry-over or an endogenous level.")
+}
+
+be_m13a_checks <- function(pk_data, col_map, nca_res, ci_df, is_ss = FALSE) {
+  out <- character(0)
+  pk <- profile_key(pk_data, col_map)
+  if (!isTRUE(is_ss)) out <- c(out, predose_above_5pct_note(pk_data, col_map))
   # Profiles without an NCA result, and periods with very low exposure: M13A
   # (2.2.1.1) accepts leaving such data out only as a documented exception,
   # in general for no more than one subject
@@ -655,7 +667,8 @@ be_m13a_checks <- function(pk_data, col_map, nca_res, ci_df, is_ss = FALSE) {
     n <- suppressWarnings(pmin(ci_df$N_Test, ci_df$N_Ref))
     if (any(!is.na(n) & n < 12))
       out <- c(out, paste0("Fewer than 12 evaluable subjects (smallest: ", min(n, na.rm = TRUE),
-                           "). ICH M13A (2.2.3.1) does not accept a pivotal study with fewer than 12."))
+                           "). ICH M13A (2.2.3.1) does not accept a pivotal study with fewer than 12, so the verdict is a ",
+                           "statistical result only."))
   }
   if (!isTRUE(is_ss) && "AUCPEO" %in% names(nca_res)) {
     pe <- suppressWarnings(as.numeric(nca_res$AUCPEO)); pe <- pe[!is.na(pe)]

@@ -426,6 +426,11 @@ path_multi_nca_server <- function(id, shared) {
         if (any(is_pauc))
           showNotification("Partial AUCs: see the notes above the results.", type = "warning", duration = 8)
 
+        # A pre-dose concentration above 5% of Cmax (single dose), as the
+        # bioequivalence checks report it
+        if (!isTRUE(settings$is_steady_state))
+          nca_warnings <- c(nca_warnings, predose_above_5pct_note(shared$pk_data, shared$col_map, verdict = FALSE))
+
         # Store and surface any degenerate-profile exclusions
         if (length(nca_warnings) > 0) {
           nca_excl_note(nca_warnings)  # persists as alert in results panel
@@ -1008,7 +1013,8 @@ path_multi_nca_server <- function(id, shared) {
             lz_overrides   = if (length(lz_state$overrides_log) > 0) lz_state$overrides_log else NULL,
             viz_settings   = shared$viz_settings,
             read_args      = read_args,
-            adnca          = adnca_rec
+            adnca          = adnca_rec,
+            checks         = record_checks(shared$qc_result, c(nca_excl_note(), pauc_notes()))
           )
           notify_reproduction(rec_out)
           if (!is.null(fallback_dir)) unlink(fallback_dir, recursive = TRUE)

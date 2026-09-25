@@ -4440,6 +4440,50 @@ check("MRV-02", "P-02: values set by a BLQ rule do not end the lag time, and Rul
   method = "BLQ at 0, 0.5 and 1 h, first measurable at 1.5 h (LLOQ 1), and a profile BLQ throughout; Rules 1 to 6, batch and single profile",
   expected = "Tlag 1 h under every rule (Rules 3, 4 and 6 gave 0); the all-BLQ profile stays 0 under Rule 6 (was LLOQ/2, Cmax 0.5) and gets no NCA row")
 
+check("MRV-03", "R-01: a verdict that includes data M13A excludes says it is not the primary analysis; the batch checks the pre-dose value too",
+  tryCatch({
+    th <- read.csv("data/example_theoph.csv", stringsAsFactors = FALSE)
+    tcm <- list(subject = "Subject", time = "Time", conc = "conc")
+    nb <- predose_above_5pct_note(th, tcm, verdict = FALSE); nv <- predose_above_5pct_note(th, tcm)
+    few <- be_m13a_checks(rel_be, rel_be_cm, suppressWarnings(run_nca(rel_be, rel_be_cm, rel_st(trap = "linear"))),
+                          data.frame(Parameter = "CMAX", N_Test = 10, N_Ref = 10))
+    mn <- paste(readLines("R/mod_path_multi_nca.R", warn = FALSE), collapse = "\n")
+    grepl("in 1 profile(s): 1.", nb, fixed = TRUE) && grepl("carry-over", nb, fixed = TRUE) &&
+      !grepl("verdicts shown", nb, fixed = TRUE) &&
+      grepl("not the M13A primary analysis", nv, fixed = TRUE) && grepl("run the analysis again", nv, fixed = TRUE) &&
+      any(grepl("statistical result only", few, fixed = TRUE)) &&
+      grepl("predose_above_5pct_note(shared$pk_data, shared$col_map, verdict = FALSE)", mn, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-BE-11", critical = FALSE,
+  method = "example_theoph.csv (subject 1: pre-dose 0.74 of Cmax 10.5 mg/L) in the batch and bioequivalence wording; N = 10",
+  expected = "Batch names subject 1 (was no check); the BE note says the verdicts are not the M13A primary analysis; N < 12 is a statistical result only")
+
+check("MRV-04", "R-10: the Analysis Record holds the data quality findings and the notes shown with the results",
+  tryCatch({
+    wd <- file.path(tempdir(), paste0("mrv04", as.integer(runif(1, 1, 1e7)))); dir.create(wd)
+    f <- file.path(wd, "input.csv"); write.csv(mrv_xo, f, row.names = FALSE)
+    d <- prepare_pk_dataset(read_pk_file(f), mrv_cm, list(lloq = 0, blq_rule = "rule1"))$data
+    res <- suppressWarnings(run_nca(d, mrv_cm, mrv_st()))
+    qc <- run_data_quality_check(read_pk_file(f), mrv_cm)
+    note <- "Fewer than 12 evaluable subjects (smallest: 6). ICH M13A (2.2.3.1) does not accept a pivotal study"
+    ck <- record_checks(qc, c(note, note, NA))
+    zp <- file.path(wd, "rec.zip")
+    suppressWarnings(create_analysis_record(zp, res, mrv_st(), mrv_cm, f, "input.csv", blq_rule = "rule1", lloq = 0,
+      be_results = list(ci_table = data.frame(Parameter = "CMAX"), anova = list()), checks = ck))
+    ex <- rec_unzip(zp)
+    sh <- openxlsx::read.xlsx(file.path(ex, "results.xlsx"), sheet = "Checks")
+    html <- paste(readLines(file.path(ex, "analysis_summary.html"), warn = FALSE), collapse = "\n")
+    src <- paste(c(readLines("R/mod_path_be.R", warn = FALSE), readLines("R/mod_path_multi_nca.R", warn = FALSE)), collapse = "\n")
+    sum(ck$Message == note) == 1 && sum(ck$Source == "Data quality check") == nrow(qc$findings) &&
+      any(sh$Message == note) && grepl("10. Checks and Notes", html, fixed = TRUE) &&
+      grepl("does not accept a pivotal study", html, fixed = TRUE) &&
+      grepl("checks         = record_checks(shared$qc_result, be_result()$m13a)", src, fixed = TRUE) &&
+      grepl("checks         = record_checks(shared$qc_result, c(nca_excl_note(), pauc_notes()))", src, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-EXP-01", critical = FALSE,
+  method = "Record of the crossover example with its quality findings and an M13A note (given twice and once missing)",
+  expected = "results.xlsx has a Checks sheet and the summary a Checks and Notes section with the note once (the record had neither)")
+
 end_section("MRV")
 
 # =============================================================================

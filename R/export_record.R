@@ -112,10 +112,34 @@ write_integrity_manifest <- function(rec_dir, artifacts) {
 
 #' Generate the analysis summary HTML document
 #' @return Character string containing HTML
+#' The checks a user saw with the results, as one table for the record
+#'
+#' Data quality findings from the upload and the notes of the analysis (ICH
+#' M13A checks, Welch interval, excluded profiles, partial AUC notes), so the
+#' record carries them and not only the screen.
+#' @param qc_result run_data_quality_check() result, or NULL
+#' @param notes character vector of analysis notes
+#' @return data.frame(Source, Severity, Message, Detail)
+record_checks <- function(qc_result = NULL, notes = character(0)) {
+  out <- data.frame(Source = character(0), Severity = character(0), Message = character(0),
+                    Detail = character(0), stringsAsFactors = FALSE)
+  f <- qc_result$findings
+  if (is.data.frame(f) && nrow(f) > 0)
+    out <- rbind(out, data.frame(Source = "Data quality check", Severity = as.character(f$Severity),
+                                 Message = as.character(f$Message),
+                                 Detail = if ("Detail" %in% names(f)) as.character(f$Detail) else "",
+                                 stringsAsFactors = FALSE))
+  notes <- unique(as.character(notes[!is.na(notes) & nzchar(notes)]))
+  if (length(notes) > 0)
+    out <- rbind(out, data.frame(Source = "Analysis", Severity = "NOTE", Message = notes, Detail = "",
+                                 stringsAsFactors = FALSE))
+  out
+}
+
 generate_summary_html <- function(settings, col_map, file_name, file_hash,
                                    blq_rule, lloq, analyst, study_name,
                                    n_subjects, n_obs, analysis_type = "NCA",
-                                   lz_overrides = NULL, reproduction = NULL) {
+                                   lz_overrides = NULL, reproduction = NULL, checks = NULL) {
   
   ver <- tryCatch(get("APP_VERSION", envir = globalenv()), error = function(e) "?")
   r_ver <- tryCatch(R.version.string, error = function(e) "R")
@@ -335,6 +359,17 @@ R Foundation for Statistical Computing, Vienna, Austria.</p>
          paste(rows, collapse = '\n'), '\n</table>\n',
          '<p style="font-size:12px;color:#666;">These adjustments are reflected in the results Excel ',
          'and are applied by the reproducibility script (reproduce_analysis.R).</p>\n')
+} else '', if (!is.null(checks)) {
+  esc <- function(x) htmltools::htmlEscape(as.character(x))
+  paste0('<h2>10. Checks and Notes</h2>\n',
+         if (nrow(checks) == 0) '<p>No data quality findings and no notes from the analysis.</p>\n' else paste0(
+           '<p>The data quality findings of the upload and the notes shown with the results ',
+           '(also in results.xlsx, sheet Checks):</p>\n',
+           '<table border="1" cellpadding="4" style="border-collapse: collapse; font-size: 13px;">\n',
+           '<tr style="background:#eee;"><th>Source</th><th>Severity</th><th>Message</th><th>Detail</th></tr>\n',
+           paste0('<tr><td>', esc(checks$Source), '</td><td>', esc(checks$Severity), '</td><td>',
+                  esc(checks$Message), '</td><td>', esc(checks$Detail), '</td></tr>', collapse = '\n'),
+           '\n</table>\n'))
 } else '', '
 
 <div class="footer">
@@ -373,7 +408,8 @@ create_analysis_record <- function(output_path, results, settings, col_map,
                                     lz_overrides = NULL,
                                     viz_settings = NULL,
                                     read_args = NULL,
-                                    adnca = NULL) {
+                                    adnca = NULL,
+                                    checks = NULL) {
   
   # The name comes from the browser: keep only the file name, never a path
   original_file_name <- basename(original_file_name)
@@ -428,6 +464,12 @@ create_analysis_record <- function(output_path, results, settings, col_map,
     }
     add_cdisc_code_sheet(wb, names(results)[vapply(results, is.numeric, logical(1))],
                          settings$admin_route, isTRUE(settings$is_steady_state))
+    if (!is.null(checks)) {
+      openxlsx::addWorksheet(wb, "Checks")
+      openxlsx::writeData(wb, "Checks", if (nrow(checks) > 0) checks else
+        data.frame(Source = "", Severity = "", Message = "No data quality findings and no notes from the analysis.",
+                   Detail = ""))
+    }
     openxlsx::saveWorkbook(wb, file.path(rec_dir, "results.xlsx"), overwrite = TRUE)
   }, error = function(e) warning("Could not create results.xlsx: ", e$message))
 
@@ -526,7 +568,7 @@ create_analysis_record <- function(output_path, results, settings, col_map,
     html <- generate_summary_html(settings, col_map, original_file_name,
                                    data_sha256, blq_rule, lloq, analyst,
                                    study_name, n_subjects, n_obs, analysis_type,
-                                   lz_overrides, reproduction = verdict)
+                                   lz_overrides, reproduction = verdict, checks = checks)
     writeLines(html, file.path(rec_dir, "analysis_summary.html"))
   }, error = function(e) warning("Could not create summary HTML: ", e$message))
 
