@@ -381,7 +381,8 @@ profile_data_rows <- function(data, col_map, label) {
 #'   Rule 1: Pre-first-quantifiable set to 0; post-last-quantifiable set to Missing
 #'   Rule 2: All BLQ set to 0
 #'   Rule 3: All BLQ set to Missing (NA)
-#'   Rule 4: All BLQ set to LLOQ/2 (a pre-dose sample at time <= 0: 0)
+#'   Rule 4: Before and between measurable values set to LLOQ/2 (a pre-dose
+#'           sample at time <= 0: 0); after the last measurable value Missing
 #'   Rule 5: Pre-Cmax BLQ = 0; post-Cmax BLQ = Missing
 #'   Rule 6: After dosing and before the first quantifiable value: LLOQ/2;
 #'           all other BLQ (including a pre-dose sample) set to 0
@@ -429,9 +430,25 @@ apply_blq_rules <- function(data, col_map, rule = "rule1", lloq = 0) {
     data[[conc_col]][data[[BLQ_FLAG_COLUMN]]] <- NA
     
   } else if (rule == "rule4") {
-    # All BLQ -> LLOQ/2, except before dosing: a BLQ pre-dose sample is 0, as
-    # LLOQ/2 there would mean drug before the dose (and remove the lag time)
-    data[[conc_col]][data[[BLQ_FLAG_COLUMN]]] <- lloq / 2
+    # BLQ before and between measurable values -> LLOQ/2; after the last
+    # measurable value -> missing, so Tlast and Clast stay the last measured
+    # concentration (an imputed tail moved Tlast and inflated AUClast and the
+    # extrapolation to infinity). A BLQ pre-dose sample is 0: LLOQ/2 there
+    # would mean drug before the dose and remove the lag time.
+    for (s in unique(prof_key)) {
+      idx <- profile_idx(s)
+      sub <- data[idx, ]
+      quant_idx <- which(!sub[[BLQ_FLAG_COLUMN]] & !is.na(sub[[conc_col]]))
+      blq_here <- idx[sub[[BLQ_FLAG_COLUMN]]]
+      if (length(quant_idx) == 0) {
+        data[[conc_col]][blq_here] <- NA
+        next
+      }
+      last_quant <- max(quant_idx)
+      data[[conc_col]][intersect(idx[seq_len(last_quant)], blq_here)] <- lloq / 2
+      if (last_quant < length(idx))
+        data[[conc_col]][intersect(idx[(last_quant + 1):length(idx)], blq_here)] <- NA
+    }
     data[[conc_col]][data[[BLQ_FLAG_COLUMN]] & predose] <- 0
     
   } else if (rule == "rule5") {

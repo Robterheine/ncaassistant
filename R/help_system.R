@@ -156,7 +156,7 @@ help_blq_rules <- info_btn("help_blq_rules", "Which BLQ rule should I use?",
   <br><br>
   <b>Rule 3</b>: Treat all BLQ as missing. Early BLQ samples no longer anchor the start of the curve.
   <br><br>
-  <b>Rule 4</b>: Set all BLQ after dosing to half the LLOQ (LLOQ/2). These values are not used for the half-life.
+  <b>Rule 4</b>: Before and between measurable values → LLOQ/2; after the last measurable value → missing. These values are not used for the half-life.
   <br><br>
   <b>Rule 5</b>: Before Cmax → 0; after Cmax → missing.
   <br><br>

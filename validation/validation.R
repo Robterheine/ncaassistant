@@ -240,9 +240,9 @@ check("DAT-BLQ-03", "BLQ Rule 3: all=NA",
       { d <- apply_blq_rules(bb,bc,"rule3",bl); all(is.na(d$Conc[c(1,2,6,7)])) },
       "URS-DAT-04", method="Rule 3", expected="BLQ=NA", critical=TRUE)
 
-check("DAT-BLQ-04", "BLQ Rule 4: all=LLOQ/2 after dosing, pre-dose=0",
-      { d <- apply_blq_rules(bb,bc,"rule4",bl); d$Conc[1]==0 && all(d$Conc[c(2,6,7)]==0.5) },
-      "URS-DAT-04", method="Rule 4", expected="BLQ=0.5; BLQ at t=0 -> 0", critical=TRUE)
+check("DAT-BLQ-04", "BLQ Rule 4: LLOQ/2 before the last measurable value, missing after, pre-dose=0",
+      { d <- apply_blq_rules(bb,bc,"rule4",bl); d$Conc[1]==0 && d$Conc[2]==0.5 && all(is.na(d$Conc[6:7])) },
+      "URS-DAT-04", method="Rule 4", expected="t=0 [0], t=0.5 [0.5], after the last measurable [NA, NA]", critical=TRUE)
 
 check("DAT-BLQ-05", "BLQ Rule 5: pre-Cmax=0 post=NA",
       { d <- apply_blq_rules(bb,bc,"rule5",bl); d$Conc[1]==0 && d$Conc[2]==0 && is.na(d$Conc[6]) && is.na(d$Conc[7]) },
@@ -296,11 +296,12 @@ check("DAT-PREP-03", "BLQ text ('<x', 'BLQ') reaches the BLQ rule",
     ds <- prepare_pk_dataset(prep_raw, prep_cm, list(lloq = 0.5, blq_rule = "rule4"))
     d <- ds$data
     ds$blq$text_tokens_converted == 3 &&
-      identical(d$Conc[d$Subject == 2 & d$Time %in% c(0, 4)], c(0, 0.25)) &&
-      identical(d$Conc[d$Subject == 1 & d$Time == 2], 0.25)
+      identical(d$Conc[d$Subject == 2 & d$Time %in% c(0, 4)], c(0, NA)) &&
+      is.na(d$Conc[d$Subject == 1 & d$Time == 2]) &&
+      all(d$BLQ_flag[(d$Subject == 2 & d$Time %in% c(0, 4)) | (d$Subject == 1 & d$Time == 2)])
   }, error = function(e) FALSE),
   "URS-DAT-04", critical = TRUE, method = "rule 4 (LLOQ/2) with '<0.5', '<0,5' and 'BLQ'",
-  expected = "'<' entries and 'BLQ' -> 0.25 after dosing; the pre-dose '<0.5' at t = 0 -> 0")
+  expected = "'<' entries and 'BLQ' flagged as BLQ: the pre-dose '<0.5' -> 0, BLQ after the last measurable value -> missing")
 check("DAT-PREP-04", "Without an LLOQ no BLQ rule is applied and text becomes missing",
   tryCatch({
     ds <- prepare_pk_dataset(prep_raw, prep_cm, list(lloq = 0))
@@ -4333,6 +4334,21 @@ check("REL-57", "R-50: on-screen text uses words, not codes, and consistent spel
   }, error = function(e) FALSE),
   "URS-UI-01", critical = FALSE, method = "design_label(); module and help text",
   expected = "Design shown in words; British spelling in prose; help and refusal texts match the app")
+
+check("REL-58", "Tlast under Rule 4 is the last measured concentration",
+  tryCatch({
+    tt <- c(0, 0.5, 1, 2, 4, 6, 8, 12, 16, 24, 36, 48)
+    cc <- 100 * (exp(-0.2 * tt) - exp(-1.5 * tt)); cc[tt >= 24] <- 0.5; cc[tt == 6] <- 0.5
+    d <- data.frame(ID = "1", T = tt, C = cc)
+    st <- rel_st(trap = "linear"); st$r2adj_threshold <- 0.7
+    r <- function(rule) suppressWarnings(run_nca(prepare_pk_dataset(d, rel_cm, list(lloq = 2, blq_rule = rule))$data, rel_cm, st))
+    r1 <- r("rule1"); r4 <- r("rule4")
+    p4 <- prepare_pk_dataset(d, rel_cm, list(lloq = 2, blq_rule = "rule4"))$data
+    r4$TLST == 16 && r4$TLST == r1$TLST && abs(r4$CLST - r1$CLST) < 1e-12 &&
+      p4$C[p4$T == 6] == 1 && all(is.na(p4$C[p4$T >= 24])) && r4$AUCLST > r1$AUCLST
+  }, error = function(e) FALSE),
+  "URS-DAT-04", critical = TRUE, method = "Oral profile, BLQ at 6 h (embedded) and from 24 h (LLOQ 2), Rules 1 and 4",
+  expected = "Tlast 16 h and the same Clast under both rules (Rule 4 gave 48 h); the embedded BLQ is LLOQ/2 under Rule 4")
 
 end_section("REL")
 
