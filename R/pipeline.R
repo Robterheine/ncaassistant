@@ -825,6 +825,9 @@ steady_state_parameters <- function(r, time, conc, tau, lamz_rejected = FALSE) {
   swing <- if (!is.na(cmin) && cmin > 0) (cmax - cmin) / cmin else NA_real_
   scale <- if (!is.na(auctau) && auctau > 0 && !is.na(auclst)) auclst / auctau else NA_real_
   for (n in intersect(c("CLFO", "CLO", "VZFO", "VZO"), names(r))) r[[n]] <- get(n) * scale
+  # NonCompart's Vss (AUMC/AUC over the samples x CL) and MRT to the last
+  # sample are single-dose quantities; at steady state they are left empty
+  for (n in intersect(c("VSSO", "VSSP", "MRTIVLST", "MRTEVLST"), names(r))) r[[n]] <- NA_real_
   r[["AUCTAU"]] <- auctau
   r[["TAU"]] <- tau
   r[["CAVG"]] <- cavg

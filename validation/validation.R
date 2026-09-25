@@ -4223,6 +4223,17 @@ check("REL-49", "R-39: no label is lost in a non-UTF-8 locale",
   "URS-GEN-01", critical = FALSE, method = "Parse every source file with LC_ALL=C",
   expected = "No 'unable to translate' warning (was 12 choice labels)")
 
+check("REL-50", "R-41: single-dose Vss and MRT are not reported at steady state",
+  tryCatch({
+    st <- rel_st(route = "iv_bolus", ss = TRUE, tau = 12); st$dose <- 1000
+    t <- c(0, 0.25, 0.5, 1, 2, 4, 6, 8, 12); cc <- c(40, 700, 560, 380, 220, 120, 90, 70, 42)
+    r <- run_single_nca(t, cc, st)
+    b <- run_nca(data.frame(ID = "1", T = t, C = cc), rel_cm, st)
+    is.na(r[["VSSO"]]) && is.na(r[["MRTIVLST"]]) && is.na(b$VSSO) && !is.na(r[["CLO"]])
+  }, error = function(e) FALSE),
+  "URS-NCA-07", critical = FALSE, method = "Steady-state IV bolus, single profile and batch",
+  expected = "Vss and MRT to last empty (NonCompart's values are single-dose quantities); CL kept")
+
 end_section("REL")
 
 # =============================================================================
