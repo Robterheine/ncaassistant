@@ -17,6 +17,7 @@ rows = list(csv.DictReader(open("validation/validation_results.csv", encoding="u
 auto = [r for r in rows if r["Result"] != "SKIP"]
 man  = [r for r in rows if r["Section"] == "MAN"]
 assert all(r["Result"] == "PASS" for r in auto), "reference run must pass"
+V = re.search(r'^APP_VERSION <- "([^"]+)"', open("app.R", encoding="utf-8").read(), re.M).group(1)
 
 def set_text(par, text):
     if not par.runs: par.add_run(text); return
@@ -25,6 +26,11 @@ def set_text(par, text):
 def set_cell(c, text): set_text(c.paragraphs[0], text)
 def para(start):
     h = [p for p in d.paragraphs if p.text.startswith(start)]; assert len(h) == 1, start; return h[0]
+def table_after(par):
+    """The first table after a paragraph; tables are found by heading, not by position"""
+    el = par._p.getnext()
+    while not el.tag.endswith("}tbl"): el = el.getnext()
+    return [t for t in d.tables if t._tbl is el][0]
 
 def fill(table, data):
     """Keep header + first data row as template; one row per item."""
@@ -40,29 +46,29 @@ def test_rows(sec): return [[r["ID"], r["Test"], r["Method"], r["Expected"], r["
                             for r in auto if r["Section"] == sec]
 
 # --- Front matter ---------------------------------------------------------------
-set_text(para("NCA Assistant v"), "NCA Assistant v1.5.0")
+set_text(para("NCA Assistant v"), f"NCA Assistant v{V}")
 # the running header carries the version too, and drifted to v1.2 once
 for sec in d.sections:
     for hp in sec.header.paragraphs:
         if "IQ/OQ/PQ Protocol" in hp.text:
-            set_text(hp, "NCA Assistant v1.5.0 \u2014 IQ/OQ/PQ Protocol")
+            set_text(hp, f"NCA Assistant v{V} \u2014 IQ/OQ/PQ Protocol")
 set_text(para("This protocol defines"),
-  "This protocol defines the IQ, OQ, and PQ procedures for NCA Assistant v1.5.0. Execute: Rscript validation/validation.R "
+  f"This protocol defines the IQ, OQ, and PQ procedures for NCA Assistant v{V}. Execute: Rscript validation/validation.R "
   "from the project root. The test tables below list every automated test with the method, expected result, URS "
   f"reference and classification exactly as defined in validation.R ({len(auto)} automated, {len(man)} manual). "
   "Record the outcome of your own run in the Result column, or attach validation_results.csv.")
 for r in d.tables[0].rows:
     if r.cells[0].text == "Date": set_cell(r.cells[1], "September 2026")
 
-env = d.tables[1]
+env = table_after(para("1.1 Test Environment"))
 names = [r.cells[0].text for r in env.rows]
 tpl = env.rows[names.index("digest")]._tr
 for extra in [e for e in ["replicateBE (validation only)", "shiny", "Validation script SHA-256"] if e not in names]:
     new = copy.deepcopy(tpl); env.rows[names.index("Executed by")]._tr.addprevious(new)
     set_cell([x for x in env.rows if x._tr is new][0].cells[0], extra)
 
-set_text([p for p in d.paragraphs if p.text.endswith("tests.") or " tests: R version" in p.text][0], f"{sum(r['Section']=='IQ' for r in auto)} tests: R version, required packages, and that every source file parses.")
-fill(d.tables[2], test_rows("IQ"))
+set_text([p for p in d.paragraphs if " tests: R version" in p.text][0], f"{sum(r['Section']=='IQ' for r in auto)} tests: R version, required packages, that every source file parses, and that the installed files and package versions match the release manifest and lockfile.")
+fill(table_after(para("2. Installation Qualification")), test_rows("IQ"))
 
 # --- Section 3: rebuild subsections ---------------------------------------------------
 sections = [("DAT", "Data Handling (OQ)"), ("NCA", "NCA (OQ/PQ)"), ("BE", "Bioequivalence (OQ/PQ)"),
@@ -72,7 +78,7 @@ sections = [("DAT", "Data Handling (OQ)"), ("NCA", "NCA (OQ/PQ)"), ("BE", "Bioeq
             ("REP", "Replicate Designs (OQ/PQ)"), ("REC", "Analysis Records (PQ)"),
             ("CONV", "ADNCA Conversion (OQ)"), ("REV", "First Adversarial Review (OQ)"),
             ("REV2", "Second Review, Part 1 (OQ)"), ("REV3", "Second Review, Part 2 (OQ)"), ("REV4", "Statistical Audit (OQ/PQ)"),
-            ("PAUC", "Partial AUC (OQ/PQ)")]
+            ("PAUC", "Partial AUC (OQ/PQ)"), ("REL", "Release Review v1.5.0 (OQ/PQ)")]
 known = {s for s, _ in sections} | {"IQ", "MAN"}
 assert {r["Section"] for r in rows} <= known, {r["Section"] for r in rows} - known
 
@@ -80,7 +86,7 @@ body = d.element.body
 start = para("Execute: Rscript validation/validation.R")._p
 end = para("4. Manual Tests")._p
 heading_tpl = copy.deepcopy(para("3.1 ")._p)
-table_tpl = copy.deepcopy(d.tables[4]._tbl)
+table_tpl = copy.deepcopy(table_after(para("3.1 "))._tbl)
 blank_tpl = copy.deepcopy(start.getnext()) if start.getnext().tag.endswith("}p") and not "".join(start.getnext().itertext()).strip() else None
 el = start.getnext()
 while el is not end:
@@ -100,10 +106,10 @@ man_t = [t for t in tables if len(t.columns) > 2 and t.rows[0].cells[2].text == 
 fill(man_t, [[r["ID"], r["Test"], r["Method"], r["Expected"], r["URS_Ref"], "", ""] for r in man])
 
 src = open("validation/validation.R", encoding="utf-8").read()
-urs_all = (["URS-GEN-01"] + [f"URS-GEN-0{i}" for i in (3,4,5,6)] + [f"URS-DAT-0{i}" for i in range(1,8)] +
-           [f"URS-NCA-{i:02d}" for i in range(1,15)] + [f"URS-BE-0{i}" for i in range(1,10)] + ["URS-BE-10"] +
+urs_all = (["URS-GEN-01"] + [f"URS-GEN-0{i}" for i in range(3,10)] + [f"URS-DAT-0{i}" for i in range(1,9)] +
+           [f"URS-NCA-{i:02d}" for i in range(1,15)] + [f"URS-BE-{i:02d}" for i in range(1,12)] +
            [f"URS-PWR-0{i}" for i in range(1,7)] + [f"URS-EXP-0{i}" for i in range(1,9)] +
-           [f"URS-UI-0{i}" for i in range(1,5)] + [f"URS-VIZ-0{i}" for i in range(1,10)])
+           [f"URS-UI-0{i}" for i in range(1,6)] + [f"URS-VIZ-0{i}" for i in range(1,10)])
 def refs(r): return [x.strip() for x in r["URS_Ref"].split(",")]
 tr_rows = []
 for u in urs_all:

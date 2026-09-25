@@ -10,8 +10,8 @@ This folder contains the validation package for NCA Assistant v1.6.0. It follows
 |------|-------------|
 | `validation.R` | Consolidated validation script (Attachment A to the IQ/OQ/PQ protocol) |
 | `make_iqoqpq.py` | Regenerates the test tables, traceability matrix and counts of the IQ/OQ/PQ protocol from `validation_results.csv` (needs python-docx) |
-| `NCA_Assistant_URS.docx` | User Requirement Specification — 63 requirements across 8 categories |
-| `NCA_Assistant_IQOQPQ.docx` | IQ/OQ/PQ protocol — every test listed individually with method, expected result, URS cross-reference, and criticality |
+| `NCA_Assistant_URS.docx` | User Requirement Specification — 69 requirements across 8 categories, with a hazard-based FMEA |
+| `NCA_Assistant_IQOQPQ.docx` | IQ/OQ/PQ protocol — approval before execution, a checklist for adopting organisations, every test listed individually with method, expected result, URS cross-reference, and criticality, and a template for the user's own PQ |
 | `fixtures/` | Committed test data (crossover, replicate and ADNCA-shaped files, plus reference values from `replicateBE`) and the deterministic scripts that generate them |
 | `make_release_files.R` | Writes `renv.lock` and `release_manifest.csv` when a release is tagged |
 | `renv.lock` | The package versions the release was validated with. `renv::restore(lockfile = "validation/renv.lock")` rebuilds that library. It sits here rather than in the project root, where rsconnect would pick it up when deploying |
@@ -122,7 +122,7 @@ Total: 470 (auto: 421, manual: 49)
 
 ALL CRITICAL TESTS PASSED
 
-URS: 63/63 covered (59 by automated tests; manual tests only: URS-BE-06, URS-BE-08, URS-PWR-04, URS-UI-02)
+URS: 69/69 covered (65 by automated tests; manual tests only: URS-BE-06, URS-BE-08, URS-PWR-04, URS-UI-02)
 
 Results: validation/validation_results.csv
 ```
@@ -139,13 +139,14 @@ The `validation_results.csv` file records each test's ID, name, section, classif
 
 ## Adapting for Your Organisation
 
-The validation package is provided as a starting point. Before use in a regulated environment:
+The validation package is provided as a starting point. Section 1.3 of `NCA_Assistant_IQOQPQ.docx` holds the full checklist. Before use in a regulated environment:
 
 1. **Execute the validation script** in your target environment and retain the console output, `validation_results.csv` and `validation_environment.txt` as evidence. Install from a tagged release, so that IQ-REL-01 and IQ-REL-02 can confirm the files and package versions are the validated ones.
-2. **Complete the manual tests** in `NCA_Assistant_IQOQPQ.docx` using a running app instance. Record the actual results and tester signatures in the protocol.
-3. **Review the URS** (`NCA_Assistant_URS.docx`) against your organisation's requirements. Add or remove requirements as appropriate and re-run the validation script to confirm coverage.
-4. **Perform a risk assessment** for any SUPPORTIVE test failures or requirements not applicable to your use case.
-5. **Retain all documents** (URS, IQ/OQ/PQ protocol, validation results, risk assessments) in your quality management system.
+2. **Complete the manual OQ tests** in `NCA_Assistant_IQOQPQ.docx` using a running app instance. Record the actual results and tester signatures in the protocol.
+3. **Carry out the user PQ** (section 5 of the protocol): analyse datasets like your own studies and compare the results with an independent reference.
+4. **Review the URS** (`NCA_Assistant_URS.docx`) against your organisation's requirements. Add or remove requirements as appropriate and re-run the validation script to confirm coverage.
+5. **Perform a risk assessment** for any SUPPORTIVE test failures or requirements not applicable to your use case.
+6. **Retain all documents** (URS, IQ/OQ/PQ protocol, validation results, risk assessments) in your quality management system.
 
 The documents name the application version they were produced for, but carry no document version of their own, in the file name or elsewhere, so they can go into your document management system under your own versioning scheme.
 

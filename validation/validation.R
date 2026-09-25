@@ -157,7 +157,7 @@ check("IQ-REL-01", "App files match the release manifest",
       all(vapply(seq_len(nrow(m)), function(i) file.exists(m$file[i]) &&
                    identical(digest(file = m$file[i], algo = "sha256"), m$sha256[i]), logical(1)))
   }, error = function(e) FALSE),
-  "URS-GEN-01", method = "SHA-256 of app.R, R/, converters/, cdisc/ and www/ against validation/release_manifest.csv",
+  "URS-GEN-01, URS-GEN-08", method = "SHA-256 of app.R, R/, converters/, cdisc/ and www/ against validation/release_manifest.csv",
   expected = "Every file matches the manifest of this version", critical = TRUE)
 check("IQ-REL-02", "Installed packages are the validated versions",
   tryCatch({
@@ -167,7 +167,7 @@ check("IQ-REL-02", "Installed packages are the validated versions",
     length(direct) > 0 && all(vapply(direct, function(p)
       identical(utils::packageDescription(p)$Version, lock[[p]]$Version), logical(1)))
   }, error = function(e) FALSE),
-  "URS-GEN-01", method = "Installed package versions (DESCRIPTION) against validation/renv.lock",
+  "URS-GEN-01, URS-GEN-08", method = "Installed package versions (DESCRIPTION) against validation/renv.lock",
   expected = "Same versions; a difference needs a risk assessment", critical = FALSE)
 
 end_section("IQ")
@@ -2582,7 +2582,7 @@ check("REV-05", "The result states which model was fitted, including a failed mi
     identical(fx, "fixed effects") && identical(mx, "mixed effects") && grepl("^fixed effects .*mixed model", fbr$Model) &&
       grepl("^no verdict: the pre-specified mixed model could not be fitted", fbr$Bioequivalent) && !is.na(fbr$Point_Est)
   }, error = function(e) FALSE),
-  "URS-BE-05", critical = TRUE, method = "fixed, mixed, and mixed with lme forced to fail",
+  "URS-BE-05, URS-BE-11", critical = TRUE, method = "fixed, mixed, and mixed with lme forced to fail",
   expected = "Model column says what was fitted; a failed pre-specified mixed model gives no verdict (the fixed-effects estimate is shown)")
 check("REV-06", "Subjects counted are those that contribute to the comparison",
   tryCatch({
@@ -3640,7 +3640,7 @@ check("REL-11", "R-05: a crossover without a mapped Period gets no estimate and 
     with_p$row$Bioequivalent %in% c("YES", "NO") && is.na(no_p$row$Point_Est) && is.null(no_p$estimate) &&
       grepl("^no verdict: a crossover needs the Period column", no_p$row$Bioequivalent)
   }, error = function(e) FALSE),
-  "URS-BE-01", critical = TRUE, method = "2x2x2 fixture with Sequence mapped and Period unmapped",
+  "URS-BE-01, URS-BE-11", critical = TRUE, method = "2x2x2 fixture with Sequence mapped and Period unmapped",
   expected = "No point estimate, CI or verdict; the reason asks for the Period column (was a verdict from a model without period)")
 
 check("REL-12", "R-05: Period is detected from APERIOD and Occasion/OCC columns",
@@ -3664,7 +3664,7 @@ check("REL-13", "R-06: each path's UI is built once, so settings survive leaving
       !any(vapply(paths, function(f) grepl(paste0(f, "("), server_part, fixed = TRUE), logical(1))) &&
       grepl("nav_select(\"main_nav\"", server_part, fixed = TRUE)
   }, error = function(e) FALSE),
-  "URS-UI-03", critical = TRUE, method = "Static check of app.R; confirmed in the running app (dose 4.02 kept after Home and back)",
+  "URS-UI-03, URS-GEN-09", critical = TRUE, method = "Static check of app.R; confirmed in the running app (dose 4.02 kept after Home and back)",
   expected = "Every path UI appears once in the page definition and never in a server-side renderUI")
 
 check("REL-14", "R-07: a planner result is cleared when an input changes after the calculation",
@@ -3683,7 +3683,7 @@ check("REL-14", "R-07: a planner result is cleared when an input changes after t
     }))
     ok
   }, error = function(e) FALSE),
-  "URS-PWR-01", critical = TRUE, method = "shiny::testServer on the planner: calculate at CV 20%, then change the CV to 40%",
+  "URS-PWR-01, URS-GEN-09", critical = TRUE, method = "shiny::testServer on the planner: calculate at CV 20%, then change the CV to 40%",
   expected = "N from PowerTOST after Calculate; no result after the CV changes (was N = 20 shown next to a CV of 40%)")
 
 check("REL-15", "R-07: NCA and bioequivalence results are cleared when their settings change",
@@ -3702,7 +3702,7 @@ check("REL-15", "R-07: NCA and bioequivalence results are cleared when their set
       grepl("be_result(NULL); balance_result(NULL)", be, fixed = TRUE) &&
       grepl("v %in% names(raw_data())", rd("R/mod_data_upload.R"), fixed = TRUE)
   }, error = function(e) FALSE),
-  "URS-NCA-05", critical = TRUE,
+  "URS-NCA-05, URS-GEN-09", critical = TRUE,
   method = "Static check of the modules; checked in the running app (unit change cleared the All Subjects table, CI level change cleared the BE results, parameters kept after a run)",
   expected = "Units, method, route, steady state, limits, CI level, Reference and model are watched; BE keeps the compared parameters; a half-life recalculation clears the BE result; mappings only name columns of the current file")
 
@@ -3722,7 +3722,7 @@ check("REL-16", "R-08: widened limits apply to Cmax only unless all metrics are 
       auc_a$BE_Lower == 69.84 && auc_a$Bioequivalent == "YES" && cmax_c$BE_Lower == 69.84 &&
       !is.na(vd("CMAX")$ABEL_lower) && is.na(vd("AUCLST")$ABEL_lower)
   }, error = function(e) FALSE),
-  "URS-BE-07", critical = TRUE,
+  "URS-BE-07, URS-BE-11", critical = TRUE,
   method = "Limits 69.84-143.19% with Test AUClast scaled by 0.90; variability panel on the highly variable fixture",
   expected = "AUClast judged against 80-125% (NO) unless 'all metrics' (YES); Cmax keeps the widened limits; implied ABEL limits for Cmax only")
 
@@ -3775,7 +3775,7 @@ check("REL-19", "R-10: ICH M13A checks flag a high pre-dose value, fewer than 12
       grepl(paste0("^", d$Subject[1], " \\| "), sub("^.*profile\\(s\\): ", "", pre)) &&
       length(few) == 1 && grepl("Fewer than 12", few) && length(poor) == 1 && grepl("6 of", poor) && length(ss) == 0
   }, error = function(e) FALSE),
-  "URS-BE-01", critical = FALSE, method = "be_m13a_checks() on the 2x2x2 fixture with a period-2 pre-dose value at 20% of Cmax, 10 subjects, 6 profiles with AUC%extrap 25%",
+  "URS-BE-01, URS-BE-11", critical = FALSE, method = "be_m13a_checks() on the 2x2x2 fixture with a period-2 pre-dose value at 20% of Cmax, 10 subjects, 6 profiles with AUC%extrap 25%",
   expected = "No message for the clean fixture; one message for each problem, naming the profile; none at steady state")
 
 check("REL-20", "R-10: M13A is cited and the default comparison is Cmax and AUC(0-t)",
@@ -3786,7 +3786,7 @@ check("REL-20", "R-10: M13A is cited and the default comparison is Cmax and AUC(
       grepl('selected = c("CMAX", "AUCLST"))', be, fixed = TRUE) && !grepl("EMA: all terms fixed", be, fixed = TRUE) &&
       grepl("output$m13a_note", be, fixed = TRUE)
   }, error = function(e) FALSE),
-  "URS-BE-01", critical = FALSE, method = "Static check of the Methods page and the Bioequivalence module",
+  "URS-BE-01, URS-BE-11", critical = FALSE, method = "Static check of the Methods page and the Bioequivalence module",
   expected = "M13A in the references; Cmax and AUClast selected by default; the M13A checks are shown")
 
 check("REL-21", "R-11: text after row 1000 of an Excel file is read, in flat and ADNCA uploads",
@@ -3830,7 +3830,7 @@ check("REL-22", "R-12: units stated in the data are pre-selected and a contradic
       identical(flat$conc$unit, "ng/mL") && identical(flat$time$unit, "h") && is.null(flat$dose) && wired &&
       identical(units_in_data(data.frame(AVALU = "\u00b5g/mL"))$conc$unit, "ug/mL")
   }, error = function(e) FALSE),
-  "URS-NCA-05", critical = TRUE, method = "ADNCA example with AVALU ug/mL and RRLTU DAYS; flat file with ConcUnit and TimeUnit columns",
+  "URS-NCA-05, URS-DAT-08", critical = TRUE, method = "ADNCA example with AVALU ug/mL and RRLTU DAYS; flat file with ConcUnit and TimeUnit columns",
   expected = "Units mapped to the app's choices; ng/mL and h refused with the column named; the paths pre-select and check them")
 
 check("REL-23", "R-13: the planner gets the kind of CV its design and method need",
@@ -3933,7 +3933,7 @@ check("REL-27", "R-17/R-18: records use private folders, and the app states wher
       grepl("Intended use", app, fixed = TRUE) && grepl("Posit PBC", DATA_PROTECTION_NOTICE, fixed = TRUE) &&
       !grepl('label = "Validated"', rd("R/utils.R"), fixed = TRUE)
   }, error = function(e) FALSE),
-  "URS-GEN-04", critical = TRUE, method = "Build a record and list tempdir(); fallback path; upload page, About page and engine badge text",
+  "URS-GEN-04, URS-GEN-07", critical = TRUE, method = "Build a record and list tempdir(); fallback path; upload page, About page and engine badge text",
   expected = "Each record in its own folder, removed afterwards; fallback copies private and deleted; notice and intended use shown; badge says 'Tested version'")
 
 check("REL-28", "R-19: the planner's own calls give PowerTOST's sample sizes and power",
@@ -4000,7 +4000,7 @@ check("REL-31", "R-20: release files can be generated and the About page shows t
       grepl("Pipeline code SHA-256:", paste(readLines("app.R", warn = FALSE), collapse = "\n"), fixed = TRUE) &&
       grepl("validation_environment.txt", paste(readLines("validation/validation.R", warn = FALSE), collapse = "\n"), fixed = TRUE)
   }, error = function(e) FALSE),
-  "URS-GEN-01", critical = FALSE, method = "make_release_files.R parses and writes the lockfile and manifest; About and environment file",
+  "URS-GEN-01, URS-GEN-08", critical = FALSE, method = "make_release_files.R parses and writes the lockfile and manifest; About and environment file",
   expected = "Release files and environment record in place")
 
 check("REL-32", "R-21: theme colours pass WCAG AA with white text; hub cards and help buttons work without a mouse",
@@ -4019,7 +4019,7 @@ check("REL-32", "R-21: theme colours pass WCAG AA with white text; hub cards and
       grepl("`aria-label` = paste(\"Help:\", title)", all_r, fixed = TRUE) &&
       !grepl("bg-warning text-dark", paste(all_r, app), fixed = TRUE) && grepl("navbar-dark bg-primary", app, fixed = TRUE)
   }, error = function(e) FALSE),
-  "URS-UI-01", critical = FALSE, method = "Contrast of the six theme colours against white; hub card, help button and badge markup",
+  "URS-UI-01, URS-UI-05", critical = FALSE, method = "Contrast of the six theme colours against white; hub card, help button and badge markup",
   expected = "Every theme colour at least 4.5:1 (was 2.2-3.8 for success, info, warning, danger, secondary); keyboard-operable cards; named help buttons")
 
 check("REL-33", "R-22: with chosen half-life points, predicted Clast is taken at Tlast",
@@ -4103,7 +4103,7 @@ check("REL-38", "R-26: exports carry the units of the run; half-life is not labe
       all(enc2utf8(lab) == enc2utf8(c("Half-Life (min)", "Apparent Clearance (CL/F) (L/min)", "AUC to Last Point (ng/mL\u00b7min)"))) &&
       !grepl('"Half-Life (h)"', all_src, fixed = TRUE)
   }, error = function(e) FALSE),
-  "URS-EXP-01", critical = FALSE, method = "Theophylline record with time in minutes; rename_nca_columns() with units",
+  "URS-EXP-01, URS-DAT-08", critical = FALSE, method = "Theophylline record with time in minutes; rename_nca_columns() with units",
   expected = "results.xlsx says Half-Life (min) (was Half-Life (h) over values in minutes); units on every labelled column")
 
 check("REL-39", "R-27: IV clearance and volume are shown in the result card and the default views",
@@ -4129,7 +4129,7 @@ check("REL-40", "R-28: a bioequivalence verdict is given only for the 90% confid
     r90$Bioequivalent %in% c("YES", "NO") && grepl("^no verdict: a bioequivalence verdict uses the 90%", r80$Bioequivalent) &&
       grepl("^no verdict", r95$Bioequivalent) && !is.na(r80$CI_Lower) && r80$CI_Lower > r90$CI_Lower
   }, error = function(e) FALSE),
-  "URS-BE-04", critical = TRUE, method = "2x2x2 fixture at 80%, 90% and 95%",
+  "URS-BE-04, URS-BE-11", critical = TRUE, method = "2x2x2 fixture at 80%, 90% and 95%",
   expected = "Verdict at 90% only; the 80% and 95% intervals are shown without a verdict")
 
 check("REL-41", "R-29: Visualize describes the arithmetic mean as arithmetic and does not clamp log-scale bars",
@@ -4214,14 +4214,14 @@ check("REL-46", "R-36: a new upload clears the analysis state of the previous fi
     }))
     ok
   }, error = function(e) FALSE),
-  "URS-DAT-01", critical = FALSE, method = "shiny::testServer on the upload module with state from an earlier analysis",
+  "URS-DAT-01, URS-GEN-09", critical = FALSE, method = "shiny::testServer on the upload module with state from an earlier analysis",
   expected = "BE results, partial AUC intervals and figure settings cleared when a new file is chosen")
 
 check("REL-47", "R-37: the navbar wraps on a phone instead of widening the page",
   tryCatch(grepl("nav.navbar > .container-fluid { flex-wrap: wrap;",
                  paste(readLines("www/custom.css", warn = FALSE), collapse = "\n"), fixed = TRUE),
            error = function(e) FALSE),
-  "URS-UI-03", critical = FALSE, method = "custom.css; checked in the running app at 375 px (every page 375 px wide, was 457)",
+  "URS-UI-03, URS-UI-05", critical = FALSE, method = "custom.css; checked in the running app at 375 px (every page 375 px wide, was 457)",
   expected = "Navbar items wrap")
 
 check("REL-48", "R-38: dose-normalised values appear once, all labelled, and in the default view",
@@ -4404,8 +4404,8 @@ if (nrow(cf)>0) {
   if(n_fail>0) cat(sprintf("  (%d supportive failures need risk assessment)\n",n_fail))
 }
 
-all_urs <- c(paste0("URS-GEN-0",c(1,3:6)),paste0("URS-DAT-0",1:7),paste0("URS-NCA-",sprintf("%02d",1:14)),
-             paste0("URS-BE-0",1:9),"URS-BE-10",paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:8),paste0("URS-UI-0",1:4),
+all_urs <- c(paste0("URS-GEN-0",c(1,3:9)),paste0("URS-DAT-0",1:8),paste0("URS-NCA-",sprintf("%02d",1:14)),
+             paste0("URS-BE-0",1:9),"URS-BE-10","URS-BE-11",paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:8),paste0("URS-UI-0",1:5),
              paste0("URS-VIZ-0",1:9))
 covered <- unique(unlist(strsplit(results_df$URS_Ref,",\\s*")))
 # Coverage by executed tests only: a requirement whose only tests are manual
