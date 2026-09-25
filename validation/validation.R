@@ -4302,6 +4302,16 @@ check("REL-54", "R-46: data-reading edge cases are read correctly or reported",
   method = "Windows-1252 CSV with IDs 001 and 01; case-variant treatments; a dose varying within a profile; two time columns; sparse and late profiles; a user BLQ_flag column",
   expected = "Latin-1 read with IDs kept distinct; each problem reported; sparse 2-6 h profile accepted, 168 h start refused; user flag dropped; dose normalisation recorded")
 
+check("REL-55", "R-47: CDISC notes state the ISO 8601 interval format and that units are not CT-coded",
+  tryCatch({
+    n <- cdisc_pk_codes("AUC_0_2", "extravascular", FALSE)$Note
+    grepl("ISO 8601", n, fixed = TRUE) &&
+      grepl("not CDISC PKUNIT terms", paste(readLines("R/export_record.R"), collapse = " "), fixed = TRUE) &&
+      grepl("not CDISC PKUNIT terms", paste(readLines("R/utils.R"), collapse = " "), fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-EXP-08", critical = FALSE, method = "cdisc_pk_codes() for a partial AUC; code sheet and panel text",
+  expected = "The PPSTINT/PPENINT note asks for ISO 8601 durations; units are said not to be CT terms")
+
 end_section("REL")
 
 # =============================================================================

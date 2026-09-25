@@ -66,7 +66,8 @@ cdisc_pk_codes <- function(params, admin_route = "extravascular", is_ss = FALSE)
                Note = if (length(iv) > 0 && iv[2] == "AUC")
                  paste0(cand$note, ": PPSTINT ", iv[3], ", PPENINT ",
                         if (iv[4] == "t") "the time of the last measurable concentration" else iv[4],
-                        " (time unit of the data)") else cand$note,
+                        " (in the time unit of the data; SDTM expects ISO 8601 durations such as PT1H)")
+                 else cand$note,
                stringsAsFactors = FALSE)
   })
   do.call(rbind, rows)

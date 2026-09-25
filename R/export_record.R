@@ -1126,7 +1126,8 @@ add_cdisc_code_sheet <- function(wb, params, admin_route, is_ss, sheet = "CDISC_
   openxlsx::addWorksheet(wb, sheet)
   openxlsx::writeData(wb, sheet, cdisc_ct_statement(), startRow = 1)
   openxlsx::writeData(wb, sheet, paste("Code lookup only: these results are not an SDTM PP dataset and",
-                                       "no claim of conformance to CDISC standards is made."), startRow = 2)
+                                       "no claim of conformance to CDISC standards is made. Units are the",
+                                       "app's labels, not CDISC PKUNIT terms."), startRow = 2)
   openxlsx::writeData(wb, sheet, codes, startRow = 4)
   invisible(codes)
 }

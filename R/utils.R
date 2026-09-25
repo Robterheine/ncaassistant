@@ -524,7 +524,7 @@ cdisc_codes_ui <- function(params, admin_route, is_ss) {
                  paste0("CDISC parameter codes (SDTM Controlled Terminology ", rel, ")")),
     tags$p(class = "text-muted mt-2 mb-1", cdisc_ct_statement(),
            " Code lookup only: these results are not an SDTM PP dataset, and no claim of ",
-           "conformance to CDISC standards is made."),
+           "conformance to CDISC standards is made. Units are the app's labels, not CDISC PKUNIT terms."),
     tags$div(style = "max-height: 260px; overflow-y: auto;",
       tags$table(class = "table table-sm table-striped mb-0",
         tags$thead(tags$tr(tags$th("App parameter"), tags$th("PPTESTCD"), tags$th("PPTEST"),
