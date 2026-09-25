@@ -309,8 +309,8 @@ path_power_server <- function(id, shared) {
             tags$strong("Acceptance limits: "), "reference-scaled \u2014 no fixed bounds",
             tags$br(),
             tags$span(class = "text-muted",
-                      "The FDA uses a scaled criterion: the squared log difference of the means ",
-                      "minus \u03b8 \u00D7 the Reference within-subject variance must be \u2264 0, with ",
+                      "The FDA uses a scaled criterion: the 95% upper confidence bound of the squared log ",
+                      "difference of the means minus \u03b8 \u00D7 the Reference within-subject variance must be \u2264 0, with ",
                       "\u03b8 = (ln 1.25 / 0.25)\u00B2 \u2248 0.797. Additionally, the point estimate must fall ",
                       "within 80\u2013125%. The criterion is evaluated in the simulation.")
           )
@@ -762,8 +762,8 @@ path_power_server <- function(id, shared) {
       p <- ggplot(df, aes(x = CV, y = N)) +
         geom_line(color = "#2C3E50", linewidth = 1) +
         geom_point(color = "#E74C3C", size = 3) +
-        labs(x = if (atype %in% c("abel", "rsabe", "ntid"))
-                   "Within-Subject CV, Test = Reference (%)" else "Within-Subject Variability (CV %)",
+        labs(x = if (atype %in% c("abel", "rsabe", "ntid")) "Within-Subject CV, Test = Reference (%)"
+                 else if (identical(input$design, "parallel")) "Total CV (%)" else "Within-Subject Variability (CV %)",
              y = "Required Number of Subjects") +
         theme_minimal(base_size = 13)
 
@@ -777,7 +777,9 @@ path_power_server <- function(id, shared) {
       cat(paste(rep("=", 50), collapse = ""), "\n\n")
       print(calc_result())
       cat("\nSettings used:\n")
-      cat("  Study type:  ", input$analysis_type, "\n")
+      cat("  Study type:  ", switch(input$analysis_type %||% "abe", abe = "Standard bioequivalence",
+                                    abel = "Highly variable drug, EMA/WHO (ABEL)", rsabe = "Highly variable drug, FDA (RSABE)",
+                                    ntid = "Narrow therapeutic index drug, FDA"), "\n")
       cat("  Design:      ", input$design, "\n")
       if ((input$analysis_type %||% "abe") %in% c("abel", "rsabe", "ntid")) {
         cat("  CV (Test):   ", input$cv, "%\n")
@@ -786,7 +788,9 @@ path_power_server <- function(id, shared) {
         cat("  CV:          ", input$cv, "%\n")
       }
       cat("  T/R ratio:   ", input$theta0, "%\n")
-      cat("  Limits:      [", input$theta1, ",", input$theta2, "]\n")
+      # Scaled methods derive their limits from CVwR inside PowerTOST
+      if (identical(input$analysis_type %||% "abe", "abe"))
+        cat("  Limits:      [", input$theta1, ",", input$theta2, "]\n")
       cat("  Alpha:       ", input$alpha, "\n")
     })
 

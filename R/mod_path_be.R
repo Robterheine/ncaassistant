@@ -664,7 +664,8 @@ path_be_server <- function(id, shared) {
           showNotification(
             paste0(n_incomplete, " of ", n_total,
                    " subject(s) have data for only one treatment: ", subj_list,
-                   ". These subjects contribute to one treatment arm only. ",
+                   ". With fixed effects they do not contribute to the treatment comparison; the mixed ",
+                   "model uses their data. ",
                    "Degrees of freedom are reduced accordingly."),
             type = "warning", duration = 15)
           # Store for persistent alert (written below after be_result is set)

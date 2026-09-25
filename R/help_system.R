@@ -229,7 +229,8 @@ help_r2adj <- info_btn("help_r2adj", "What is Adjusted R²?",
   <br><br>
   <b>Lower threshold</b> (e.g., 0.5) = more permissive, accepts noisier fits.
   <br><br>
-  <em>0.7 is a reasonable default. If many subjects have missing Lambda Z, try lowering it.</em>")
+  <em>0.7 is a reasonable default. Set the threshold in the analysis plan, before seeing the data;
+  lowering it afterwards to report more half-lives biases the results.</em>")
 
 help_steady_state <- info_btn("help_steady_state", "When is data 'steady-state'?",
   "<b>Steady-state</b> means the drug has been given repeatedly (e.g., once daily for 
@@ -441,7 +442,8 @@ help_theta0 <- info_btn("help_theta0", "What is the expected T/R ratio?",
   <li>Type <b>95</b> as a standard assumption.</li>
   <li>Type <b>105</b> if you expect the Test to be slightly higher than Reference.</li>
   </ul>
-  <b>When in doubt, use 95.</b> This is the conventional planning assumption.")
+  The app's default follows the method, as in PowerTOST: <b>95</b> for standard bioequivalence,
+  <b>90</b> for highly variable drugs and <b>97.5</b> for narrow therapeutic index drugs.")
 
 # --- LAMBDA Z INSPECTOR ----------------------------------------------------
 

@@ -737,7 +737,7 @@ server <- function(input, output, session) {
                     tags$td("Base R lm() / nlme::lme() with ANOVA-based ",
                             "90% confidence intervals")),
             tags$tr(tags$td(class = "fw-bold", "Power engine:"),
-                    tags$td("PowerTOST (exact method via Owen's Q)"))
+                    tags$td("PowerTOST (exact method via Owen's Q for average bioequivalence; simulation for the scaled methods)"))
           )
         )
       ),

@@ -4263,6 +4263,19 @@ check("REL-52", "R-43: the steady-state trough can be compared in bioequivalence
   "URS-BE-01", critical = FALSE, method = "2x2x2 fixture analysed at steady state (tau 12 h); parameter list of the module",
   expected = "Cmin at steady state gets a ratio, CI and verdict, and is offered for comparison")
 
+check("REL-53", "R-45: statistical and NCA wording matches the code",
+  tryCatch({
+    all_txt <- paste(vapply(c(list.files("R", "\\.R$", full.names = TRUE), "app.R", "install_and_run.R"), function(f)
+      paste(readLines(f, warn = FALSE), collapse = "\n"), character(1)), collapse = "\n")
+    bad <- c("contribute to one treatment arm only", "When in doubt, use 95", "try lowering it",
+             "ln(1.11111)/0.10", "for extravascular administration the C", "exact method via Owen's Q\")",
+             "Assistant v1.0", "both the Test and the Reference. using")
+    !any(vapply(bad, grepl, logical(1), x = all_txt, fixed = TRUE)) &&
+      grepl("the 95% upper confidence bound of the squared log", all_txt, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-UI-01", critical = FALSE, method = "Search app text for the wordings the review found wrong",
+  expected = "None of the incorrect wordings remain")
+
 end_section("REL")
 
 # =============================================================================
