@@ -382,7 +382,7 @@ path_be_server <- function(id, shared) {
       # Partial AUCs and Cmax in an interval; Tmax in an interval is not compared
       pauc_params <- grep("^(AUC|CMAX)_", partial_auc_cols(names(r)), value = TRUE)
       available <- c(intersect(
-        c("CMAX","AUCTAU","AUCLST","AUCIFO","AUCIFP","TMAX","LAMZHL"), names(r)), pauc_params)
+        c("CMAX","AUCTAU","CMIN_SS","AUCLST","AUCIFO","AUCIFP","TMAX","LAMZHL"), names(r)), pauc_params)
       # At steady state AUCTAU (AUC from 0 to tau) is the primary exposure
       # parameter; AUC to infinity has no meaning during repeated dosing.
       # After a run the boxes show what that run compared (at steady state
@@ -431,7 +431,7 @@ path_be_server <- function(id, shared) {
       }
       r <- isolate(be_nca_result())
       base <- if (is.null(r)) c("CMAX", "AUCLST", "AUCIFO", "TMAX", "LAMZHL") else
-        intersect(c("CMAX", "AUCTAU", "AUCLST", "AUCIFO", "AUCIFP", "TMAX", "LAMZHL"), names(r))
+        intersect(c("CMAX", "AUCTAU", "CMIN_SS", "AUCLST", "AUCIFO", "AUCIFP", "TMAX", "LAMZHL"), names(r))
       updateCheckboxGroupInput(session, "be_params",
                                choiceNames = unname(sapply(c(base, new), friendly_name)),
                                choiceValues = c(base, new),
@@ -703,7 +703,7 @@ path_be_server <- function(id, shared) {
           if (startsWith(param, "CMAX_")) return(input$conc_unit)
           switch(param,
                  TMAX = , LAMZHL = input$time_unit,
-                 CMAX = input$conc_unit,
+                 CMAX = , CMIN_SS = input$conc_unit,
                  AUCLST = , AUCTAU = , AUCIFO = , AUCIFP = paste0(input$conc_unit, "\u00B7", input$time_unit),
                  NULL)
         }
@@ -934,8 +934,9 @@ path_be_server <- function(id, shared) {
         icon("circle-info", class = "me-1"),
         tags$strong("Steady-state analysis: "),
         "AUC\u03C4 is the AUC from 0 to the dosing interval you entered (extrapolated with ",
-        "\u03BBz when the last sample is before \u03C4). The exposure parameters compared are ",
-        "Cmax and AUC\u03C4; AUC to infinity is not meaningful during repeated dosing."
+        "\u03BBz when the last sample is before \u03C4). Cmax and AUC\u03C4 are compared by default, ",
+        "and the trough (Cmin, C\u03C4,ss) can be added, as the EMA modified-release guideline asks ",
+        "for modified-release products. AUC to infinity is not meaningful during repeated dosing."
       )
     })
 

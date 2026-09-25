@@ -4248,6 +4248,21 @@ check("REL-51", "R-42: a parallel study reports the Welch interval when it chang
   "URS-BE-01", critical = FALSE, method = "36 Reference (SD 0.10) vs 12 Test (SD 0.30); equal groups as control",
   expected = "Welch 93.27-127.39% reported against pooled 99.15-119.83%; nothing when the two agree")
 
+check("REL-52", "R-43: the steady-state trough can be compared in bioequivalence",
+  tryCatch({
+    d <- rel_be
+    # A steady-state trough before the dose (the fixture is single-dose, trough 0)
+    d$Conc[d$Time == 0] <- 1 + (as.numeric(d$Subject[d$Time == 0]) %% 4) / 10 + (d$Treatment[d$Time == 0] == "Test") * 0.05
+    nca <- suppressWarnings(run_nca(d, rel_be_cm, rel_st(trap = "linear", ss = TRUE, tau = 12)))
+    b <- build_be_data(nca, d, rel_be_cm, "Reference")
+    f <- fit_be_parameter(b$data, "CMIN_SS", design = "2x2x2", trt_col = b$trt_col, subj_col = b$subj_col,
+                          per_col = b$per_col, seq_col = b$seq_col)$row
+    be <- paste(readLines("R/mod_path_be.R", warn = FALSE), collapse = "\n")
+    f$Bioequivalent %in% c("YES", "NO") && !is.na(f$Point_Est) && grepl('"CMAX","AUCTAU","CMIN_SS"', be, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = FALSE, method = "2x2x2 fixture analysed at steady state (tau 12 h); parameter list of the module",
+  expected = "Cmin at steady state gets a ratio, CI and verdict, and is offered for comparison")
+
 end_section("REL")
 
 # =============================================================================
