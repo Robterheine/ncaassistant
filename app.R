@@ -135,7 +135,7 @@ ui <- page_fluid(
           icon("circle-info", class = "me-1"), "About"
         ),
         tags$a(
-          href = "NCA_Assistant_User_Manual_v1.6.pdf",
+          href = "NCA_Assistant_User_Manual_v1.7.pdf",
           target = "_blank",
           class = "btn btn-outline-light btn-sm ms-2",
           style = "font-size: 0.7rem; padding: 2px 8px;",
@@ -852,7 +852,9 @@ server <- function(input, output, session) {
                       "record's verdict includes file integrity"),
               tags$li(tags$strong("New: "), "an intended-use statement, a note on where uploaded data go, and ",
                       "the pipeline fingerprint on the About page. Better contrast, keyboard access and phone layout"),
-              tags$li("Validation: VALIDATION_COUNTS_PLACEHOLDER")
+              tags$li("Validation: 421 automated and 49 manual tests (was 361 and 49), with a section of regression tests for the ",
+                      "review; 69 user requirements (was 63) with a risk assessment of real hazards; release files ",
+                      "to check an installation against. User manual 1.7")
             )
           ),
 

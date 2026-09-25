@@ -3910,7 +3910,8 @@ check("REL-26", "R-16: a changed file or a deleted reference column makes the re
       grepl("Result: DIFFERENT (Data file not the one analysed", data, fixed = TRUE) &&
       grepl("Result: DIFFERENT (parameters present on one side only: CMAX, AUCLST", col, fixed = TRUE) &&
       grepl("Reference results:", man) && grepl("Reproduction script:", man) && grepl("not an", man) &&
-      !grepl("audit trails", paste(readLines("R/help_system.R"), collapse = " "))
+      !any(vapply(c("R/help_system.R", "R/mod_methods.R", "R/mod_path_viz.R"), function(f)
+        grepl("audit trails|exported audit trail", paste(readLines(f), collapse = " ")), logical(1)))
   }, error = function(e) FALSE),
   "URS-EXP-04", critical = TRUE, method = "Theophylline record: pipeline code edited, data file changed, CMAX and AUCLST deleted from the reference",
   expected = "DIFFERENT with the reason in each case (was MATCH); the manifest covers the reference and the script")
@@ -4268,7 +4269,8 @@ check("REL-51", "R-42: a parallel study reports the Welch interval when it chang
                      AUCLST = exp(log(100) + c(qnorm(ppoints(12)), qnorm(ppoints(12))) * 0.15))
     w <- stats::t.test(log(t), log(r), conf.level = 0.9)$conf.int
     length(n) == 1 && grepl(sprintf("%.2f-%.2f%%", 100 * exp(w[1]), 100 * exp(w[2])), n, fixed = TRUE) &&
-      length(parallel_welch_notes(eq, "AUCLST", "Treatment")) == 0
+      length(parallel_welch_notes(eq, "AUCLST", "Treatment")) == 0 &&
+      !grepl("Welch) interval was not calculated", paste(readLines("R/mod_methods.R"), collapse = " "), fixed = TRUE)
   }, error = function(e) FALSE),
   "URS-BE-01", critical = FALSE, method = "36 Reference (SD 0.10) vs 12 Test (SD 0.30); equal groups as control",
   expected = "Welch 93.27-127.39% reported against pooled 99.15-119.83%; nothing when the two agree")

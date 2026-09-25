@@ -980,7 +980,7 @@ path_viz_server <- function(id, shared) {
           "Self-contained package for this figure: the exported image, all figure ",
           "settings, a standalone R script that reproduces the plot from your data, ",
           "a SHA-256 data-integrity hash, and an HTML provenance summary. ",
-          "Ideal for publication supplements and audit trails."))
+          "Ideal for publication supplements and for archiving with the study documents."))
     })
 
     # ---- Figure Record download -------------------------------------------
