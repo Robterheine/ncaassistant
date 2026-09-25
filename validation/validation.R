@@ -4213,6 +4213,16 @@ check("REL-48", "R-38: dose-normalised values appear once, all labelled, and in 
   "URS-NCA-08", critical = FALSE, method = "Theophylline with per-profile doses and dose normalisation; All Subjects table code",
   expected = "No duplicate or raw-code headers; NonCompart's CMAXD kept in the data (records) but not shown twice; DN columns in the default view")
 
+check("REL-49", "R-39: no label is lost in a non-UTF-8 locale",
+  tryCatch({
+    out <- suppressWarnings(system2(file.path(R.home("bin"), "Rscript"),
+      c("-e", shQuote('for (f in c(list.files("R", full.names = TRUE), "app.R")) parse(f)')),
+      stdout = TRUE, stderr = TRUE, env = "LC_ALL=C"))
+    !any(grepl("unable to translate", out))
+  }, error = function(e) FALSE),
+  "URS-GEN-01", critical = FALSE, method = "Parse every source file with LC_ALL=C",
+  expected = "No 'unable to translate' warning (was 12 choice labels)")
+
 end_section("REL")
 
 # =============================================================================

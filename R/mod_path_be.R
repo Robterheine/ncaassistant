@@ -820,7 +820,7 @@ path_be_server <- function(id, shared) {
                     tagList("Reference treatment",
                             tags$span(class = "text-muted small",
                                       " (the ratio is Test / Reference)")),
-                    choices = c("Choose\u2026" = "", lv),
+                    choices = c("Choose..." = "", lv),
                     selected = if (is.null(sug)) "" else sug),
         if (is.null(sug))
           tags$p(class = "text-muted small mt-n2",

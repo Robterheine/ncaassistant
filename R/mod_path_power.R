@@ -57,12 +57,14 @@ path_power_ui <- function(id) {
           card_body(
             radioButtons(
               ns("analysis_type"), label = NULL,
-              choices = c(
-                "Standard bioequivalence  (80\u2013125% limits, any region)" = "abe",
-                "Highly variable drug \u2014 EMA / WHO  (widened limits, replicate design)" = "abel",
-                "Highly variable drug \u2014 US FDA  (scaled approach, replicate design)" = "rsabe",
-                "Narrow therapeutic index drug \u2014 US FDA  (tighter limits, 4-period replicate)" = "ntid"
-              ),
+              # choiceNames, not vector names: a name with a non-ASCII
+              # character cannot be translated in a C locale
+              choiceNames = list(
+                "Standard bioequivalence  (80\u2013125% limits, any region)",
+                "Highly variable drug \u2014 EMA / WHO  (widened limits, replicate design)",
+                "Highly variable drug \u2014 US FDA  (scaled approach, replicate design)",
+                "Narrow therapeutic index drug \u2014 US FDA  (tighter limits, 4-period replicate)"),
+              choiceValues = list("abe", "abel", "rsabe", "ntid"),
               selected = "abe"
             ),
             uiOutput(ns("type_desc"))

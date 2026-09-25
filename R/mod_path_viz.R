@@ -57,11 +57,12 @@ path_viz_ui <- function(id) {
               radioButtons(
                 ns("plot_type"),
                 label    = NULL,
-                choices  = c(
-                  "Individual Profiles (spaghetti plot)"      = "spaghetti",
-                  "Summary Plot (geometric mean \u00d7/\u00f7 geometric SD)" = "summary",
-                  "Both plots"                                = "both"
-                ),
+                # choiceNames, not vector names: a name with a non-ASCII
+                # character cannot be translated in a C locale
+                choiceNames  = list("Individual Profiles (spaghetti plot)",
+                                    "Summary Plot (geometric mean \u00d7/\u00f7 geometric SD)",
+                                    "Both plots"),
+                choiceValues = list("spaghetti", "summary", "both"),
                 selected = "spaghetti"
               )
             )
@@ -79,8 +80,8 @@ path_viz_ui <- function(id) {
                 radioButtons(
                   ns("y_scale"),
                   label    = NULL,
-                  choices  = c("Linear" = "linear",
-                               "Log\u2081\u2080 (semi-log)" = "log"),
+                  choiceNames  = list("Linear", "Log\u2081\u2080 (semi-log)"),
+                  choiceValues = list("linear", "log"),
                   selected = "linear",
                   inline   = TRUE
                 )
@@ -112,8 +113,8 @@ path_viz_ui <- function(id) {
                     )
                   ),
                   choices = c(
-                    "Geometric mean \u00d7/\u00f7 geometric SD" = "geomean",
-                    "Arithmetic mean \u00b1 SD" = "arithmean"
+                    "Geometric mean with geometric SD" = "geomean",
+                    "Arithmetic mean +/- SD" = "arithmean"
                   ),
                   selected = "geomean",
                   # Attach dropdown to <body> so card overflow never clips it
@@ -202,9 +203,9 @@ path_viz_ui <- function(id) {
               selectInput(
                 ns("export_dpi"), "Resolution (DPI)",
                 choices  = c(
-                  "150 \u2014 screen"           = "150",
-                  "300 \u2014 print (default)"  = "300",
-                  "600 \u2014 journal high-res" = "600"
+                  "150 - screen"           = "150",
+                  "300 - print (default)"  = "300",
+                  "600 - journal high-res" = "600"
                 ),
                 selected = "300"
               ),
