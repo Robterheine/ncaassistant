@@ -621,6 +621,8 @@ server <- function(input, output, session) {
                        class = "fw-bold text-decoration-none",
                        pkg$name)),
         tags$td(tags$code(pkg$version)),
+        # Each package keeps its own licence (read from the installed package)
+        tags$td(class = "small", tryCatch(utils::packageDescription(pkg$name)$License, error = function(e) "")),
         tags$td(class = "small", pkg$role),
         tags$td(class = "small text-muted", pkg$ref)
       )
@@ -669,8 +671,9 @@ server <- function(input, output, session) {
               tags$tr(
                 tags$th(style = "width: 12%;", "Package"),
                 tags$th(style = "width: 8%;", "Version"),
-                tags$th(style = "width: 45%;", "Role in this application"),
-                tags$th(style = "width: 35%;", "Reference")
+                tags$th(style = "width: 10%;", "Licence"),
+                tags$th(style = "width: 38%;", "Role in this application"),
+                tags$th(style = "width: 32%;", "Reference")
               )
             ),
             tags$tbody(pkg_rows)

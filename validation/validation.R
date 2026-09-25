@@ -4312,6 +4312,17 @@ check("REL-55", "R-47: CDISC notes state the ISO 8601 interval format and that u
   "URS-EXP-08", critical = FALSE, method = "cdisc_pk_codes() for a partial AUC; code sheet and panel text",
   expected = "The PPSTINT/PPENINT note asks for ISO 8601 durations; units are said not to be CT terms")
 
+check("REL-56", "R-48: LICENSE is the verbatim GPL-3 text and the About page lists dependency licences",
+  tryCatch({
+    lic <- readLines("LICENSE", warn = FALSE)
+    ref <- readLines(file.path(R.home("share"), "licenses", "GPL-3"), warn = FALSE)
+    app <- paste(readLines("app.R", warn = FALSE), collapse = "\n")
+    identical(lic, ref) && grepl('tags$th(style = "width: 10%;", "Licence")', app, fixed = TRUE) &&
+      grepl("packageDescription(pkg$name)$License", app, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-GEN-01", critical = FALSE, method = "LICENSE against R's copy of GPL-3; About page package table",
+  expected = "Identical licence text (was missing the title, preamble and FSF notice); licence column shown")
+
 end_section("REL")
 
 # =============================================================================
