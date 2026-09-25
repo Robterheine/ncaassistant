@@ -4382,6 +4382,44 @@ check("REL-58", "Tlast under Rule 4 is the last measured concentration",
 end_section("REL")
 
 # =============================================================================
+# SECTION MRV: App fixes from the review of user manual 1.7 (P-xx, R-xx, T-xx)
+# =============================================================================
+# Each test is built from the case the manual review found.
+start_section("MRV")
+
+mrv_cm <- list(subject = "Subject", time = "Time", conc = "Concentration", treatment = "Treatment",
+               period = "Period", sequence = "Sequence")
+mrv_xo <- read.csv("data/example_be_crossover.csv", stringsAsFactors = FALSE)
+mrv_st <- function(ss = FALSE, tau = NA)
+  list(admin_route = "extravascular", dose = 100, dose_unit = "mg", time_unit = "h", conc_unit = "ng/mL",
+       trap_method = "log", r2adj_threshold = 0.7, infusion_duration = 0, mw = 0, is_steady_state = ss,
+       tau = tau, partial_aucs = NULL)
+mrv_prep <- function(raw, rule = "rule1", lloq = 0.5) prepare_pk_dataset(raw, mrv_cm, list(lloq = lloq, blq_rule = rule))$data
+
+check("MRV-01", "P-01: a period without measurable concentrations is counted as missing and named",
+  tryCatch({
+    a <- mrv_xo; a$Concentration <- as.character(a$Concentration)
+    a$Concentration[a$Subject == 1 & a$Treatment == "Test"] <- "BLQ"
+    da <- mrv_prep(a); ra <- suppressWarnings(run_nca(da, mrv_cm, mrv_st()))
+    bd <- build_be_data(ra, da, mrv_cm, reference = "Reference")
+    f <- fit_be_parameter(bd$data, "CMAX", design = "2x2x2", trt_col = bd$trt_col, subj_col = bd$subj_col,
+                          per_col = bd$per_col, seq_col = bd$seq_col)
+    ma <- be_m13a_checks(da, mrv_cm, ra, NULL)
+    b <- mrv_xo; i <- b$Subject == 2 & b$Treatment == "Reference"; b$Concentration[i] <- b$Concentration[i] * 0.03
+    db <- mrv_prep(b); mb <- be_m13a_checks(db, mrv_cm, suppressWarnings(run_nca(db, mrv_cm, mrv_st())), NULL)
+    dc <- mrv_prep(mrv_xo); mc <- be_m13a_checks(dc, mrv_cm, suppressWarnings(run_nca(dc, mrv_cm, mrv_st())), NULL)
+    nrow(bd$data) == 12 && f$row$Missing_Test == 1 && f$row$N_Test == 5 &&
+      any(grepl("1 | Test | P1", ma, fixed = TRUE) & grepl("2.2.1.1", ma, fixed = TRUE)) &&
+      any(grepl("below 5% of the geometric mean", mb, fixed = TRUE) & grepl("2 | Reference | P1", mb, fixed = TRUE)) &&
+      length(mc) == 0
+  }, error = function(e) FALSE),
+  "URS-BE-11", critical = TRUE,
+  method = "example_be_crossover.csv with subject 1's Test period all BLQ; subject 2's Reference period at 3%; unchanged file",
+  expected = "Profiles missing (Test) 1 (was 0) and the profile named with M13A 2.2.1.1; the 3% period flagged; no note for the clean file")
+
+end_section("MRV")
+
+# =============================================================================
 # Post-execution
 # =============================================================================
 cat("\n", paste(rep("=",72),collapse=""), "\n")

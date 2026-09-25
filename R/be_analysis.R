@@ -51,9 +51,13 @@ build_be_data <- function(nca_res, pk_data, col_map, reference = NULL) {
   # while uploaded Subject/Period columns are usually integer. A type mismatch
   # would leave Period all-NA after the merge and lm() would drop every row.
   nca_res[keys] <- lapply(nca_res[keys], as.character)
-  be <- merge(nca_res, design, by = keys, all.x = TRUE, sort = FALSE)
-  if (nrow(be) != nrow(nca_res))
-    stop("Design merge changed the number of profiles (", nrow(nca_res), " -> ",
+  # Every profile in the data gets a row. A profile without an NCA result
+  # (fewer than 2 positive concentrations, e.g. a non-absorber) keeps a row
+  # with missing parameters, so it is counted as missing instead of leaving
+  # the comparison unseen (ICH M13A 2.2.1.1 allows that only as an exception).
+  be <- merge(nca_res, design, by = keys, all = TRUE, sort = FALSE)
+  if (nrow(be) != nrow(design))
+    stop("Design merge changed the number of profiles (", nrow(design), " -> ",
          nrow(be), "). Check the Treatment, Period and Sequence columns.")
 
   be$Treatment <- factor(be$Treatment)
@@ -593,6 +597,8 @@ be_variability_diagnostic <- function(be_data, param, trt_col, subj_col,
 #' - pre-dose concentration above 5% of the profile's Cmax (single dose;
 #'   M13A 2.2.3.3 excludes that period from the primary analysis)
 #' - fewer than 12 evaluable subjects (M13A 2.2.3.1)
+#' - profiles without an NCA result, and periods with AUC(0-t) below 5% of
+#'   the treatment's geometric mean (M13A 2.2.1.1)
 #' - AUC(0-t) covering less than 80% of AUC(0-inf) in more than 20% of the
 #'   profiles (M13A 2.2.2.2: the validity of the study may need discussion)
 #' @param ci_df CI table of the run (N_Test, N_Ref per parameter)
@@ -611,6 +617,38 @@ be_m13a_checks <- function(pk_data, col_map, nca_res, ci_df, is_ss = FALSE) {
       out <- c(out, paste0("Pre-dose concentration above 5% of Cmax in ", length(high), " profile(s): ",
                            paste(head(lab, 5), collapse = "; "), if (length(lab) > 5) " and more" else "",
                            ". ICH M13A (2.2.3.3) excludes such a period from the primary analysis."))
+    }
+  }
+  # Profiles without an NCA result, and periods with very low exposure: M13A
+  # (2.2.1.1) accepts leaving such data out only as a documented exception,
+  # in general for no more than one subject
+  nk_cols <- intersect(c("Subject", "Treatment", "Period"), names(nca_res))
+  if (identical(nk_cols, pk$cols)) {
+    nk <- do.call(paste, c(lapply(nca_res[nk_cols], as.character), sep = "||"))
+    gone <- setdiff(unique(pk$key), nk)
+    if (length(gone) > 0) {
+      lab <- profile_labels(pk$parts[match(gone, pk$key), , drop = FALSE])
+      out <- c(out, paste0(length(gone), " profile(s) have fewer than 2 measurable concentrations, so no NCA ",
+                           "result, and are counted as missing: ", paste(head(lab, 5), collapse = "; "),
+                           if (length(lab) > 5) " and more" else "", ". Their subjects leave the comparison. ",
+                           "ICH M13A (2.2.1.1) accepts this only as an exception planned in the protocol, in ",
+                           "general for no more than one subject."))
+    }
+  }
+  if (all(c("AUCLST", "Treatment", "Subject") %in% names(nca_res))) {
+    a <- suppressWarnings(as.numeric(nca_res$AUCLST))
+    tr <- as.character(nca_res$Treatment); sj <- as.character(nca_res$Subject)
+    low <- vapply(seq_along(a), function(i) {
+      o <- a[tr == tr[i] & sj != sj[i]]; o <- o[is.finite(o) & o > 0]
+      is.finite(a[i]) && length(o) >= 2 && a[i] < 0.05 * exp(mean(log(o)))
+    }, logical(1))
+    if (any(low)) {
+      lab <- profile_labels(nca_res[low, nk_cols, drop = FALSE])
+      out <- c(out, paste0("AUC(0-t) below 5% of the geometric mean of that treatment (without the subject) in ",
+                           sum(low), " profile(s): ", paste(head(lab, 5), collapse = "; "),
+                           if (length(lab) > 5) " and more" else "", ". ICH M13A (2.2.1.1) calls this very low ",
+                           "exposure; leaving it out is accepted only as a planned exception, in general for no ",
+                           "more than one subject."))
     }
   }
   if (!is.null(ci_df) && all(c("N_Test", "N_Ref") %in% names(ci_df))) {

@@ -78,7 +78,8 @@ sections = [("DAT", "Data Handling (OQ)"), ("NCA", "NCA (OQ/PQ)"), ("BE", "Bioeq
             ("REP", "Replicate Designs (OQ/PQ)"), ("REC", "Analysis Records (PQ)"),
             ("CONV", "ADNCA Conversion (OQ)"), ("REV", "First Adversarial Review (OQ)"),
             ("REV2", "Second Review, Part 1 (OQ)"), ("REV3", "Second Review, Part 2 (OQ)"), ("REV4", "Statistical Audit (OQ/PQ)"),
-            ("PAUC", "Partial AUC (OQ/PQ)"), ("REL", "Release Review v1.5.0 (OQ/PQ)")]
+            ("PAUC", "Partial AUC (OQ/PQ)"), ("REL", "Release Review v1.5.0 (OQ/PQ)"),
+            ("MRV", "Manual Review 1.7 (OQ/PQ)")]
 known = {s for s, _ in sections} | {"IQ", "MAN"}
 assert {r["Section"] for r in rows} <= known, {r["Section"] for r in rows} - known
 
