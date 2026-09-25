@@ -1,6 +1,6 @@
 # NCA Assistant
 
-**Version 1.6.0** | Designed by Rob ter Heine
+**Version 1.7.0** | Designed by Rob ter Heine
 
 A free, open-source Shiny application for non-compartmental pharmacokinetic analysis (NCA), bioequivalence testing, study planning and figures. It is written for people who run such an analysis now and then rather than daily: parameters carry plain-language names, the app says what it did and what it refused to do, and any analysis can be exported as a package that re-runs itself. Built by the [Radboud Applied Pharmacometrics](https://www.radboudumc.nl/en/research/research-groups/radboud-applied-pharmacometrics) research group at Radboudumc, Nijmegen, The Netherlands.
 
@@ -21,7 +21,7 @@ Six workflow paths, each usable on its own, from one hub screen:
 
 **5. Analyze All Subjects (Batch).** One run over every profile, a profile being one subject, treatment and period, so the two administrations of a replicate design stay apart. You get summary statistics per treatment, a profile grid, spaghetti and mean ± SD plots, a half-life review, and steady-state analysis from the dosing interval you enter (AUCτ, average concentration, fluctuation and swing). Where the automatic terminal fit falls below the minimum adjusted R² (0.70 by default), that profile gets no half-life and none of the parameters derived from it, unless you pick the points yourself. Partial AUCs from your protocol, ending at a time or at the last measurable concentration, join the table, the summary statistics and the downloads, with the highest observed concentration in each interval and its time when you ask for them.
 
-**6. Bioequivalence Testing.** NCA, then the ANOVA, then the confidence interval (90% by default), a forest plot and the conclusion. The model is EMA Method A, with sequence, subject, period and treatment as fixed effects; Method B, with subject as a random effect, is offered as well. You choose which treatment is the Reference. Cmax and AUC0–t are compared by default, following ICH M13A. The conclusion uses confidence limits rounded to two decimals, and for limits wider than 80–125% it also asks for the point estimate inside 80.00–125.00%. Wider limits apply to Cmax only, unless you choose all metrics. A verdict is given only for a 90% confidence interval, and not when the pre-specified mixed model cannot be fitted. Designs: 2×2 crossover, 2×2×3 and 2×2×4 full replicate, 2×3×3 partial replicate, parallel groups, and the paired comparison for a fixed order, which yields a ratio but no verdict. For replicate designs the within-subject variability of Reference and Test, and the EMA limits it would imply, are shown for information only: this app does average bioequivalence, not reference-scaled (ABEL, RSABE) or NTID analyses. Partial AUCs and the maximum concentration within an interval can be compared too, with a verdict for the intervals you mark pivotal and a ratio with its confidence interval for the supportive ones. The app also checks a few ICH M13A points: a pre-dose concentration above 5% of Cmax, fewer than 12 subjects, and low AUC coverage. For parallel groups a Welch interval is shown as a sensitivity analysis. Results agree with the replicateBE package on all 30 of its reference data sets.
+**6. Bioequivalence Testing.** NCA, then the ANOVA, then the confidence interval (90% by default), a forest plot and the conclusion. The model is EMA Method A, with sequence, subject, period and treatment as fixed effects; Method B, with subject as a random effect, is offered as well. You choose which treatment is the Reference. Cmax and AUC0–t are compared by default, following ICH M13A. The conclusion uses confidence limits rounded to two decimals, and for limits wider than 80–125% it also asks for the point estimate inside 80.00–125.00%. Wider limits apply to Cmax only, unless you choose Cmax and the partial AUCs, or all metrics. A verdict is given only for a 90% confidence interval, and not when the pre-specified mixed model cannot be fitted. Designs: 2×2 crossover, 2×2×3 and 2×2×4 full replicate, 2×3×3 partial replicate, parallel groups, and the paired comparison for a fixed order, which yields a ratio but no verdict. For replicate designs the within-subject variability of Reference and Test, and the EMA limits it would imply, are shown for information only: this app does average bioequivalence, not reference-scaled (ABEL, RSABE) or NTID analyses. Partial AUCs and the maximum concentration within an interval can be compared too, with a verdict for the intervals you mark pivotal and a ratio with its confidence interval for the supportive ones. The app also checks a few ICH M13A points: a pre-dose concentration above 5% of Cmax, fewer than 12 subjects, and low AUC coverage. For parallel groups a Welch interval is shown as a sensitivity analysis. Results agree with the replicateBE package on all 30 of its reference data sets.
 
 Alongside the paths: a **Statistical Methods** page with wording to adapt for a manuscript, a **Data Preparation Guide** of 12 tabs (one per study type, plus real laboratory data and common mistakes), and an **About** page with the package list and the version history.
 
@@ -31,7 +31,7 @@ Alongside the paths: a **Statistical Methods** page with wording to adapt for a 
 
 NCA Assistant is for pharmacokineticists doing non-compartmental analysis, average bioequivalence testing and study planning. It gives no reference-scaled bioequivalence verdict (ABEL, RSABE), and it has no audit trail, electronic signature or access control. The public instance on shinyapps.io is for evaluation and training, with synthetic or pseudonymised data. For regulated work, install a tagged release on your own system and qualify it there with the validation package. Responsibility for the analysis and its conclusions stays with the user. Not for dosing decisions for individual patients.
 
-**Your data.** On the public instance, uploads are processed on shinyapps.io servers run by Posit PBC (USA). Do not upload data that identify people or that you may not share with a third party: use pseudonymised IDs, or run the app on your own computer for confidential studies.
+**Your data.** On the public instance, uploads are processed on shinyapps.io servers run by Posit PBC (USA). Upload only synthetic, example or anonymised data there. Pseudonymised trial data are still personal data under the GDPR. Sending them to a third-party host needs agreements your organisation must have in place, and may breach sponsor confidentiality. For real study data, run the app on your own computer.
 
 ---
 
@@ -99,13 +99,13 @@ Available at [robterheine.shinyapps.io/NCAassistant](https://robterheine.shinyap
 |---|---|---|
 | [`app.R`](app.R) | The Shiny app: UI shell, navigation, the About page and `APP_VERSION` | Entry point. `shiny::runApp()` starts here, and it sources everything in `R/` |
 | [`R/`](R/) | 21 files: one module per workflow path (`mod_path_*.R`), the Shiny-free analysis pipeline (`pipeline.R`), bioequivalence statistics (`be_analysis.R`), Analysis Records (`export_record.R`), data checks, help text and the Statistical Methods page | All application code. `pipeline.R` is deliberately free of Shiny, so the validation suite and every Analysis Record can run it outside the app |
-| [`data/`](data/) | Five small example datasets (theophylline, crossover, parallel, replicate, ADNCA) | The example files the Data Preparation Guide offers for download, and the datasets the worked examples in the manual use |
+| [`data/`](data/) | Six small example datasets (theophylline, crossover, parallel, replicate, ADNCA, BLQ results) | The example files the Data Preparation Guide offers for download, and the datasets the worked examples in the manual use |
 | [`cdisc/`](cdisc/) | One pinned release of CDISC SDTM Controlled Terminology: the release metadata, the extracted PK parameter terms, the map from app parameters to PPTESTCD, and the extractor script | Lets results, downloads and records state the official CDISC code of each parameter, from one stated release. A code lookup only: the app produces no SDTM PP datasets |
 | [`converters/`](converters/) | `adnca_to_flat.R` and its documentation | Converts a CDISC ADNCA dataset to a flat CSV outside the app, for scripted use. It calls the same conversion code as the app's ADNCA upload, so both give the same result. The app itself never loads this folder |
 | [`validation/`](validation/) | The validation package: the test script, the URS and IQ/OQ/PQ documents, the protocol generator, the release manifest and package lockfile, and `fixtures/` with committed test data and their deterministic generators | Qualification evidence. `fixtures/` is required to run the suite; see [`validation/README.md`](validation/README.md) |
 | [`www/`](www/) | The user manual PDF, the stylesheet and the logo | Files the app serves to the browser. The manual link in the header points here |
 | [`install_and_run.R`](install_and_run.R) | Dependency installation and launch | One-step setup for a new machine |
-| `NCA_Assistant_User_Manual_v1.7.docx` | The manual source | Edited in Word; the PDF in `www/` is exported from it |
+| `NCA_Assistant_User_Manual_v1.8.docx` | The manual source | Edited in Word; the PDF in `www/` is exported from it |
 
 ---
 
@@ -119,7 +119,7 @@ A consolidated validation package is available in [`validation/`](validation/), 
 Rscript validation/validation.R
 ```
 
-This executes 421 automated tests (plus 49 manual tests defined for a running app) and writes a results CSV with per-section results and URS traceability, and an environment file with the R and package versions and the SHA-256 of every tested file. Each release also ships a manifest of file hashes and a package lockfile (`validation/release_manifest.csv`, `validation/renv.lock`), which the installation checks compare against.
+This executes 431 automated tests (plus 49 manual tests defined for a running app) and writes a results CSV with per-section results and URS traceability, and an environment file with the R and package versions and the SHA-256 of every tested file. Each release also ships a manifest of file hashes and a package lockfile (`validation/release_manifest.csv`, `validation/renv.lock`), which the installation checks compare against.
 
 **Validation deliverables:**
 
@@ -135,7 +135,7 @@ See [`validation/README.md`](validation/README.md) for detailed instructions on 
 
 ## Citation
 
-> ter Heine R. NCA Assistant (v1.6.0). Radboud Applied Pharmacometrics, Radboudumc, Nijmegen, The Netherlands. https://github.com/robterheine/ncaassistant
+> ter Heine R. NCA Assistant (v1.7.0). Radboud Applied Pharmacometrics, Radboudumc, Nijmegen, The Netherlands. https://github.com/robterheine/ncaassistant
 
 > Kim H, Han S, Cho YS, Yoon SK, Bae KS. Development of R packages: 'NonCompart' and 'ncar' for noncompartmental analysis (NCA). *Transl Clin Pharmacol*. 2018;26(1):10-15.
 

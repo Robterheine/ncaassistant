@@ -1,6 +1,6 @@
 # NCA Assistant — Validation Package
 
-This folder contains the validation package for NCA Assistant v1.6.0. It follows a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles for custom software used in a regulated pharmaceutical environment.
+This folder contains the validation package for NCA Assistant v1.7.0. It follows a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles for custom software used in a regulated pharmaceutical environment.
 
 ---
 
@@ -58,7 +58,7 @@ The interface packages the app loads (shiny, bslib, shinyWidgets, DT, plotly, gg
 - `R/*.R` and `app.R` — the code under test, sourced directly, plus `APP_VERSION`;
 - `converters/adnca_to_flat.R` — the standalone ADNCA converter (section CONV);
 - `cdisc/ct_release.dcf` and `cdisc/pk_parameter_terms.csv` — the pinned CDISC release the parameter codes come from (checks EXP-CD-01..03 and REC-09);
-- `data/example_theoph.csv` and `data/example_be_crossover.csv` — example datasets used by the NCA and record checks;
+- `data/example_theoph.csv`, `data/example_be_crossover.csv` and `data/example_blq.csv` — example datasets used by the NCA, record and BLQ checks;
 - **`validation/fixtures/`** — required. Crossover, replicate and ADNCA-shaped test data, plus `replicateBE_reference.csv` with the committed `replicateBE::method.A` values. These files are read at the top level of the script, so a missing fixture stops the run with `cannot open file ...` rather than failing a single test: without the folder the run aborts partway and produces no results file.
 
 Test data for crossover and replicate designs live in `validation/fixtures/`, not in `data/`. `make_fixtures.R` (crossover and replicate designs) and `make_adnca_fixtures.R` (ADNCA-shaped data) generate them deterministically, and `make_reference_values.R` records the matching `replicateBE::method.A` results; the generators and their outputs are both committed, so the suite runs without regenerating anything.
@@ -71,7 +71,7 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **421 automated tests** in nineteen sections, each mapped to a URS requirement:
+The script runs **431 automated tests** in twenty sections, each mapped to a URS requirement:
 
 | Section | Code | Tests | Tests cover |
 |---------|------|------:|-------------|
@@ -94,6 +94,7 @@ The script runs **421 automated tests** in nineteen sections, each mapped to a U
 | Statistical audit | REV4 | 8 | Steady state with an entered dosing interval (AUCτ from 0 to τ, CL/F and Vz/F from AUCτ, Cavg, fluctuation and swing in all paths, records), planner defaults per method and total CV for parallel designs, Methods page statements, figure labels |
 | Partial AUC | PAUC | 22 | Intervals with a fixed end or an end at the last measurable concentration (t), hand-calculated trapezoids, interpolated cutoffs, no extrapolation past Tlast, steady-state limits, Cmax and Tmax within an interval, notes for zeros and for BLQ-dependent or sparse windows, bioequivalence with pivotal and supportive roles (agreement with `replicateBE`), records, labels, the CDISC code AUCINT, figure shading and the app text |
 | Release review v1.5.0 | REL | 58 | One or more regression tests per finding of the five-reviewer review of v1.5.0 (R-01 to R-50), each built from the failing case: log-down AUC with an embedded zero, IV bolus with a time-0 sample, thousands separators in decimal-comma files, subject IDs per sequence, crossover without Period, settings kept across pages, results cleared on changed settings, widened limits for Cmax only, BLQ values kept out of the half-life, ICH M13A checks, units from the data, reproduction verdict with file integrity, Method B against `replicateBE`, an independent AUC calculation, colour contrast and keyboard access, locale-safe labels, Rule 4 Tlast, and more |
+| Manual review 1.7 | MRV | 10 | App fixes from the review of user manual 1.7, each built from its case: a period without measurable concentrations counted as missing, BLQ-rule values and the lag time, Rule 6 on an all-BLQ profile, the M13A verdict notes and the batch pre-dose check, checks and data-copy notes in the Analysis Record, widened limits for Cmax and partial AUCs, wording, Ctau and steady-state blanks, labels and units of every column, the BLQ example file and the validated installation |
 
 In addition, **49 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload (flat and CDISC ADNCA), column mapping, interlock messages, the half-life review and minimum-R² note, choosing the Reference treatment, the replicate variability table, planning with both CVs, CDISC parameter codes, partial AUC intervals in the batch and bioequivalence paths (including an invalid interval, a suppressed metric and the shaded figure), the Complete Analysis Record download and its reproduction check, and the Visualize Figure Record. They are included in the script for traceability but are marked SKIP in automated runs.
 
@@ -117,17 +118,17 @@ Visualisation tests (URS-VIZ) are classified SUPPORTIVE because graphical output
 A passing run produces:
 
 ```
-Total: 470 (auto: 421, manual: 49)
-  PASS: 421 | FAIL: 0 | ERROR: 0 | SKIP: 49
+Total: 480 (auto: 431, manual: 49)
+  PASS: 431 | FAIL: 0 | ERROR: 0 | SKIP: 49
 
 ALL CRITICAL TESTS PASSED
 
-URS: 69/69 covered (65 by automated tests; manual tests only: URS-BE-06, URS-BE-08, URS-PWR-04, URS-UI-02)
+URS: 69/69 covered (66 by automated tests; manual tests only: URS-BE-06, URS-BE-08, URS-PWR-04)
 
 Results: validation/validation_results.csv
 ```
 
-Of the 421 automated tests, 298 are CRITICAL and 123 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
+Of the 431 automated tests, 302 are CRITICAL and 129 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
 
 IQ-REL-01 and IQ-REL-02 pass only on an unchanged release: after any edit to a file listed in the manifest, IQ-REL-01 fails until `make_release_files.R` is run again for a new release.
 

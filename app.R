@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.6.0
+# Non-Compartmental Analysis Assistant v1.7.0
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # Designed by Rob ter Heine
@@ -21,7 +21,7 @@
 #   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.6.0"
+APP_VERSION <- "1.7.0"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 # Mirror APP_VERSION into the global environment. When RStudio runs a single-file
@@ -135,7 +135,7 @@ ui <- page_fluid(
           icon("circle-info", class = "me-1"), "About"
         ),
         tags$a(
-          href = "NCA_Assistant_User_Manual_v1.7.pdf",
+          href = "NCA_Assistant_User_Manual_v1.8.pdf",
           target = "_blank",
           class = "btn btn-outline-light btn-sm ms-2",
           style = "font-size: 0.7rem; padding: 2px 8px;",
@@ -817,8 +817,25 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.6.0",
+            tags$h6(class = "fw-bold mb-1", "v1.7.0",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "September 2026"),
+            tags$p(class = "mb-1", tags$strong("Results can differ from v1.6.0"),
+                   " for the lag time under Rules 3, 4 and 6, for a profile without measurable values under Rule 6, for a bioequivalence study in which a period has no measurable concentrations, and at steady state. The changes come from a review of the user manual by a tutor, a clinical pharmacologist and a regulatory compliance officer."),
+            tags$ul(class = "mb-0",
+              tags$li(tags$strong("Correctness fix: "), "under Rules 3, 4 and 6 a value set by the BLQ rule ended the lag time, so Tlag came out 0. Under Rule 6 a profile without any measurable value became a flat LLOQ/2 profile with a Cmax, and entered the NCA and bioequivalence as data"),
+              tags$li(tags$strong("Correctness fix: "), "a subject whose period had no measurable concentrations left the bioequivalence comparison without being counted. It is now counted under Profiles missing and named, and periods with AUC below 5% of the geometric mean are flagged (ICH M13A)"),
+              tags$li(tags$strong("Changed: "), "at steady state, AUC to infinity, its % extrapolated and the other single-dose parameters are left empty. A new column gives the concentration at \u03C4 (C\u03C4) next to Cmin, which is now labelled Minimum Concentration"),
+              tags$li(tags$strong("Changed: "), "when the data include a period that ICH M13A excludes, the note says the verdict is not the M13A primary analysis, and the batch analysis checks pre-dose values too. The Analysis Record holds the quality findings and the notes, and says when it holds a rewritten copy of the data"),
+              tags$li(tags$strong("New: "), "widened limits for Cmax and partial AUCs only; a label and unit for every output column; an example file with BLQ results; install_and_run.R --validated for the validated package versions. The data notice asks for anonymised data, and the LLOQ message describes the button as it works"),
+              tags$li("User manual 1.8, restructured: getting started, seven tutorials, study types, reading your results and regulated use"),
+              tags$li("Validation: 431 automated and 49 manual tests (was 421 and 49), with a section of regression tests for the manual review")
+            )
+          ),
+
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.6.0"),
             tags$p(class = "text-muted mb-1", "September 2026"),
             tags$p(class = "mb-1", tags$strong("Results can differ from v1.5.0"),
                    " where the correctness fixes below apply. They came from a review of the whole app."),
