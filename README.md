@@ -84,6 +84,7 @@ Setting up a controlled installation, and what stays the organisation's responsi
 - R ≥ 4.1.0
 - Required packages: NonCompart, PowerTOST, nlme, shiny, bslib, shinyWidgets, htmltools, plotly, DT, readxl, dplyr, tidyr, ggplot2, openxlsx, jsonlite, digest
 - For validation only: replicateBE (reference implementation for the replicate-design checks)
+- For controlled mode only: shinymanager, DBI, RSQLite, and on the server the system programs `zip` and `logger`
 
 ---
 
@@ -108,6 +109,12 @@ With the packages in place, `shiny::runApp()` starts the app. The user manual's 
 ### Option B: shinyapps.io
 
 Available at [robterheine.shinyapps.io/NCAassistant](https://robterheine.shinyapps.io/NCAassistant/), for evaluation and training. This instance is outside the scope of the validation package: its package versions are set by the deployment, not by `validation/renv.lock`.
+
+### Option C: Your own server (controlled mode)
+
+For regulated work, install a tagged release on Shiny Server behind nginx with HTTPS, with `--validated` package versions, and switch on [controlled mode](#controlled-mode) through the settings in the service account's `.Renviron`. Appendix E of the user manual gives the steps and example settings for Shiny Server, nginx (WebSocket forwarding, a one-hour read timeout, uploads up to 50 MB), `.Renviron` and sudoers, and the account commands (`gxp/manage_users.R`). Qualify the installation with the IQ/OQ/PQ protocol, including its checks on the server (section 2.1).
+
+To try controlled mode without a server, for example for training or Tutorial 8, run it on your own computer from a separate copy of the app folder with its own `.Renviron`. The appendix's *A Training Installation* has the steps for macOS, Linux and Windows. Such an installation works the same way but is not qualified.
 
 ---
 
