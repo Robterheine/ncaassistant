@@ -4912,6 +4912,111 @@ skip_manual("MAN-GXP-01", "Restore an archive on a clean machine",
             "The app starts in controlled mode; the Records page lists the archived records; Verify chain reports the head in verification_report.txt",
             "URS-GXP-19")
 
+# --- Login, roles, app start (R/gxp_access.R, app.R) ------------------------
+if (gxp_ok) sys.source("R/gxp_access.R", envir = gxp_env)
+gxp_session <- function(roles, user = "u1") {
+  s <- new.env(); s$userData <- new.env(); s$userData$gxp <- list(user = user, name = "U One", roles = roles)
+  s$token <- "abcdef0123456789"; s
+}
+# A controlled directory with a user store holding one account
+gxp_ctl <- function(name) {
+  d <- file.path(gxp_tmp, name); dir.create(d); gxp_set(d)
+  gxp_env$audit_init(file.path(d, "audit.sqlite"), user = "owner", org = "Validation Org")
+  gxp_env$gxp_store_init(file.path(d, "users.sqlite"), "validation-key")
+  gxp_env$gxp_store_update(function(st) {
+    st$credentials <- rbind(st$credentials, data.frame(user = "u1", password = "Valid2026pass", start = as.character(Sys.Date()),
+      expire = NA_character_, admin = "FALSE", name = "U One", roles = "analyst", is_hashed_password = FALSE,
+      stringsAsFactors = FALSE)[, names(st$credentials)])
+    st$pwd_mngt <- rbind(st$pwd_mngt, data.frame(user = "u1", must_change = "FALSE", have_changed = "TRUE",
+      date_change = as.character(Sys.Date()), n_wrong_pwd = 0, stringsAsFactors = FALSE)[, names(st$pwd_mngt)])
+    st
+  })
+  d
+}
+
+check("GXP-19", "Password rule: at least 12 characters, a digit, a lower-case and an upper-case letter, never admin",
+      tryCatch({
+        v <- gxp_env$gxp_validate_pwd
+        v("Valid2026pass") && !v("Short1Aa") && !v("alllowercase2026") && !v("ALLUPPERCASE2026") &&
+          !v("NoDigitsAtAllHere") && !v("admin") && !v("ADMIN") && !v(NA_character_) && !v(c("Valid2026pass", "x"))
+      }, error = function(e) FALSE),
+      "URS-GXP-03", method = "gxp_validate_pwd() on 9 cases", expected = "only Valid2026pass accepted")
+
+check("GXP-20", "Open mode loads none of the controlled-mode packages and adds nothing to the UI",
+      tryCatch({
+        out <- suppressWarnings(system2(file.path(R.home("bin"), "Rscript"), c("-e", shQuote(paste(
+          "suppressMessages(source('app.R'));",
+          "cat(any(c('shinymanager','DBI','RSQLite') %in% loadedNamespaces()),",
+          "grepl('gxp', as.character(ui)), '\\n')"))),
+          env = c("NCA_GXP_DIR="), stdout = TRUE, stderr = FALSE))
+        identical(tail(trimws(out), 1), "FALSE FALSE")
+      }, error = function(e) FALSE),
+      "URS-GXP-01,URS-GEN-04", method = "source app.R in a fresh R process with NCA_GXP_DIR unset; inspect loadedNamespaces() and the UI",
+      expected = "no shinymanager, DBI or RSQLite loaded; no gxp element in the UI")
+
+check("GXP-21", "app_started records the configuration in force (policy values, directory, organisation, versions)",
+      tryCatch({
+        d <- gxp_ctl("started"); gxp_env$gxp_app_started(); tr <- gxp_env$audit_read(file.path(d, "audit.sqlite"))
+        det <- jsonlite::fromJSON(tail(tr$details, 1)); gxp_unset()
+        tail(tr$event, 1) == "app_started" && det$pwd_validity_days == 90 && det$pwd_failure_limit == 5 &&
+          det$timeout_min == 15 && det$organisation == "Validation Org" && !is.null(det$packages$shinymanager)
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-05,URS-GXP-14", method = "gxp_app_started() in a test directory", expected = "an app_started entry with the configuration")
+
+check("GXP-22", "Roles are read from the signed-in user, per session",
+      tryCatch({
+        a <- gxp_session("analyst"); r <- gxp_session("analyst;reviewer"); i <- gxp_session("inspector")
+        h <- gxp_env$has_role
+        !h(a, "reviewer") && h(r, "reviewer") && h(r, "analyst") && h(i, "inspector") && !h(i, "reviewer") &&
+          !h(new.env(), "reviewer")
+      }, error = function(e) FALSE),
+      "URS-GXP-10,URS-GXP-17", method = "has_role() for analyst, analyst;reviewer, inspector and a session without a user",
+      expected = "roles as held; no role without a user")
+
+check("GXP-23", "Sign-in attempts are logged (ok, failed, locked) and a lockout raises a security alert",
+      tryCatch({
+        d <- gxp_ctl("login"); ck <- gxp_env$audited_check()
+        ok <- isTRUE(ck("u1", "Valid2026pass")$result); bad <- isFALSE(ck("u1", "Wrong2026pass")$result)
+        ck("nobody", "Wrong2026pass")
+        gxp_env$gxp_store_update(function(st) { st$pwd_mngt$n_wrong_pwd[st$pwd_mngt$user == "u1"] <- 4; st })
+        ck("u1", "Wrong2026pass")                       # the fifth failure locks the account
+        gxp_env$gxp_store_update(function(st) { st$pwd_mngt$n_wrong_pwd[st$pwd_mngt$user == "u1"] <- 5; st })
+        ck("u1", "Valid2026pass")                       # right password, locked account
+        tr <- gxp_env$audit_read(file.path(d, "audit.sqlite")); gxp_unset()
+        ev <- tr$event[-1]
+        ok && bad && identical(ev[1:3], c("login_ok", "login_failed", "login_failed")) &&
+          tr$role[tr$object %in% "nobody"][1] == "unknown user" &&
+          any(ev == "login_locked") && sum(ev == "security_alert") == 2 &&
+          all(grepl("account_locked|login_locked", tr$details[tr$event == "security_alert"]))
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-03,URS-GXP-05,URS-GXP-16", method = "audited_check() with a right, a wrong and an unknown login; at the fifth failure; on a locked account",
+      expected = "login_ok, login_failed x2, login_locked; two security alerts")
+
+skip_manual("MAN-GXP-02", "Nothing runs before sign-in",
+            "On the login page and on the forced password-change page, run Shiny.setInputValue('nav_path','be') in the browser console",
+            "The page does not change; the audit trail shows no analysis or navigation entries for that session", "URS-GXP-02")
+skip_manual("MAN-GXP-03", "First sign-in with the starting password",
+            "Create an account with manage_users.R add; sign in with admin; try admin and a short password as the new password; then a valid one; sign in again",
+            "The change screen states the 12-character rule; admin and the short password are refused; the valid one is accepted; the trail shows password_changed (first login or expiry)",
+            "URS-GXP-03")
+skip_manual("MAN-GXP-04", "Header, hub line and About page in controlled mode",
+            "Sign in as an analyst and as a reviewer",
+            "Header: Controlled badge (tooltip with organisation and host) and the user menu with name, roles, Change password and Sign out; hub: 'Signed in as ...'; About: organisation, host and controlled directory",
+            "URS-GXP-02")
+skip_manual("MAN-GXP-05", "Inactivity: activity keeps the session, the warning comes 2 minutes before",
+            "Sign in; move the mouse now and then for 20 minutes; then leave the page untouched",
+            "Still signed in after 20 minutes; after 13 minutes without activity a warning with a countdown and Stay signed in; after 15 minutes the login page",
+            "URS-GXP-03")
+skip_manual("MAN-GXP-06", "Change password from the user menu",
+            "Open Change password; enter a wrong current password; then the right one with a new password that breaks the rule; then a valid new password",
+            "'incorrect, 2 attempts left'; the rule is shown; 'Your password has been changed.'; you stay signed in; the browser does not offer to fill in the fields; the trail shows password_change_failed and password_changed (user menu)",
+            "URS-GXP-03")
+skip_manual("MAN-GXP-07", "Sign out",
+            "Choose Sign out in the user menu", "The login page; the trail shows session_end with reason 'sign out'", "URS-GXP-05")
+skip_manual("MAN-GXP-08", "Open mode is unchanged",
+            "Start the app without NCA_GXP_DIR; compare the hub and the four analysis paths with the previous release",
+            "No login, no Controlled badge, no user menu, no hub line; the screens are the same as before", "URS-GXP-01")
+
 gxp_unset()
 end_section("GXP")
 

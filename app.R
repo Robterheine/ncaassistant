@@ -76,6 +76,10 @@ source("R/mod_path_be.R")
 source("R/mod_path_viz.R")
 source("R/mod_data_guide.R")
 source("R/mod_methods.R")
+# Controlled mode (audit trail, login, signatures): no-ops unless NCA_GXP_DIR is set
+source("R/gxp_audit.R")
+source("R/gxp_access.R")
+gxp_check_startup()
 
 # --- Theme -------------------------------------------------------------------
 # Colours chosen for at least 4.5:1 contrast with white text (WCAG AA)
@@ -98,6 +102,7 @@ pharma_theme <- bs_theme(
 # --- UI ----------------------------------------------------------------------
 ui <- page_fluid(
   theme = pharma_theme,
+  if (gxp_enabled()) tags$script(src = "gxp_activity.js", `data-timeout` = GXP_TIMEOUT_MIN),
   
   # Global header
   tags$nav(
@@ -141,6 +146,7 @@ ui <- page_fluid(
           style = "font-size: 0.7rem; padding: 2px 8px;",
           icon("file-pdf", class = "me-1"), "User Manual"
         ),
+        if (gxp_enabled()) uiOutput("gxp_header", inline = TRUE),
         tags$span(class = "text-light ms-2", style = "font-size: 0.7rem;",
                   paste0("v", APP_VERSION))
       )
@@ -301,6 +307,7 @@ server <- function(input, output, session) {
         tags$p(class = "text-white-50 mb-0", style = "font-size: 0.8rem;",
                "Rob ter Heine, Radboud Applied Pharmacometrics")
       ),
+      if (gxp_enabled()) gxp_hub_line(),
       
       # ---- Row 1: Plan | Upload | Visualize --------------------------------
       tags$div(
@@ -804,6 +811,9 @@ server <- function(input, output, session) {
                  "conclusions stays with the user. Not for dosing decisions for individual patients."),
           tags$h6(class = "fw-bold mt-3", "Your data"),
           tags$p(class = "small", DATA_PROTECTION_NOTICE),
+          if (gxp_enabled()) tags$p(class = "small",
+                 tags$strong("Controlled installation: "), gxp_config()$org, " \u00B7 ",
+                 Sys.info()[["nodename"]], " \u00B7 controlled directory ", tags$code(gxp_config()$dir)),
           tags$p(class = "text-muted small",
                  "This is version ", APP_VERSION, ". The software is provided as-is, without warranty.")
         )
@@ -1219,4 +1229,9 @@ server <- function(input, output, session) {
   path_viz_server("path_viz", shared)
 }
 
-shinyApp(ui = ui, server = server)
+if (gxp_enabled()) {
+  shinyApp(ui = gxp_secure_ui(ui), server = gxp_server(server),
+           onStart = function() { gxp_app_started(); onStop(gxp_app_stopped) })
+} else {
+  shinyApp(ui = ui, server = server)
+}
