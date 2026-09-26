@@ -411,6 +411,23 @@ gxp_is_locked <- function(user, store = gxp_store_read()) {
   length(n) == 1 && !is.na(n) && n >= GXP_PWD_FAILURE_LIMIT
 }
 
+#' Must the user still change the password (starting password, reset or
+#' expiry)? Read from the store on the server, never from the browser
+gxp_must_change <- function(user, store = gxp_store_read()) {
+  pm <- store$pwd_mngt[store$pwd_mngt$user == user, ]
+  if (nrow(pm) != 1) return(TRUE)
+  if (!identical(pm$must_change, "FALSE")) return(TRUE)
+  d <- tryCatch(as.Date(pm$date_change), error = function(e) NA)
+  is.na(d) || as.numeric(Sys.Date() - d) > GXP_PWD_VALIDITY_DAYS
+}
+
+#' Does the user hold the role now? Read from the store, so that a role taken
+#' away during a session counts at once
+gxp_has_role_now <- function(user, role, store = gxp_store_read()) {
+  r <- store$credentials$roles[store$credentials$user == user]
+  length(r) == 1 && role %in% strsplit(r, ";", fixed = TRUE)[[1]]
+}
+
 # --- Hooks for the analysis modules --------------------------------------------
 # One call each in the modules; all are no-ops in open mode, and their
 # arguments are not even evaluated there.

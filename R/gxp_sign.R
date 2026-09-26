@@ -327,6 +327,7 @@ gxp_sign_server <- function(input, output, session) {
       footer = tagList(modalButton("Cancel"),
                        actionButton("gxp_sign_submit", "Sign", class = if (meaning == "review_approved") "btn-success" else "btn-danger"))))
     session$userData$gxp_sign_meaning <- meaning
+    session$userData$gxp_sign_sha <- r$sha  # the signature binds to the record shown in the dialog
     output$gxp_sign_msg <- renderUI(NULL)
   }
   observeEvent(input$gxp_rec_approve, sign_dialog("review_approved"))
@@ -337,12 +338,15 @@ gxp_sign_server <- function(input, output, session) {
     r <- rec_now()
     # Checks, in the order of the handover (Part A, A.6)
     if (!can_review()) return(msg("Only a reviewer can sign a record."))
+    if (is.null(meaning)) return(msg("Open the record and click Approve or Reject first."))
     if (is.null(r)) return(msg("Select a record first."))
     if (r$author == me) return(msg("You cannot review your own record."))
     if (r$status != "Awaiting review") return(msg("This record has already been reviewed."))
     if (!gxp_record_valid(r$sha)) return(msg("The stored record no longer matches its SHA-256; it cannot be signed."))
     reason <- if (meaning == "review_rejected") trimws(.or(input$gxp_sign_reason, "")) else ""
     if (meaning == "review_rejected" && !nzchar(reason)) return(msg("Give the reason for the rejection."))
+    if (!identical(r$sha, session$userData$gxp_sign_sha))
+      return(msg("The selected record is not the one in this dialog. Close it and open the record again."))
     fail <- function(why) {
       gxp_guard("signature_failed", object = r$name, sha256 = r$sha,
                 details = list(attempt = .or(session$userData$gxp_failures, 0L) + 1L, why = why))
@@ -352,6 +356,8 @@ gxp_sign_server <- function(input, output, session) {
     if (!identical(input$gxp_sign_user, me)) return(fail("user ID"))
     st <- tryCatch(gxp_store_read(), error = function(e) NULL)
     if (is.null(st) || gxp_is_locked(me, st)) return(msg("Your account is locked. Please contact the system owner."))
+    if (gxp_must_change(me, st)) return(msg("Change your password before you sign."))
+    if (!gxp_has_role_now(me, "reviewer", st)) return(msg("Only a reviewer can sign; your reviewer role has been removed."))
     cfg <- gxp_config()
     if (!isTRUE(shinymanager::check_credentials(cfg$users, passphrase = cfg$key)(me, input$gxp_sign_pwd)$result))
       return(fail("password"))
@@ -491,6 +497,8 @@ gxp_sign_server <- function(input, output, session) {
     if (!identical(input$gxp_rev_user, me)) return(fail())
     st <- tryCatch(gxp_store_read(), error = function(e) NULL)
     if (is.null(st) || gxp_is_locked(me, st)) return(msg("Your account is locked. Please contact the system owner."))
+    if (gxp_must_change(me, st)) return(msg("Change your password before you sign."))
+    if (!gxp_has_role_now(me, "reviewer", st)) return(msg("Only a reviewer can sign; your reviewer role has been removed."))
     cfg <- gxp_config()
     if (!isTRUE(shinymanager::check_credentials(cfg$users, passphrase = cfg$key)(me, input$gxp_rev_pwd)$result)) return(fail())
     p <- session$userData$gxp_review_period; h <- audit_head()

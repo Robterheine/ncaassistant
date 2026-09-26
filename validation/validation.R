@@ -5383,6 +5383,57 @@ check("GXP-40", "The record's data_integrity.txt says which mode it was made in;
       "URS-GXP-09,URS-EXP-06", method = "write_integrity_manifest() in open and in controlled mode",
       expected = "open: the existing sentence; controlled: stored on the server, audit trail of the organisation")
 
+check("GXP-41", "The app starts only after the required password change, checked on the server and not taken from the browser",
+      tryCatch({
+        gxp_team("gate")
+        setpm <- function(mc, days) gxp_env$gxp_store_update(function(st) { i <- st$pwd_mngt$user == "ana"
+          st$pwd_mngt$must_change[i] <- mc; st$pwd_mngt$date_change[i] <- as.character(Sys.Date() - days); st })
+        setpm("TRUE", 0); a_new <- gxp_env$gxp_app_allowed("ana")
+        setpm("FALSE", 91); a_old <- gxp_env$gxp_app_allowed("ana")
+        setpm("FALSE", 89); a_ok <- gxp_env$gxp_app_allowed("ana")
+        a_unknown <- gxp_env$gxp_app_allowed("nobody")
+        tr <- gxp_env$audit_read(); al <- tr[tr$event == "security_alert", ]
+        src <- paste(deparse(body(gxp_env$gxp_server)), collapse = " "); gxp_unset()
+        !a_new && !a_old && a_ok && !a_unknown && sum(grepl("forced_change_skipped", al$details)) == 3 &&
+          regexpr("gxp_app_allowed", src) < regexpr("started <<- TRUE", src, fixed = TRUE)
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-02,URS-GXP-03,URS-GXP-16", method = "gxp_app_allowed() with a password change pending, a 91-day-old password, an 89-day-old one and an unknown user; gxp_server calls it before starting the app",
+      expected = "only the 89-day-old password starts the app; three security alerts; the check comes before the start")
+
+check("GXP-42", "Signing is refused while a password change is due and once the reviewer role has been removed",
+      tryCatch({
+        gxp_team("sign9"); sha <- gxp_rec("ana", "analyst", "aaaaaaaa41", "rec_ana41"); m <- list()
+        upd <- function(f) gxp_env$gxp_store_update(f)
+        testServer(gxp_as("rev", "analyst;reviewer"), {
+          gxp_pick(session, sha); session$setInputs(gxp_rec_approve = 1)
+          upd(function(st) { st$pwd_mngt$must_change[st$pwd_mngt$user == "rev"] <- "TRUE"; st })
+          session$setInputs(gxp_sign_user = "rev", gxp_sign_pwd = "Valid2026pass", gxp_sign_submit = 1); m$change <<- gxp_msg(output)
+          upd(function(st) { st$pwd_mngt$must_change[st$pwd_mngt$user == "rev"] <- "FALSE"; st$credentials$roles[st$credentials$user == "rev"] <- "analyst"; st })
+          session$setInputs(gxp_sign_submit = 2); m$role <<- gxp_msg(output)
+          session$setInputs(gxp_rev_user = "rev", gxp_rev_pwd = "Valid2026pass", gxp_rev_submit = 1); m$trail <<- gxp_msg(output, "gxp_rev_msg") })
+        tr <- gxp_env$audit_read(); gxp_unset()
+        grepl("Change your password", m$change) && grepl("reviewer role has been removed", m$role) &&
+          grepl("reviewer role has been removed", m$trail) && !any(tr$event %in% c("record_signed", "trail_reviewed"))
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-03,URS-GXP-10", method = "testServer(gxp_sign_server) as rev; set must_change, then take the reviewer role away in the store during the session",
+      expected = "both refused with their messages; no record_signed or trail_reviewed")
+
+check("GXP-43", "A signature binds to the record shown in the dialog, not to a selection changed afterwards",
+      tryCatch({
+        gxp_team("sign10"); s1 <- gxp_rec("ana", "analyst", "aaaaaaaa42", "rec_ana42"); s2 <- gxp_rec("ana", "analyst", "aaaaaaaa43", "rec_ana43"); m <- list()
+        testServer(gxp_as("rev", "analyst;reviewer"), {
+          gxp_pick(session, s1)
+          session$setInputs(gxp_sign_user = "rev", gxp_sign_pwd = "Valid2026pass", gxp_sign_submit = 1); m$nodialog <<- gxp_msg(output)
+          session$setInputs(gxp_rec_approve = 1); gxp_pick(session, s2)
+          session$setInputs(gxp_sign_submit = 2); m$moved <<- gxp_msg(output)
+          gxp_pick(session, s1); session$setInputs(gxp_sign_submit = 3) })
+        tr <- gxp_env$audit_read(); sg <- tr[tr$event == "record_signed", ]; gxp_unset()
+        grepl("click Approve or Reject first", m$nodialog) && grepl("not the one in this dialog", m$moved) &&
+          nrow(sg) == 1 && sg$sha256 == s1
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-08", method = "submit without opening the dialog; open it on one record, select another, submit; select the first again, submit",
+      expected = "the first two refused; one record_signed, on the record shown in the dialog")
+
 gxp_unset()
 end_section("GXP")
 

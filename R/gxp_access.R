@@ -97,6 +97,15 @@ gxp_detect_forced_change <- function(session) {
   invisible()
 }
 
+#' May the app start for this user? shinymanager_where comes from the browser,
+#' so check on the server that the required password change has been done
+gxp_app_allowed <- function(user) {
+  st <- tryCatch(gxp_store_read(), error = function(e) NULL)
+  if (!is.null(st) && !gxp_must_change(user, st)) return(TRUE)
+  gxp_alert("forced_change_skipped", user, "app requested before the required password change", session = NULL)
+  FALSE
+}
+
 #' The server: shinymanager first, the real app once the user is in
 gxp_server <- function(server) {
   function(input, output, session) {
@@ -108,6 +117,7 @@ gxp_server <- function(server) {
     signing_out <- FALSE
     observe({
       req(!started, auth$user, identical(input$shinymanager_where, "application"))
+      if (!gxp_app_allowed(auth$user)) return()
       started <<- TRUE
       session$userData$gxp <- list(user = auth$user, name = auth$name, roles = auth$roles)
       session$userData$gxp_failures <- 0L
