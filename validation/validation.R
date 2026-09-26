@@ -5367,6 +5367,20 @@ check("GXP-39", "A login ID with control characters or excessive length is clean
       }, error = function(e) { gxp_unset(); FALSE }),
       "URS-GXP-05", method = "audited_check() with a newline and 200 extra characters in the ID", expected = "no control characters; at most 64 characters")
 
+check("GXP-40", "The record's data_integrity.txt says which mode it was made in; open-mode records keep their wording",
+      tryCatch({
+        f <- file.path(gxp_tmp, "art.txt"); writeLines("x", f)
+        o <- file.path(gxp_tmp, "rec_open"); dir.create(o); gxp_unset(); gxp_env$write_integrity_manifest(o, list(Data = f))
+        gxp_team("t8"); cdir <- file.path(gxp_tmp, "rec_ctl"); dir.create(cdir); gxp_env$write_integrity_manifest(cdir, list(Data = f)); gxp_unset()
+        open_txt <- paste(readLines(file.path(o, "data_integrity.txt")), collapse = " ")
+        ctl_txt <- paste(readLines(file.path(cdir, "data_integrity.txt")), collapse = " ")
+        grepl("it is not an audit trail or electronic signature", open_txt) &&
+          grepl("controlled installation", ctl_txt) && grepl("audit trail of Validation Org", ctl_txt) &&
+          !grepl("it is not an audit trail", ctl_txt)
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-09,URS-EXP-06", method = "write_integrity_manifest() in open and in controlled mode",
+      expected = "open: the existing sentence; controlled: stored on the server, audit trail of the organisation")
+
 gxp_unset()
 end_section("GXP")
 

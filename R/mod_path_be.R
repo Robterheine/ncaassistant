@@ -1392,7 +1392,7 @@ path_be_server <- function(id, shared) {
       
       lz_state$override <- override
       
-      # Log the override for audit trail
+      # Log the override (override log in the Analysis Record)
       sel <- input$lz_profile
       lz_state$fits[[sel]] <- override
       lz_state$overrides_log[[sel]] <- c(list(

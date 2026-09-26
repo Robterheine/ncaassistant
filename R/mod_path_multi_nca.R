@@ -890,7 +890,7 @@ path_multi_nca_server <- function(id, shared) {
       
       lz_state$override <- override
       
-      # Log the override for audit trail
+      # Log the override (override log in the Analysis Record)
       sel <- input$lz_profile
       lz_state$fits[[sel]] <- override
       orig_lz <- estimate_lambda_z(sd$time, sd$conc, input$r2adj, route = input$admin_route, is_blq = sd$is_blq)

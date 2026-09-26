@@ -80,8 +80,13 @@ write_integrity_manifest <- function(rec_dir, artifacts) {
     "Recompute any hash below and confirm it matches; a match shows that file is",
     "the one hashed when this record was created. The manifest itself is unsigned:",
     "store the record, or this file's hash, in a controlled system to detect later",
-    "changes. This record documents how the result was produced; it is not an",
-    "audit trail or electronic signature in the sense of 21 CFR Part 11 or EU GMP Annex 11.",
+    if (exists("gxp_enabled", mode = "function") && gxp_enabled()) c(
+      "changes. On this controlled installation the record is also stored on the server,",
+      paste0("and its creation and any review signature are in the audit trail of ", gxp_config()$org, ","),
+      "under the SHA-256 of the record zip. Signatures are not written into the zip itself.")
+    else c(
+      "changes. This record documents how the result was produced; it is not an",
+      "audit trail or electronic signature in the sense of 21 CFR Part 11 or EU GMP Annex 11."),
     "")
   for (lab in names(artifacts)) {
     p <- artifacts[[lab]]

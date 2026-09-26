@@ -471,8 +471,10 @@ help_analysis_record <- info_btn("help_analysis_record",
   </ul>
   <b>When to use it:</b> archiving, publication supplements, and a sponsor's
   study documentation, any time someone needs to see how the result was
-  produced. It is not an audit trail or electronic signature (21 CFR Part 11,
-  EU GMP Annex 11).")
+  produced. On the public app and in a standard installation, it is not an
+  audit trail or electronic signature (21 CFR Part 11, EU GMP Annex 11). On a
+  controlled installation, the record is also stored on the server, and its
+  creation and review are recorded in the audit trail.")
 
 # ============================================================================
 # SHARED UI — Analysis Record panel (used by every analysis tab)
