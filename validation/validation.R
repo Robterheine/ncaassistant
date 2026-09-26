@@ -1034,9 +1034,11 @@ check("UI-CQ-02", "No browser()",
       "URS-GEN-01", method="Grep browser()", expected="None", critical=FALSE)
 
 # Missing URS coverage tests
-check("UI-NS-01", "No persistent storage (GEN-04)",
-      { rf<-list.files("R",pattern="\\.R$",full.names=TRUE); !any(sapply(rf,function(f){l<-readLines(f,warn=FALSE);any(grepl("dbConnect|RSQLite|saveRDS",l)&!grepl("^#",l))})) },
-      "URS-GEN-04", method="No database/persistent storage in app code", expected="No DB calls", critical=FALSE)
+# Controlled mode (R/gxp_*.R) keeps an audit trail and records on purpose;
+# GEN-04 covers open mode, so those files are left out of this check
+check("UI-NS-01", "No persistent storage in open mode (GEN-04)",
+      { rf<-grep("/gxp_", list.files("R",pattern="\\.R$",full.names=TRUE), value=TRUE, invert=TRUE); !any(sapply(rf,function(f){l<-readLines(f,warn=FALSE);any(grepl("dbConnect|RSQLite|saveRDS",l)&!grepl("^#",l))})) },
+      "URS-GEN-04", method="No database/persistent storage in app code outside R/gxp_*.R", expected="No DB calls", critical=FALSE)
 
 # Read app.R as a single string so the check is robust to line breaks between the
 # tag and the APP_VERSION reference. GEN-05 only requires the version to be shown
@@ -4602,6 +4604,216 @@ check("MRV-10", "T-16, T-01: an example file with BLQ results, and an installati
   expected = "22 '<0.5' entries in 8 subjects; LLOQ 0 is refused, 0.5 passes; subject 5's lag time 0.5 h; a --validated install from validation/renv.lock")
 
 end_section("MRV")
+
+# =============================================================================
+# SECTION GXP: Controlled mode (audit trail, access control, signatures)
+# =============================================================================
+start_section("GXP")
+
+gxp_ok <- all(vapply(c("DBI", "RSQLite", "shinymanager"), requireNamespace, logical(1), quietly = TRUE))
+gxp_env <- new.env()
+if (gxp_ok) sys.source("R/gxp_audit.R", envir = gxp_env)
+gxp_tmp <- tempfile("gxp_"); dir.create(gxp_tmp)
+gxp_set <- function(dir) Sys.setenv(NCA_GXP_DIR = dir, NCA_GXP_KEY = "validation-key",
+                                    NCA_GXP_ORG = "Validation Org")
+gxp_unset <- function() Sys.unsetenv(c("NCA_GXP_DIR", "NCA_GXP_KEY", "NCA_GXP_ORG"))
+# A fresh trail with n entries after trail_created
+gxp_trail <- function(n = 9) {
+  d <- tempfile("trail_", tmpdir = gxp_tmp); dir.create(d)
+  p <- file.path(d, "audit.sqlite")
+  gxp_env$audit_init(p, user = "owner", org = "Validation Org")
+  for (i in seq_len(n)) gxp_env$audit_append("analysis_run", object = paste("run", i),
+                                             details = list(i = i), user = "ana", role = "analyst",
+                                             org = "Validation Org", path = p)
+  p
+}
+# Tamper with a copy: drop the triggers first, as someone with file access could
+gxp_tamper <- function(p, sql) {
+  q <- tempfile(fileext = ".sqlite", tmpdir = gxp_tmp); file.copy(p, q)
+  con <- DBI::dbConnect(RSQLite::SQLite(), q)
+  DBI::dbExecute(con, "DROP TRIGGER trail_no_update"); DBI::dbExecute(con, "DROP TRIGGER trail_no_delete")
+  for (s in sql) DBI::dbExecute(con, s)
+  DBI::dbDisconnect(con)
+  q
+}
+
+check("GXP-01", "The packages controlled mode needs are installed (DBI, RSQLite, shinymanager)",
+      gxp_ok, "URS-GXP-01", method = "requireNamespace()", expected = "TRUE")
+
+check("GXP-02", "A new trail verifies: 10 entries, intact, first entry trail_created with a zero prev_hash",
+      tryCatch({
+        p <- gxp_trail(9); v <- gxp_env$audit_verify(p); tr <- gxp_env$audit_read(p)
+        e1 <- jsonlite::fromJSON(DBI::dbGetQuery(con <- DBI::dbConnect(RSQLite::SQLite(), p),
+                                                  "SELECT entry FROM trail WHERE seq = 1")$entry)
+        DBI::dbDisconnect(con)
+        v$intact && v$n == 10 && tr$event[1] == "trail_created" && e1$prev_hash == strrep("0", 64)
+      }, error = function(e) FALSE),
+      "URS-GXP-05,URS-GXP-06", method = "audit_init() + 9 x audit_append(); audit_verify()",
+      expected = "intact; n = 10")
+
+check("GXP-03", "Every entry records user, role, organisation, UTC time, app version and the previous hash",
+      tryCatch({
+        tr <- gxp_env$audit_read(gxp_trail(3))
+        all(tr$user[-1] == "ana") && all(tr$role[-1] == "analyst") &&
+          all(tr$organisation == "Validation Org") &&
+          all(grepl("^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$", tr$time_utc))
+      }, error = function(e) FALSE),
+      "URS-GXP-05", method = "audit_read() of a new trail",
+      expected = "user, role, organisation filled; time as YYYY-MM-DDThh:mm:ss.sssZ")
+
+check("GXP-04", "UPDATE and DELETE on the trail table are refused by the triggers",
+      tryCatch({
+        p <- gxp_trail(3); con <- DBI::dbConnect(RSQLite::SQLite(), p)
+        u <- tryCatch({ DBI::dbExecute(con, "UPDATE trail SET hash = 'x' WHERE seq = 2"); "done" },
+                      error = function(e) conditionMessage(e))
+        d <- tryCatch({ DBI::dbExecute(con, "DELETE FROM trail WHERE seq = 2"); "done" },
+                      error = function(e) conditionMessage(e))
+        n <- DBI::dbGetQuery(con, "SELECT count(*) AS n FROM trail")$n; DBI::dbDisconnect(con)
+        grepl("append-only", u) && grepl("append-only", d) && n == 4 && gxp_env$audit_verify(p)$intact
+      }, error = function(e) FALSE),
+      "URS-GXP-05", method = "UPDATE and DELETE through DBI", expected = "both refused; 4 rows; intact")
+
+check("GXP-05", "A changed byte, a deleted row, an inserted row and swapped rows are each detected at the right entry",
+      tryCatch({
+        p <- gxp_trail(9)
+        con <- DBI::dbConnect(RSQLite::SQLite(), p)
+        rows <- DBI::dbGetQuery(con, "SELECT seq, entry, hash FROM trail ORDER BY seq"); DBI::dbDisconnect(con)
+        q <- function(x) gsub("'", "''", x)
+        changed <- gxp_tamper(p, "UPDATE trail SET entry = replace(entry, 'run 4', 'run X') WHERE seq = 5")
+        deleted <- gxp_tamper(p, "DELETE FROM trail WHERE seq = 5")
+        fake <- sub('"object":"run 3"', '"object":"inserted"', rows$entry[4])
+        inserted <- gxp_tamper(p, c(
+          "DELETE FROM trail WHERE seq >= 5",
+          sprintf("INSERT INTO trail VALUES (5, '%s', '%s')", q(fake),
+                  digest::digest(fake, algo = "sha256", serialize = FALSE)),
+          sprintf("INSERT INTO trail VALUES (%d, '%s', '%s')", rows$seq[5:10] + 1L, q(rows$entry[5:10]), rows$hash[5:10])))
+        swapped <- gxp_tamper(p, c(
+          "DELETE FROM trail WHERE seq IN (5, 6)",
+          sprintf("INSERT INTO trail VALUES (5, '%s', '%s')", q(rows$entry[6]), rows$hash[6]),
+          sprintf("INSERT INTO trail VALUES (6, '%s', '%s')", q(rows$entry[5]), rows$hash[5])))
+        fb <- vapply(list(changed, deleted, inserted, swapped),
+                     function(f) { v <- gxp_env$audit_verify(f); if (v$intact) NA_integer_ else v$first_broken },
+                     integer(1))
+        identical(fb, c(5L, 6L, 5L, 5L))
+      }, error = function(e) FALSE),
+      "URS-GXP-06", method = "tamper with copies (triggers dropped); audit_verify()",
+      expected = "not intact; first broken entry 5 (changed), 6 (deleted), 5 (inserted), 5 (swapped)")
+
+check("GXP-06", "Removing the last entries is detected against an anchor filed earlier",
+      tryCatch({
+        p <- gxp_trail(9); h <- gxp_env$audit_head(p)
+        t <- gxp_tamper(p, "DELETE FROM trail WHERE seq > 7")
+        without <- gxp_env$audit_verify(t)
+        with <- gxp_env$audit_verify(t, anchors = data.frame(seq = h$seq, hash = h$hash))
+        h$seq == 10 && without$intact && !with$intact && grepl("entries removed", with$errors[1])
+      }, error = function(e) FALSE),
+      "URS-GXP-06", method = "audit_head(); delete entries 8-10 in a copy; audit_verify() with and without the anchor",
+      expected = "intact without the anchor (a bare chain cannot tell), broken with it")
+
+check("GXP-07", "Three processes appending 500 entries each at the same time give one intact chain",
+      tryCatch({
+        p <- gxp_trail(0); go <- file.path(gxp_tmp, "go"); unlink(go)
+        worker <- file.path(gxp_tmp, "worker.R")
+        writeLines(c(sprintf('source("%s")', normalizePath("R/gxp_audit.R")),
+                     sprintf('while (!file.exists("%s")) Sys.sleep(0.01)', go),
+                     'for (i in 1:500) audit_append("analysis_run", object = commandArgs(TRUE)[1], user = commandArgs(TRUE)[1],',
+                     sprintf('  role = "analyst", org = "Validation Org", path = "%s")', p)), worker)
+        rs <- file.path(R.home("bin"), "Rscript")
+        for (w in c("w1", "w2", "w3")) system2(rs, c(shQuote(worker), w), wait = FALSE, stdout = FALSE, stderr = FALSE)
+        Sys.sleep(2); file.create(go)
+        n_rows <- function() { con <- gxp_env$.audit_connect(p); on.exit(DBI::dbDisconnect(con))
+                               DBI::dbGetQuery(con, "SELECT count(*) AS n FROM trail")$n }
+        t0 <- Sys.time()
+        while (n_rows() < 1501 && difftime(Sys.time(), t0, units = "secs") < 180) Sys.sleep(0.5)
+        v <- gxp_env$audit_verify(p); tr <- gxp_env$audit_read(p)
+        switches <- sum(head(tr$object[-1], -1) != tail(tr$object[-1], -1))
+        v$intact && v$n == 1501 && all(table(tr$user[-1]) == 500) && switches > 10
+      }, error = function(e) FALSE),
+      "URS-GXP-05", method = "3 Rscript processes, 500 audit_append() each, started together",
+      expected = "1501 entries, intact, 500 per writer, writes interleaved")
+
+check("GXP-08", "An append to a read-only trail stops with an error and leaves no row",
+      tryCatch({
+        p <- gxp_trail(2); Sys.chmod(p, "0444")
+        err <- tryCatch({ gxp_env$audit_append("analysis_run", user = "ana", role = "analyst",
+                                               org = "Validation Org", path = p); FALSE },
+                        error = function(e) TRUE)
+        Sys.chmod(p, "0644")
+        err && gxp_env$audit_verify(p)$n == 3
+      }, error = function(e) FALSE),
+      "URS-GXP-07", method = "chmod 0444 on audit.sqlite; audit_append()", expected = "error; still 3 entries")
+
+check("GXP-09", "An entry written after the clock was set back is reported as a warning, not a break",
+      tryCatch({
+        p <- gxp_trail(2); real <- gxp_env$gxp_utc_now
+        assign("gxp_utc_now", function() "2000-01-01T00:00:00.000Z", envir = gxp_env)
+        gxp_env$audit_append("analysis_run", user = "ana", role = "analyst", org = "Validation Org", path = p)
+        assign("gxp_utc_now", real, envir = gxp_env)
+        v <- gxp_env$audit_verify(p)
+        v$intact && length(v$warnings) == 1 && grepl("earlier", v$warnings)
+      }, error = function(e) FALSE),
+      "URS-GXP-05", method = "append an entry with a time before its predecessor", expected = "intact; one clock warning")
+
+check("GXP-10", "Fail closed: gxp_guard() writes before the action, returns FALSE when it cannot, and is a no-op in open mode",
+      tryCatch({
+        gxp_unset(); open_ok <- isTRUE(gxp_env$gxp_guard("analysis_run", session = NULL))
+        d <- file.path(gxp_tmp, "guard"); dir.create(d); gxp_set(d)
+        gxp_env$audit_init(file.path(d, "audit.sqlite"), user = "owner", org = "Validation Org")
+        written <- isTRUE(gxp_env$gxp_guard("analysis_run", object = "x", session = NULL))
+        Sys.chmod(file.path(d, "audit.sqlite"), "0444")
+        refused <- identical(gxp_env$gxp_guard("analysis_run", object = "y", session = NULL), FALSE)
+        Sys.chmod(file.path(d, "audit.sqlite"), "0644")
+        n <- gxp_env$audit_verify(file.path(d, "audit.sqlite"))$n
+        gxp_unset()
+        open_ok && written && refused && n == 2
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-07,URS-GXP-01", method = "gxp_guard() in open mode, with a writable and with a read-only trail",
+      expected = "TRUE (open), TRUE and one entry (writable), FALSE and no entry (read-only)")
+
+check("GXP-11", "A record is stored read-only under its SHA-256 and its creation is logged",
+      tryCatch({
+        d <- file.path(gxp_tmp, "store"); dir.create(d); gxp_set(d)
+        gxp_env$audit_init(file.path(d, "audit.sqlite"), user = "owner", org = "Validation Org")
+        z <- tempfile(fileext = ".zip", tmpdir = gxp_tmp); writeLines("record content", z)
+        sha <- gxp_env$gxp_store_record(z, "record.zip", "batch_nca", study = "S1", verdict = "MATCH", session = NULL)
+        dest <- file.path(d, "records", paste0(sha, ".zip"))
+        tr <- gxp_env$audit_read(file.path(d, "audit.sqlite")); gxp_unset()
+        identical(sha, gxp_env$sha256_file(z)) && file.exists(dest) &&
+          file.access(dest, 2) != 0 && tail(tr$event, 1) == "record_created" && tail(tr$sha256, 1) == sha
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-09", method = "gxp_store_record() on a small file", expected = "records/<sha>.zip, read-only; record_created with that SHA-256")
+
+check("GXP-12", "A security alert goes to the system log (or the fallback file) and into the trail",
+      tryCatch({
+        d <- file.path(gxp_tmp, "alert"); dir.create(d); gxp_set(d)
+        gxp_env$audit_init(file.path(d, "audit.sqlite"), user = "owner", org = "Validation Org")
+        via_logger <- if (nzchar(Sys.which("logger"))) isTRUE(gxp_env$gxp_alert("login_locked", "ana", session = NULL)) else TRUE
+        old_path <- Sys.getenv("PATH"); Sys.setenv(PATH = "")
+        via_file <- isTRUE(gxp_env$gxp_alert("signature_failures", "ana", session = NULL))
+        Sys.setenv(PATH = old_path)
+        tr <- gxp_env$audit_read(file.path(d, "audit.sqlite")); gxp_unset()
+        via_logger && via_file && file.exists(file.path(d, "security_alerts.log")) &&
+          sum(tr$event == "security_alert") == 2 && all(grepl('"sent":true', tr$details[tr$event == "security_alert"]))
+      }, error = function(e) { Sys.setenv(PATH = old_path); gxp_unset(); FALSE }),
+      "URS-GXP-16", method = "gxp_alert() with logger, and with logger unavailable",
+      expected = "sent both times; security_alerts.log written in the fallback; two security_alert entries")
+
+check("GXP-13", "The app refuses to start with gxp/CONTROLLED present and controlled mode not configured, or with the organisation missing",
+      tryCatch({
+        gxp_unset(); app <- file.path(gxp_tmp, "app"); dir.create(file.path(app, "gxp"), recursive = TRUE)
+        free <- isFALSE(gxp_env$gxp_check_startup(app))
+        file.create(file.path(app, "gxp", "CONTROLLED"))
+        marked <- inherits(tryCatch(gxp_env$gxp_check_startup(app), error = function(e) e), "error")
+        d <- file.path(gxp_tmp, "startup"); dir.create(d); gxp_set(d); Sys.setenv(NCA_GXP_ORG = "")
+        no_org <- tryCatch({ gxp_env$gxp_check_startup(app); "" }, error = function(e) conditionMessage(e))
+        gxp_unset()
+        free && marked && grepl("NCA_GXP_ORG", no_org)
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-01", method = "gxp_check_startup() without and with the marker; with NCA_GXP_ORG empty",
+      expected = "open mode allowed without the marker; stop with the marker; stop naming NCA_GXP_ORG")
+
+gxp_unset()
+end_section("GXP")
 
 # =============================================================================
 # Post-execution
