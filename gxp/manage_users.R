@@ -3,7 +3,8 @@
 # NCA Assistant: user administration for controlled mode
 # ============================================================================
 # Run by the system owner on the server, as the app's service account:
-#   sudo -u shiny Rscript gxp/manage_users.R <command> ...
+#   sudo -H -u shiny Rscript /srv/shiny-server/nca/gxp/manage_users.R <command> ...
+# (-H: R then reads the service account's .Renviron, where the settings are)
 # Every change is written to the audit trail under the person who ran it
 # (SUDO_USER), with a reason. There is no delete: user IDs are never reused.
 #
@@ -42,7 +43,7 @@ if (!nzchar(cfg$key) || !nzchar(cfg$org)) fail("NCA_GXP_KEY and NCA_GXP_ORG must
 acting <- if (nzchar(Sys.getenv("SUDO_USER"))) Sys.getenv("SUDO_USER") else Sys.info()[["user"]]
 service <- Sys.getenv("NCA_GXP_SERVICE_ACCOUNT", "shiny")
 if (!cmd %in% c("verify", "head") && identical(acting, service))
-  fail("Run this as yourself through sudo (sudo -u ", service, " ...), so that the audit trail names you.")
+  fail("Run this as yourself through sudo (sudo -H -u ", service, " Rscript <full path>/gxp/manage_users.R ...), so that the audit trail names you.")
 
 need <- function(n, usage) if (length(args) < n + 1) fail("Usage: manage_users.R ", usage)
 log_admin <- function(event, object, details, reason = NULL)

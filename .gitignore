@@ -7,3 +7,6 @@ rsconnect/
 Rplots*.pdf
 validation/validation_results.csv
 validation/validation_environment.txt
+
+# Local settings of controlled mode (hold a passphrase)
+.Renviron
