@@ -307,8 +307,8 @@ gxp_alert <- function(trigger, target_user, detail = "",
                       session = shiny::getDefaultReactiveDomain()) {
   if (!gxp_enabled()) return(invisible(FALSE))
   cfg <- gxp_config()
-  msg <- sprintf("NCA Assistant security alert [%s] trigger=%s user=%s %s",
-                 cfg$org, trigger, target_user, detail)
+  msg <- gsub("[[:cntrl:]]", " ", sprintf("NCA Assistant security alert [%s] trigger=%s user=%s %s",
+                                        cfg$org, trigger, substr(target_user, 1, 64), detail))
   sent <- tryCatch({
     if (nzchar(Sys.which("logger"))) {
       system2("logger", c("-t", "nca-assistant", "-p", "auth.warning", shQuote(msg)),

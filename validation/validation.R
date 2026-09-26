@@ -5334,6 +5334,39 @@ skip_manual("MAN-GXP-12", "Inspector account", "Sign in as an inspector; open Re
 skip_manual("MAN-GXP-13", "Audit trail page", "As a reviewer: open Audit trail; look at Exceptions; filter All entries; Verify chain; Export CSV; Users; Sign trail review",
             "Plain-language events; filters work; 'Intact: N entries'; the CSV starts with the verification line; the last-review line updates", "URS-GXP-11,URS-GXP-14")
 
+# --- Self-review fixes (T7) ---------------------------------------------------
+check("GXP-38", "An analyst gets none of the Audit trail outputs, even when a page asks for them; sheet downloads and verifications are logged or refused",
+      tryCatch({
+        d <- gxp_team("t7"); sha <- gxp_rec("ana", "analyst", "abababab01", "rec_t7")
+        blocked <- c()
+        testServer(gxp_as("ana", "analyst"), {
+          for (o in c("gxp_review_line", "gxp_trail_table", "gxp_users_table", "gxp_exceptions"))
+            blocked[o] <<- tryCatch({ x <- output[[o]]; is.null(x) || length(unlist(x)) == 0 }, error = function(e) TRUE)
+          session$setInputs(gxp_verify_file = data.frame(name = "rec_t7.zip", size = 1, type = "application/zip",
+                                                        datapath = file.path(gxp_tmp, "rec_t7.zip")))
+          blocked["verify"] <<- tryCatch({ x <- output$gxp_verify_result; is.null(x) || length(unlist(x)) == 0 }, error = function(e) TRUE) })
+        testServer(gxp_as("insp", "inspector"), { gxp_pick(session, sha); invisible(output$gxp_rec_sheet) })
+        tr <- gxp_env$audit_read()
+        sheet_logged <- any(tr$event == "record_downloaded" & grepl("signature sheet", tr$details))
+        Sys.chmod(file.path(d, "audit.sqlite"), "0444"); shown <- "x"
+        testServer(gxp_as("insp", "inspector"), {
+          session$setInputs(gxp_verify_file = data.frame(name = "rec_t7.zip", size = 1, type = "application/zip",
+                                                        datapath = file.path(gxp_tmp, "rec_t7.zip")))
+          shown <<- tryCatch(paste(unlist(output$gxp_verify_result), collapse = ""), error = function(e) "") })
+        Sys.chmod(file.path(d, "audit.sqlite"), "0644"); gxp_unset()
+        all(blocked) && sheet_logged && !grepl("rec_t7", shown) && !any(tr$event == "record_verified")
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-10,URS-GXP-11,URS-GXP-07", method = "testServer as analyst (outputs forced) and inspector (sheet download; verification with a read-only trail)",
+      expected = "no output for the analyst; record_downloaded for the sheet; no verification result without its entry")
+
+check("GXP-39", "A login ID with control characters or excessive length is cleaned before it reaches the trail and the system log",
+      tryCatch({
+        gxp_team("t7b"); ck <- gxp_env$audited_check(); ck(paste0("evil\nFAKE LOG LINE", strrep("x", 200)), "Wrong2026pass")
+        tr <- gxp_env$audit_read(); u <- tail(tr$user, 1); gxp_unset()
+        !grepl("[[:cntrl:]]", u) && nchar(u) <= 64
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-05", method = "audited_check() with a newline and 200 extra characters in the ID", expected = "no control characters; at most 64 characters")
+
 gxp_unset()
 end_section("GXP")
 

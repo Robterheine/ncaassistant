@@ -48,6 +48,8 @@ audited_check <- function() {
   function(user, password) {
     cfg <- gxp_config()
     res <- shinymanager::check_credentials(cfg$users, passphrase = cfg$key)(user, password)
+    # The typed ID goes into the trail and the system log: bounded, no control characters
+    user <- substr(gsub("[[:cntrl:]]", " ", .or(user, "")), 1, 64)
     store <- tryCatch(gxp_store_read(), error = function(e) NULL)
     locked <- !is.null(store) && gxp_is_locked(user, store)
     known <- !is.null(store) && user %in% store$credentials$user

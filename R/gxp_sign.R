@@ -267,13 +267,16 @@ gxp_sign_server <- function(input, output, session) {
   observeEvent(input$gxp_rec_summary, {
     r <- rec(); req(r, can_see_all() || r$author == me)
     f <- file.path(gxp_config()$records, paste0(r$sha, ".zip"))
+    d <- tempfile("rec_")
     html <- tryCatch({
-      d <- tempfile("rec_"); utils::unzip(f, exdir = d)
+      utils::unzip(f, exdir = d)
       s <- list.files(d, pattern = "summary\\.html$", recursive = TRUE, full.names = TRUE)[1]
       paste(readLines(s, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
     }, error = function(e) "<p>The summary cannot be read from this record.</p>")
+    unlink(d, recursive = TRUE)
     showModal(modalDialog(title = r$name, size = "xl", easyClose = TRUE,
-                          tags$iframe(srcdoc = html, style = "width: 100%; height: 70vh; border: 0;"),
+                          # sandbox: the summary is shown, never run with the app's rights
+                          tags$iframe(srcdoc = html, sandbox = "", style = "width: 100%; height: 70vh; border: 0;"),
                           footer = modalButton("Close")))
   })
 
@@ -295,6 +298,9 @@ gxp_sign_server <- function(input, output, session) {
     filename = function() paste0("signatures_", substr(rec()$sha, 1, 8), ".html"),
     content = function(file) {
       r <- rec_now(); req(r, can_see_all() || r$author == me)
+      if (!gxp_guard("record_downloaded", object = paste0("signatures_", substr(r$sha, 1, 8), ".html"), sha256 = r$sha,
+                     details = list(what = "signature sheet")))
+        stop("The download was stopped because it could not be recorded in the audit trail.", call. = FALSE)
       writeLines(gxp_signature_sheet(r, audit_read()), file)
     })
 
@@ -362,8 +368,7 @@ gxp_sign_server <- function(input, output, session) {
     f <- input$gxp_verify_file; req(f); req(can_see_all())
     sha <- sha256_file(f$datapath)
     tr <- trail(); hits <- tr[tr$sha256 %in% sha & tr$event %in% c("record_created", "record_signed"), ]
-    gxp_guard("record_verified", object = f$name, sha256 = sha,
-              details = list(found = nrow(hits) > 0))
+    if (!gxp_guard("record_verified", object = f$name, sha256 = sha, details = list(found = nrow(hits) > 0))) return(NULL)
     if (nrow(hits) == 0) return(tags$p(class = "small text-danger", "No record with this SHA-256 exists in this audit trail.",
                                        tags$br(), tags$code(sha)))
     r <- gxp_records(tr, store()); r <- r[r$sha == sha, ]
@@ -406,6 +411,7 @@ gxp_sign_server <- function(input, output, session) {
     if (nrow(rv) == 0) NULL else { x <- rv[nrow(rv), ]; x$d <- list(jsonlite::fromJSON(x$details)); x }
   })
   output$gxp_review_line <- renderUI({
+    req(can_see_all())
     lr <- last_review(); n <- nrow(trail())
     tags$p(class = "small text-muted", if (is.null(lr)) paste0("The audit trail has not been reviewed yet (", n, " entries).")
       else { k <- n - as.integer(lr$d[[1]]$head_seq)
@@ -439,7 +445,7 @@ gxp_sign_server <- function(input, output, session) {
   observeEvent(input$gxp_verify_chain, {
     req(can_see_all())
     v <- audit_verify()
-    gxp_guard("trail_verified", details = list(intact = v$intact, n = v$n, warnings = length(v$warnings)))
+    if (!gxp_guard("trail_verified", details = list(intact = v$intact, n = v$n, warnings = length(v$warnings)))) return()
     output$gxp_verify_msg <- renderUI(tags$div(class = paste("alert py-2 small", if (v$intact) "alert-success" else "alert-danger"),
       if (v$intact) sprintf("Intact: %d entries.", v$n) else sprintf("NOT INTACT: first broken entry %s.", v$first_broken),
       if (length(c(v$errors, v$warnings))) tags$ul(lapply(c(v$errors, v$warnings), tags$li))))
