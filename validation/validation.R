@@ -5434,6 +5434,18 @@ check("GXP-43", "A signature binds to the record shown in the dialog, not to a s
       "URS-GXP-08", method = "submit without opening the dialog; open it on one record, select another, submit; select the first again, submit",
       expected = "the first two refused; one record_signed, on the record shown in the dialog")
 
+check("GXP-44", "manage_users.R verify with a filed head detects entries removed from the end of the trail",
+      tryCatch({
+        p <- gxp_trail(9); h <- gxp_env$audit_head(p); head_arg <- paste0(h$seq, ":", h$hash)
+        ok_copy <- gxp_mu("verify", dirname(p), head_arg)
+        t <- gxp_tamper(p, "DELETE FROM trail WHERE seq > 7")
+        bare <- gxp_mu("verify", t); anchored <- gxp_mu("verify", t, head_arg)
+        ok_copy$status == 0 && bare$status == 0 && anchored$status == 2 &&
+          any(grepl("entries removed", anchored$out))
+      }, error = function(e) FALSE),
+      "URS-GXP-06,URS-GXP-12", method = "file the head of a trail; delete the last three entries in a copy; verify the copy without and with the filed head",
+      expected = "intact trail with its head: exit 0; truncated copy: exit 0 without the head, exit 2 and 'entries removed' with it")
+
 gxp_unset()
 end_section("GXP")
 

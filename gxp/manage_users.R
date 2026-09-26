@@ -15,7 +15,8 @@
 #   reset <id> "<reason>"                  starting password admin, change at next login
 #   deactivate <id> "<reason>"
 #   list                                   accounts, roles and their history
-#   verify [copy]                          check the trail (or an archived copy)
+#   verify [copy] [seq:hash ...]           check the trail (or an archived copy), and
+#                                          that the heads you filed are still there
 #   head                                   print the anchor (last seq and hash)
 #   archive <folder>                       read-only archive that can be restored
 #
@@ -166,18 +167,25 @@ list = {
 },
 
 verify = {
-  path <- if (length(args) >= 2) args[2] else cfg$trail
+  rest <- args[-1]
+  is_head <- grepl("^[0-9]+:[0-9a-f]{64}$", rest)
+  if (sum(!is_head) > 1) fail("Usage: manage_users.R verify [copy] [seq:hash ...]")
+  path <- if (any(!is_head)) rest[!is_head] else cfg$trail
   if (dir.exists(path)) path <- file.path(path, "audit.sqlite")
-  v <- audit_verify(path)
+  anchors <- if (any(is_head)) data.frame(seq = as.integer(sub(":.*", "", rest[is_head])),
+                                          hash = sub(".*:", "", rest[is_head]), stringsAsFactors = FALSE)
+  v <- audit_verify(path, anchors = anchors)
   say(if (v$intact) sprintf("Intact: %d entries.", v$n) else sprintf("NOT INTACT: first broken entry %s.", v$first_broken))
   for (e in c(v$errors, v$warnings)) say("  ", e)
-  if (length(args) < 2) log_admin("trail_verified", NULL, list(intact = v$intact, n = v$n, warnings = length(v$warnings)))
+  if (!any(!is_head)) log_admin("trail_verified", NULL, list(intact = v$intact, n = v$n, warnings = length(v$warnings),
+                                                          heads_checked = sum(is_head)))
   quit(status = if (v$intact) 0 else 2)
 },
 
 head = {
   h <- audit_head(cfg$trail)
   say("Trail head: entry ", h$seq, ", hash ", h$hash, " (", gxp_utc_now(), ")")
+  say("To file, and to give to verify later: ", h$seq, ":", h$hash)
 },
 
 archive = {
