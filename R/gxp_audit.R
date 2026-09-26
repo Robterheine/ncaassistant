@@ -340,3 +340,65 @@ gxp_app_stopped <- function() {
                         details = list(host = Sys.info()[["nodename"]])),
            error = function(e) NULL)
 }
+
+# --- User store (shinymanager's encrypted users.sqlite) -----------------------
+# Read and written only inside one SQLite transaction, so that the app (a
+# password change) and gxp/manage_users.R (an account change) never overwrite
+# each other. Only exported shinymanager functions are used.
+
+GXP_ROLES <- c("analyst", "reviewer", "inspector")
+
+#' Create an empty user store (shinymanager's create_db() needs at least one user)
+gxp_store_init <- function(path, key) {
+  if (file.exists(path)) stop("The user store already exists: ", path, call. = FALSE)
+  con <- .audit_connect(path)
+  on.exit(DBI::dbDisconnect(con))
+  shinymanager::write_db_encrypt(con, name = "credentials", passphrase = key, value = data.frame(
+    user = character(0), password = character(0), start = character(0), expire = character(0),
+    admin = character(0), name = character(0), roles = character(0),
+    is_hashed_password = logical(0), stringsAsFactors = FALSE))
+  shinymanager::write_db_encrypt(con, name = "pwd_mngt", passphrase = key, value = data.frame(
+    user = character(0), must_change = character(0), have_changed = character(0),
+    date_change = character(0), n_wrong_pwd = numeric(0), stringsAsFactors = FALSE))
+  shinymanager::write_db_encrypt(con, name = "logs", passphrase = key, value = data.frame(
+    user = character(0), server_connected = character(0), token = character(0),
+    logout = character(0), app = character(0), stringsAsFactors = FALSE))
+  invisible(TRUE)
+}
+
+#' Read both tables of the user store
+#' @return list(credentials, pwd_mngt)
+gxp_store_read <- function(path = gxp_config()$users, key = gxp_config()$key) {
+  con <- .audit_connect(path)
+  on.exit(DBI::dbDisconnect(con))
+  list(credentials = shinymanager::read_db_decrypt(con, name = "credentials", passphrase = key),
+       pwd_mngt    = shinymanager::read_db_decrypt(con, name = "pwd_mngt", passphrase = key))
+}
+
+#' Change the user store in one transaction
+#'
+#' @param fun function(store) returning the changed list(credentials, pwd_mngt).
+#'   A password set in `credentials` with is_hashed_password = FALSE is hashed
+#'   (scrypt) by write_db_encrypt().
+gxp_store_update <- function(fun, path = gxp_config()$users, key = gxp_config()$key) {
+  con <- .audit_connect(path)
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "BEGIN IMMEDIATE")
+  ok <- FALSE
+  on.exit(if (!ok) try(DBI::dbExecute(con, "ROLLBACK"), silent = TRUE), add = TRUE, after = FALSE)
+  store <- list(credentials = shinymanager::read_db_decrypt(con, name = "credentials", passphrase = key),
+                pwd_mngt    = shinymanager::read_db_decrypt(con, name = "pwd_mngt", passphrase = key))
+  store <- fun(store)
+  shinymanager::write_db_encrypt(con, value = store$credentials, name = "credentials", passphrase = key)
+  shinymanager::write_db_encrypt(con, value = store$pwd_mngt, name = "pwd_mngt", passphrase = key)
+  DBI::dbExecute(con, "COMMIT")
+  ok <- TRUE
+  invisible(store)
+}
+
+#' Is the account locked (failed sign-ins at or above the limit)?
+gxp_is_locked <- function(user, store = gxp_store_read()) {
+  pm <- store$pwd_mngt
+  n <- suppressWarnings(as.numeric(pm$n_wrong_pwd[pm$user == user]))
+  length(n) == 1 && !is.na(n) && n >= GXP_PWD_FAILURE_LIMIT
+}

@@ -4812,6 +4812,106 @@ check("GXP-13", "The app refuses to start with gxp/CONTROLLED present and contro
       "URS-GXP-01", method = "gxp_check_startup() without and with the marker; with NCA_GXP_ORG empty",
       expected = "open mode allowed without the marker; stop with the marker; stop naming NCA_GXP_ORG")
 
+# --- gxp/manage_users.R ------------------------------------------------------
+gxp_mu_dir <- file.path(gxp_tmp, "mu"); dir.create(gxp_mu_dir)
+gxp_mu_env <- c(sprintf("NCA_GXP_DIR=%s", file.path(gxp_mu_dir, "ctl")), "NCA_GXP_KEY=validation-key",
+                "NCA_GXP_ORG='Validation Org'", "SUDO_USER=validator")
+gxp_mu <- function(..., env = gxp_mu_env) {
+  out <- suppressWarnings(system2(file.path(R.home("bin"), "Rscript"), c("gxp/manage_users.R", ...),
+                                  env = env, stdout = TRUE, stderr = TRUE))
+  list(status = if (is.null(attr(out, "status"))) 0L else attr(out, "status"), out = out)
+}
+gxp_mu_trail <- function() gxp_env$audit_read(file.path(gxp_mu_dir, "ctl", "audit.sqlite"))
+if (gxp_ok) {
+  gxp_mu("init"); gxp_mu("add", "ana", "'Ana Lyst'", "analyst", "'new analyst'")
+  gxp_mu("add", "rev", "'Rev Iewer'", "'analyst;reviewer'", "'new reviewer'")
+  gxp_mu("add", "insp", "'In Spector'", "inspector", "'inspection'")
+  gxp_mu("role", "ana", "'analyst;reviewer'", "'promoted'"); gxp_mu("reset", "rev", "'forgotten'")
+  gxp_mu("deactivate", "insp", "'inspection over'")
+}
+
+check("GXP-14", "manage_users.R: each command writes its event, with the person from SUDO_USER, a reason, and old and new values",
+      tryCatch({
+        tr <- gxp_mu_trail(); adm <- tr[tr$event %in% c("user_added", "role_changed", "password_reset", "user_deactivated"), ]
+        identical(adm$event, c("user_added", "user_added", "user_added", "role_changed", "password_reset", "user_deactivated")) &&
+          all(adm$user == "validator") && all(adm$role == "system owner") && all(nzchar(adm$reason)) &&
+          grepl('"old":"analyst","new":"analyst;reviewer"', adm$details[4]) &&
+          grepl('"expire":\\{"old":null,"new":"', adm$details[6]) &&
+          tr$event[1] == "trail_created" && gxp_env$audit_verify(file.path(gxp_mu_dir, "ctl", "audit.sqlite"))$intact
+      }, error = function(e) FALSE),
+      "URS-GXP-04", method = "init, add x3, role, reset, deactivate through Rscript with SUDO_USER=validator",
+      expected = "six account entries by validator, reasons, old/new values; trail intact")
+
+check("GXP-15", "manage_users.R refuses a reused ID, an inspector with a second role, a missing reason, and the service account acting as itself",
+      tryCatch({
+        reused <- gxp_mu("add", "ana", "'Someone Else'", "analyst", "'again'")
+        combo  <- gxp_mu("add", "qa1", "'Q A'", "'inspector;reviewer'", "'x'")
+        noreason <- gxp_mu("add", "qa2", "'Q A'", "analyst", "' '")
+        service <- gxp_mu("add", "qa3", "'Q A'", "analyst", "'x'",
+                          env = c(setdiff(gxp_mu_env, "SUDO_USER=validator"), "SUDO_USER=",
+                                  sprintf("NCA_GXP_SERVICE_ACCOUNT=%s", Sys.info()[["user"]])))
+        st <- gxp_env$gxp_store_read(file.path(gxp_mu_dir, "ctl", "users.sqlite"), "validation-key")
+        all(c(reused$status, combo$status, noreason$status, service$status) != 0) &&
+          grepl("never reused", paste(reused$out, collapse = " ")) &&
+          grepl("cannot be combined", paste(combo$out, collapse = " ")) &&
+          grepl("through sudo", paste(service$out, collapse = " ")) &&
+          !any(c("qa1", "qa2", "qa3") %in% st$credentials$user)
+      }, error = function(e) FALSE),
+      "URS-GXP-04", method = "four invalid calls", expected = "each refused with its message; no account created")
+
+check("GXP-16", "New and reset accounts start with admin and must change it; a deactivated account cannot sign in or sign",
+      tryCatch({
+        ck <- shinymanager::check_credentials(file.path(gxp_mu_dir, "ctl", "users.sqlite"), passphrase = "validation-key")
+        st <- gxp_env$gxp_store_read(file.path(gxp_mu_dir, "ctl", "users.sqlite"), "validation-key")
+        pm <- st$pwd_mngt
+        isTRUE(ck("ana", "admin")$result) && isTRUE(ck("rev", "admin")$result) &&
+          all(pm$must_change[pm$user %in% c("ana", "rev")] == "TRUE") &&
+          isFALSE(ck("insp", "admin")$result) && isTRUE(ck("insp", "admin")$expired) &&
+          all(st$credentials$is_hashed_password)
+      }, error = function(e) FALSE),
+      "URS-GXP-03,URS-GXP-04", method = "shinymanager::check_credentials() on the store built by the script (sign-in and signing use it)",
+      expected = "ana and rev accepted with must_change; insp refused as expired; passwords stored hashed")
+
+check("GXP-17", "archive: a read-only folder whose manifest checks out, verified in a fresh R session from the archived release",
+      tryCatch({
+        a <- gxp_mu("archive", shQuote(file.path(gxp_mu_dir, "arch")))
+        out <- list.files(file.path(gxp_mu_dir, "arch"), full.names = TRUE)[1]
+        man <- read.table(file.path(out, "MANIFEST.sha256"), col.names = c("sha", "file"), stringsAsFactors = FALSE)
+        man_ok <- all(vapply(seq_len(nrow(man)), function(i)
+          identical(gxp_env$sha256_file(file.path(out, man$file[i])), man$sha[i]), logical(1)))
+        need <- c("audit.sqlite", "app_release.zip", "renv.lock", "RESTORE.md", "verification_report.txt")
+        rel <- file.path(gxp_mu_dir, "restored"); dir.create(rel)
+        utils::unzip(file.path(out, "app_release.zip"), exdir = rel)
+        fresh <- suppressWarnings(system2(file.path(R.home("bin"), "Rscript"),
+                                          c(file.path(rel, "gxp", "manage_users.R"), "verify", shQuote(out)),
+                                          env = gxp_mu_env, stdout = TRUE, stderr = TRUE))
+        a$status == 0 && all(file.exists(file.path(out, need))) && man_ok &&
+          file.access(file.path(out, "audit.sqlite"), 2) != 0 &&
+          any(grepl("^Intact", fresh)) && tail(gxp_mu_trail()$event, 1) == "trail_archived"
+      }, error = function(e) FALSE),
+      "URS-GXP-19", method = "manage_users.R archive; SHA-256 of every file; unzip the archived release and run its verify on the archive",
+      expected = "all files present and matching; read-only; 'Intact' from the archived release; trail_archived written")
+
+check("GXP-18", "Two account changes at the same moment both survive (one transaction each)",
+      tryCatch({
+        rs <- file.path(R.home("bin"), "Rscript")
+        for (id in c("c1", "c2")) system2(rs, c("gxp/manage_users.R", "add", id, "'Con Current'", "analyst", "'parallel'"),
+                                          env = gxp_mu_env, wait = FALSE, stdout = FALSE, stderr = FALSE)
+        t0 <- Sys.time(); st <- NULL
+        repeat {
+          st <- tryCatch(gxp_env$gxp_store_read(file.path(gxp_mu_dir, "ctl", "users.sqlite"), "validation-key"), error = function(e) NULL)
+          if ((!is.null(st) && all(c("c1", "c2") %in% st$credentials$user)) || difftime(Sys.time(), t0, units = "secs") > 60) break
+          Sys.sleep(0.5)
+        }
+        all(c("c1", "c2") %in% st$credentials$user) && all(c("c1", "c2") %in% st$pwd_mngt$user)
+      }, error = function(e) FALSE),
+      "URS-GXP-04", method = "two 'add' processes started together", expected = "both accounts in credentials and pwd_mngt")
+
+skip_manual("MAN-GXP-01", "Restore an archive on a clean machine",
+            "On a machine without the app: unzip app_release.zip from a manage_users.R archive, renv::restore(lockfile = 'renv.lock'), copy the archive to a writable folder, set NCA_GXP_DIR/KEY/ORG to it (with the users.sqlite of the installation), start the app",
+            "The app starts in controlled mode; the Records page lists the archived records; Verify chain reports the head in verification_report.txt",
+            "URS-GXP-19")
+
 gxp_unset()
 end_section("GXP")
 
