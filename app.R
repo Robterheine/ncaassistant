@@ -79,6 +79,7 @@ source("R/mod_methods.R")
 # Controlled mode (audit trail, login, signatures): no-ops unless NCA_GXP_DIR is set
 source("R/gxp_audit.R")
 source("R/gxp_access.R")
+source("R/gxp_sign.R")
 gxp_check_startup()
 
 # --- Theme -------------------------------------------------------------------
@@ -173,7 +174,9 @@ ui <- page_fluid(
     nav_panel_hidden("be", path_be_ui("path_be")),
     nav_panel_hidden("about", uiOutput("about_page")),
     nav_panel_hidden("guide", data_guide_ui()),
-    nav_panel_hidden("methods", methods_ui())
+    nav_panel_hidden("methods", methods_ui()),
+    if (gxp_enabled()) nav_panel_hidden("records", uiOutput("gxp_records_page")),
+    if (gxp_enabled()) nav_panel_hidden("audit", uiOutput("gxp_audit_page"))
   )
 )
 
@@ -248,7 +251,9 @@ server <- function(input, output, session) {
       be         = "Bioequivalence Testing",
       about      = "About & R Packages",
       guide      = "Data Preparation Guide",
-      methods    = "Statistical Methods"
+      methods    = "Statistical Methods",
+      records    = "Records",       # controlled mode only
+      audit      = "Audit trail"    # controlled mode only
     )
     
     tags$div(
@@ -286,7 +291,8 @@ server <- function(input, output, session) {
   output$about_page <- renderUI(about_ui())
   outputOptions(output, "hub_page", suspendWhenHidden = FALSE)
   observeEvent(shared$current_path, {
-    known <- c("home", "power", "data", "viz", "single_nca", "multi_nca", "be", "about", "guide", "methods")
+    known <- c("home", "power", "data", "viz", "single_nca", "multi_nca", "be", "about", "guide", "methods",
+               if (gxp_enabled()) c("records", "audit"))
     nav_select("main_nav", if (shared$current_path %in% known) shared$current_path else "home")
   })
   

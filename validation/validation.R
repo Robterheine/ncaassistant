@@ -5084,6 +5084,256 @@ skip_manual("MAN-GXP-10", "Fail closed in the app",
             "The 'Not carried out' dialog; no new results; the download fails with the same dialog; no entries were added",
             "URS-GXP-07")
 
+# --- Records, signatures, Audit trail page (R/gxp_sign.R) and password change ---
+if (gxp_ok) { suppressMessages({ library(shiny); library(bslib) })
+  sys.source("R/gxp_sign.R", envir = gxp_env); sys.source("R/export_record.R", envir = gxp_env) }
+# A controlled directory with analyst ana, reviewer rev (also analyst) and inspector insp
+gxp_team <- function(name) {
+  d <- gxp_ctl(name)
+  gxp_env$gxp_store_update(function(st) {
+    add <- function(st, u, r) {
+      st$credentials <- rbind(st$credentials, data.frame(user = u, password = "Valid2026pass", start = as.character(Sys.Date()),
+        expire = NA_character_, admin = "FALSE", name = toupper(u), roles = r, is_hashed_password = FALSE,
+        stringsAsFactors = FALSE)[, names(st$credentials)])
+      st$pwd_mngt <- rbind(st$pwd_mngt, data.frame(user = u, must_change = "FALSE", have_changed = "TRUE",
+        date_change = as.character(Sys.Date()), n_wrong_pwd = 0, stringsAsFactors = FALSE)[, names(st$pwd_mngt)])
+      st }
+    add(add(add(st, "ana", "analyst"), "rev", "analyst;reviewer"), "insp", "inspector") })
+  d
+}
+gxp_mock <- function(u, roles, tok) { s <- gxp_session(roles, u); s$token <- tok; s$userData$gxp$name <- toupper(u)
+  s$sendCustomMessage <- function(...) NULL; s }
+# A real record zip, stored by user u
+gxp_rec <- function(u, roles, tok, label, data_sha = NULL) {
+  src <- file.path(gxp_tmp, paste0(label, ".txt")); writeLines(label, src)
+  z <- file.path(gxp_tmp, paste0(label, ".zip")); utils::zip(z, src, flags = "-jq")
+  s <- gxp_mock(u, roles, tok)
+  if (!is.null(data_sha)) gxp_env$gxp_guard("analysis_run", object = "all subjects", sha256 = data_sha,
+                                            details = list(trigger = "run", path = "multi_nca", settings = list(blq_rule = "rule1")), session = s)
+  gxp_env$gxp_store_record(z, paste0(label, ".zip"), "batch_nca", session = s)
+}
+gxp_as <- function(u, roles) function(input, output, session) {
+  session$userData$gxp <- list(user = u, name = toupper(u), roles = roles); session$userData$gxp_failures <- 0L
+  gxp_env$gxp_sign_server(input, output, session) }
+gxp_pick <- function(session, sha) {
+  r <- gxp_env$gxp_records(); r <- r[order(r$created, decreasing = TRUE), ]
+  session$setInputs(gxp_rec_filter = "all", gxp_rec_table_rows_selected = which(r$sha == sha)) }
+gxp_msg <- function(output, id = "gxp_sign_msg") paste(unlist(output[[id]]), collapse = " ")
+
+check("GXP-28", "Signing: own record, wrong password, a closed record, an analyst and an inspector are all refused; a reviewer's signature binds to the SHA-256",
+      tryCatch({
+        gxp_team("sign1")
+        sha_ana <- gxp_rec("ana", "analyst", "aaaaaaaa01", "rec_ana1"); sha_rev <- gxp_rec("rev", "analyst;reviewer", "bbbbbbbb01", "rec_rev1")
+        res <- list()
+        testServer(gxp_as("rev", "analyst;reviewer"), {
+          gxp_pick(session, sha_rev); session$userData$gxp_sign_meaning <- "review_approved"
+          session$setInputs(gxp_sign_user = "rev", gxp_sign_pwd = "Valid2026pass", gxp_sign_submit = 1)
+          res$own <<- gxp_msg(output)
+          gxp_pick(session, sha_ana); session$setInputs(gxp_rec_approve = 1)
+          session$setInputs(gxp_sign_user = "rev", gxp_sign_pwd = "Wrong2026pass", gxp_sign_submit = 2)
+          res$wrong <<- gxp_msg(output)
+          session$setInputs(gxp_sign_pwd = "Valid2026pass", gxp_sign_submit = 3)
+          session$setInputs(gxp_sign_submit = 4); res$closed <<- gxp_msg(output)
+        })
+        for (who in list(c("ana", "analyst"), c("insp", "inspector"))) testServer(gxp_as(who[1], who[2]), {
+          gxp_pick(session, sha_rev); session$userData$gxp_sign_meaning <- "review_approved"
+          session$setInputs(gxp_sign_user = who[1], gxp_sign_pwd = "Valid2026pass", gxp_sign_submit = 1)
+          res[[who[1]]] <<- gxp_msg(output) })
+        tr <- gxp_env$audit_read(); sg <- tr[tr$event == "record_signed", ]; gxp_unset()
+        grepl("own record", res$own) && grepl("2 attempts left", res$wrong) && grepl("already been reviewed", res$closed) &&
+          grepl("Only a reviewer", res$ana) && grepl("Only a reviewer", res$insp) &&
+          nrow(sg) == 1 && sg$sha256 == sha_ana && sg$user == "rev" && grepl('"meaning":"review_approved","printed_name":"REV"', sg$details) &&
+          sum(tr$event == "signature_failed") == 1
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-08,URS-GXP-10,URS-GXP-17", method = "testServer(gxp_sign_server) as reviewer, analyst and inspector",
+      expected = "refusals with their messages; one record_signed on ana's record, by rev, with meaning and printed name")
+
+check("GXP-29", "The third failed signature ends the session and sends a security alert; a locked account cannot sign",
+      tryCatch({
+        gxp_team("sign2"); sha <- gxp_rec("ana", "analyst", "aaaaaaaa02", "rec_ana2"); closed <- FALSE; locked_msg <- ""
+        testServer(gxp_as("rev", "analyst;reviewer"), {
+          gxp_pick(session, sha); session$setInputs(gxp_rec_approve = 1)
+          for (k in 1:3) session$setInputs(gxp_sign_user = "rev", gxp_sign_pwd = "Wrong2026pass", gxp_sign_submit = k)
+          closed <<- session$isClosed() })
+        gxp_env$gxp_store_update(function(st) { st$pwd_mngt$n_wrong_pwd[st$pwd_mngt$user == "rev"] <- 5; st })
+        testServer(gxp_as("rev", "analyst;reviewer"), {
+          gxp_pick(session, sha); session$setInputs(gxp_rec_approve = 1)
+          session$setInputs(gxp_sign_user = "rev", gxp_sign_pwd = "Valid2026pass", gxp_sign_submit = 1)
+          locked_msg <<- gxp_msg(output) })
+        tr <- gxp_env$audit_read(); gxp_unset()
+        closed && sum(tr$event == "signature_failed") == 3 && any(tr$event == "security_alert") &&
+          grepl("locked", locked_msg) && !any(tr$event == "record_signed")
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-03,URS-GXP-08,URS-GXP-16", method = "three wrong passwords in one session; then a signature with the lock counter at the limit",
+      expected = "session closed; 3 signature_failed; a security alert; locked account refused")
+
+check("GXP-30", "A password changed during the session is the one that counts at signing",
+      tryCatch({
+        gxp_team("sign3"); sha <- gxp_rec("ana", "analyst", "aaaaaaaa03", "rec_ana3"); m <- ""
+        testServer(gxp_as("rev", "analyst;reviewer"), {
+          gxp_pick(session, sha); session$setInputs(gxp_rec_approve = 1)
+          gxp_env$gxp_store_update(function(st) { i <- st$credentials$user == "rev"
+            st$credentials$password[i] <- "Changed2026pass"; st$credentials$is_hashed_password[i] <- FALSE; st })
+          session$setInputs(gxp_sign_user = "rev", gxp_sign_pwd = "Valid2026pass", gxp_sign_submit = 1); m <<- gxp_msg(output)
+          session$setInputs(gxp_sign_pwd = "Changed2026pass", gxp_sign_submit = 2) })
+        tr <- gxp_env$audit_read(); gxp_unset()
+        grepl("incorrect", m) && sum(tr$event == "record_signed") == 1
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-08", method = "change rev's password in the store after the session started; sign with the old, then the new",
+      expected = "old refused; new accepted")
+
+check("GXP-31", "Signature sheet, validity line and signed bundle; a changed stored copy makes the signature INVALID",
+      tryCatch({
+        d <- gxp_team("sign4"); sha <- gxp_rec("ana", "analyst", "aaaaaaaa04", "rec_ana4"); files <- NULL
+        testServer(gxp_as("rev", "analyst;reviewer"), {
+          gxp_pick(session, sha); session$setInputs(gxp_rec_approve = 1)
+          session$setInputs(gxp_sign_user = "rev", gxp_sign_pwd = "Valid2026pass", gxp_sign_submit = 1)
+          files <<- file.path(gxp_tmp, "bundle.zip"); file.copy(output$gxp_rec_download, files, overwrite = TRUE) })
+        out <- file.path(gxp_tmp, "bundle"); utils::unzip(files, exdir = out, unzip = "unzip")
+        inner <- file.path(out, "rec_ana4.zip"); sheet_f <- list.files(out, "^signatures_", full.names = TRUE)
+        sheet <- paste(readLines(sheet_f, warn = FALSE), collapse = " ")
+        rec <- gxp_env$gxp_records(); rec <- rec[rec$sha == sha, ]
+        ok_before <- gxp_env$gxp_record_valid(sha)
+        f <- file.path(d, "records", paste0(sha, ".zip")); Sys.chmod(f, "0644"); cat("x", file = f, append = TRUE)
+        tr <- gxp_env$audit_read(); ex <- gxp_env$gxp_exceptions(tr, gxp_env$gxp_records(tr))
+        sheet_after <- gxp_env$gxp_signature_sheet(rec, tr); valid_after <- gxp_env$gxp_record_valid(sha); gxp_unset()
+        identical(gxp_env$sha256_file(inner), sha) && length(sheet_f) == 1 &&
+          all(vapply(c("ANA \\(ana, analyst\\)", "REV \\(rev, analyst;reviewer\\)", "\\(UTC\\)", "I approve this record",
+                       "Signature valid", "Audit trail: intact", "Head: entry"), grepl, logical(1), sheet)) &&
+          ok_before && !valid_after && grepl("Signature INVALID", sheet_after) &&
+          nrow(ex[["Records whose stored copy no longer matches its SHA-256"]]) == 1 && any(tr$event == "record_downloaded")
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-08,URS-GXP-09,URS-GXP-18", method = "approve, download the bundle, read the sheet; append a byte to the stored copy",
+      expected = "bundle = unchanged record zip + sheet with creator, reviewer, UTC, meaning, validity, head; after the change INVALID and listed in Exceptions")
+
+check("GXP-32", "Verify a record file: a stored record is found with its signatures; an altered copy is not found",
+      tryCatch({
+        gxp_team("verify"); sha <- gxp_rec("ana", "analyst", "aaaaaaaa05", "rec_ana5"); z <- file.path(gxp_tmp, "rec_ana5.zip")
+        alt <- file.path(gxp_tmp, "rec_ana5_altered.zip"); file.copy(z, alt); cat("x", file = alt, append = TRUE)
+        found <- ""; missing <- ""
+        testServer(gxp_as("insp", "inspector"), {
+          session$setInputs(gxp_verify_file = data.frame(name = "rec_ana5.zip", size = file.size(z), type = "application/zip", datapath = z))
+          found <<- gxp_msg(output, "gxp_verify_result")
+          session$setInputs(gxp_verify_file = data.frame(name = "altered.zip", size = file.size(alt), type = "application/zip", datapath = alt))
+          missing <<- gxp_msg(output, "gxp_verify_result") })
+        tr <- gxp_env$audit_read(); gxp_unset()
+        grepl("rec_ana5.zip", found) && grepl("Created a record", found) && grepl("No record with this SHA-256", missing) &&
+          sum(tr$event == "record_verified") == 2
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-18", method = "testServer as inspector: upload the stored record and an altered copy", expected = "found / not found; two record_verified entries")
+
+check("GXP-33", "Each Exceptions query finds its planted case",
+      tryCatch({
+        d <- gxp_team("exc"); s1 <- gxp_mock("ana", "analyst", "cccccc0101"); s2 <- gxp_mock("ana", "analyst", "cccccc0202")
+        a <- function(ev, ..., s = NULL, user = "ana", role = "analyst") gxp_env$audit_append(ev, ..., user = user, role = role,
+                                                                                             session = if (!is.null(s)) substr(s$token, 1, 8))
+        a("app_started", details = list(host = "h", timeout_min = 15), user = "system", role = "system")
+        a("app_started", details = list(host = "h", timeout_min = 30), user = "system", role = "system")
+        a("login_failed", object = "ana"); a("signature_failed", object = "x.zip")
+        dsha <- strrep("d", 64); gxp_rec("ana", "analyst", "cccccc0101", "rec_exc", data_sha = dsha)
+        gxp_env$gxp_guard("analysis_run", sha256 = dsha, details = list(trigger = "run", settings = list(blq_rule = "rule4")), session = s1)
+        sha2 <- gxp_rec("ana", "analyst", "cccccc0101", "rec_exc2", data_sha = dsha)
+        a("analysis_run", sha256 = strrep("e", 64), details = list(trigger = "run"), s = s2)
+        a("analysis_run", object = "later", s = s1)   # s1 still active after s2 started
+        real <- gxp_env$gxp_utc_now
+        assign("gxp_utc_now", function() format(as.POSIXct(paste(Sys.Date(), "03:00:00")), "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC"), envir = gxp_env)
+        a("analysis_run", object = "night", s = s1); assign("gxp_utc_now", real, envir = gxp_env)
+        a("record_signed", object = "rec_exc.zip", sha256 = gxp_env$gxp_records()$sha[1], reason = "wrong",
+          details = list(meaning = "review_rejected"), user = "rev", role = "analyst;reviewer")
+        tr <- gxp_env$audit_read(); ex <- gxp_env$gxp_exceptions(tr, gxp_env$gxp_records(tr)); gxp_unset()
+        n <- vapply(ex, nrow, 1L)
+        all(n[c("Failed and locked sign-ins, and security alerts", "Refused signatures and password changes", "Rejected records",
+                "Data with runs but no record", "App started without a preceding stop",
+                "Configuration differs from the previous start", "Entries earlier than the entry before them (clock)",
+                "Activity outside working hours", "One user signed in in two sessions at the same time",
+                "Data with more than one run before its record")] >= 1) &&
+          n["Records whose stored copy no longer matches its SHA-256"] == 0
+      }, error = function(e) { assign("gxp_utc_now", real, envir = gxp_env); gxp_unset(); FALSE }),
+      "URS-GXP-14", method = "plant one case per query in a test trail; gxp_exceptions()", expected = "every query finds its case; no false invalid record")
+
+check("GXP-34", "Users overview: current roles, status and role history; the trail review is signed only by a reviewer",
+      tryCatch({
+        d <- gxp_team("users")
+        gxp_env$audit_append("user_added", object = "ana", details = list(roles = list(old = NULL, new = "analyst")), user = "own", role = "system owner")
+        gxp_env$audit_append("role_changed", object = "ana", details = list(roles = list(old = "analyst", new = "analyst;reviewer")), user = "own", role = "system owner")
+        ov <- gxp_env$gxp_users_overview(gxp_env$gxp_store_read(), gxp_env$audit_read())
+        rv <- NULL
+        testServer(gxp_as("insp", "inspector"), { session$setInputs(gxp_trail_review = 1); session$setInputs(gxp_rev_user = "insp", gxp_rev_pwd = "Valid2026pass", gxp_rev_submit = 1) })
+        testServer(gxp_as("rev", "analyst;reviewer"), { session$setInputs(gxp_trail_review = 1)
+          session$setInputs(gxp_rev_user = "rev", gxp_rev_pwd = "Valid2026pass", gxp_rev_submit = 1) })
+        tr <- gxp_env$audit_read(); rv <- tr[tr$event == "trail_reviewed", ]; gxp_unset()
+        grepl("analyst;reviewer", ov$Role_history[ov$User == "ana"]) && ov$Status[ov$User == "insp"] == "active" &&
+          nrow(rv) == 1 && rv$user == "rev" && grepl('"head_seq"', rv$details)
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-14,URS-GXP-20", method = "gxp_users_overview(); trail review attempted by the inspector and by the reviewer",
+      expected = "role history shown; one trail_reviewed, by rev, with the head")
+
+check("GXP-35", "An analyst sees the status and review of own records only; reviewers and inspectors see the data history",
+      tryCatch({
+        gxp_team("vis"); dsha <- strrep("f", 64)
+        mine <- gxp_rec("ana", "analyst", "dddddddd01", "rec_vis", data_sha = dsha); other <- gxp_rec("rev", "analyst;reviewer", "dddddddd02", "rec_vis2")
+        own_html <- ""; other_html <- ""; insp_html <- ""
+        testServer(gxp_as("ana", "analyst"), {
+          session$setInputs(gxp_rec_table_rows_selected = 1)
+          r <- gxp_env$gxp_records(); r <- r[r$author == "ana", ]
+          session$setInputs(gxp_rec_table_rows_selected = 1); own_html <<- gxp_msg(output, "gxp_rec_detail") })
+        testServer(gxp_as("insp", "inspector"), { gxp_pick(session, mine); insp_html <<- gxp_msg(output, "gxp_rec_detail") })
+        gxp_unset()
+        grepl("rec_vis.zip", own_html) && !grepl("Audit history", own_html) && !grepl("rec_vis2", own_html) &&
+          grepl("Audit history of the data", insp_html) && !grepl("Approve", insp_html)
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-10,URS-GXP-13,URS-GXP-17", method = "record details for an analyst and an inspector",
+      expected = "analyst: own record, no history; inspector: history, no Approve")
+
+check("GXP-36", "Change password: refused without the right current password, when reused, when the rule is broken and when locked; accepted otherwise",
+      tryCatch({
+        gxp_team("pwd"); m <- list()
+        srv <- function(input, output, session) {
+          session$userData$gxp <- list(user = "ana", name = "ANA", roles = "analyst"); session$userData$gxp_failures <- 0L
+          observeEvent(input$go, gxp_env$gxp_password_submit(input, session)) }
+        testServer(srv, {
+          try_pwd <- function(k, cur, new, rep = new) {
+            session$setInputs(gxp_pwd_current = cur, gxp_pwd_new = new, gxp_pwd_repeat = rep, go = k)
+            tryCatch(paste(unlist(output$gxp_pwd_msg), collapse = " "), error = function(e) "") }
+          m$wrong <<- try_pwd(1, "Wrong2026pass", "Better2026pass")
+          m$same <<- try_pwd(2, "Valid2026pass", "Valid2026pass")
+          m$rule <<- try_pwd(3, "Valid2026pass", "short")
+          m$differ <<- try_pwd(4, "Valid2026pass", "Better2026pass", "Other2026pass")
+          gxp_env$gxp_store_update(function(st) { st$pwd_mngt$n_wrong_pwd[st$pwd_mngt$user == "ana"] <- 5; st })
+          m$locked <<- try_pwd(5, "Valid2026pass", "Better2026pass")
+          gxp_env$gxp_store_update(function(st) { i <- st$pwd_mngt$user == "ana"
+            st$pwd_mngt$n_wrong_pwd[i] <- 0; st$pwd_mngt$date_change[i] <- "2026-01-01"; st })
+          session$setInputs(gxp_pwd_current = "Valid2026pass", gxp_pwd_new = "Better2026pass", gxp_pwd_repeat = "Better2026pass", go = 6) })
+        ck <- shinymanager::check_credentials(gxp_env$gxp_config()$users, passphrase = "validation-key")
+        pm <- gxp_env$gxp_store_read()$pwd_mngt; tr <- gxp_env$audit_read(); gxp_unset()
+        grepl("incorrect", m$wrong) && grepl("different from the current", m$same) && grepl("At least 12", m$rule) &&
+          grepl("two new passwords are different", m$differ) && grepl("locked", m$locked) &&
+          !isTRUE(ck("ana", "Valid2026pass")$result) && isTRUE(ck("ana", "Better2026pass")$result) &&
+          pm$date_change[pm$user == "ana"] == as.character(Sys.Date()) && any(tr$event == "password_changed" & grepl("user menu", tr$details)) &&
+          any(tr$event == "password_change_failed")
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-03", method = "testServer around gxp_password_submit(): five refusals, then a valid change",
+      expected = "each refusal with its message; afterwards the old password fails, the new works, the expiry is reset, password_changed (user menu)")
+
+check("GXP-37", "The forced change at first login is logged at the next login",
+      tryCatch({
+        gxp_team("forced"); s <- gxp_mock("ana", "analyst", "ffffffff01")
+        gxp_env$audit_append("user_added", object = "ana", details = list(), user = "own", role = "system owner")
+        gxp_env$gxp_detect_forced_change(s); tr <- gxp_env$audit_read(); gxp_unset()
+        any(tr$event == "password_changed" & grepl("first login or expiry", tr$details))
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-03", method = "user_added in the trail, have_changed = TRUE in the store; gxp_detect_forced_change()",
+      expected = "password_changed (first login or expiry)")
+
+skip_manual("MAN-GXP-11", "Records page and signing dialog",
+            "As a reviewer: open Records; select a record awaiting review; check the details and the data history; Approve with a wrong, then the right password; Reject another without and with a reason",
+            "The dialog shows record, study, type, author, date, short SHA-256 and the meaning; the user ID stays after a failure; 'N attempts left'; Sign is disabled until a reason is typed; the row changes status at once; the browser does not fill in the password",
+            "URS-GXP-08")
+skip_manual("MAN-GXP-12", "Inspector account", "Sign in as an inspector; open Records and Audit trail; try to sign from the browser console",
+            "All records and the trail visible; no Approve, Reject or Sign trail review; the console attempt is refused", "URS-GXP-17")
+skip_manual("MAN-GXP-13", "Audit trail page", "As a reviewer: open Audit trail; look at Exceptions; filter All entries; Verify chain; Export CSV; Users; Sign trail review",
+            "Plain-language events; filters work; 'Intact: N entries'; the CSV starts with the verification line; the last-review line updates", "URS-GXP-11,URS-GXP-14")
+
 gxp_unset()
 end_section("GXP")
 

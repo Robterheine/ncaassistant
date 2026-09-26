@@ -151,7 +151,8 @@ audit_read <- function(path = gxp_config()$trail, newest_first = FALSE) {
     return(data.frame(seq = integer(0), time_utc = character(0), user = character(0),
                       role = character(0), organisation = character(0), event = character(0),
                       object = character(0), sha256 = character(0), reason = character(0),
-                      details = character(0), hash = character(0), stringsAsFactors = FALSE))
+                      details = character(0), session = character(0), hash = character(0),
+                      stringsAsFactors = FALSE))
   fld <- function(e, k) { v <- e[[k]]; if (is.null(v)) NA_character_ else as.character(v)[1] }
   parsed <- lapply(rows$entry, jsonlite::fromJSON, simplifyVector = FALSE)
   data.frame(
@@ -166,6 +167,7 @@ audit_read <- function(path = gxp_config()$trail, newest_first = FALSE) {
     reason = vapply(parsed, fld, "", "reason"),
     details = vapply(parsed, function(e) as.character(jsonlite::toJSON(e$details, auto_unbox = TRUE,
                                                                         null = "null")), ""),
+    session = vapply(parsed, fld, "", "session"),
     hash = rows$hash, stringsAsFactors = FALSE)
 }
 
@@ -283,9 +285,15 @@ gxp_store_record <- function(file, record_name, record_type, study = NA,
     s
   }, error = function(e) NULL)
   if (is.null(sha)) { gxp_failure_modal(session); return(FALSE) }
+  # The data behind the record: the latest run (or data load) of this session
+  data_sha <- tryCatch({
+    tr <- audit_read(cfg$trail)
+    mine <- tr[tr$session %in% substr(.or(session$token, ""), 1, 8) & tr$event %in% c("analysis_run", "data_loaded"), ]
+    if (nrow(mine) > 0) mine$sha256[nrow(mine)] else NA_character_
+  }, error = function(e) NA_character_)
   ok <- gxp_guard("record_created", object = record_name, sha256 = sha,
                   details = list(record_type = record_type, study = study,
-                                 reproduction = verdict, queued = queued),
+                                 reproduction = verdict, queued = queued, data_sha256 = data_sha),
                   session = session)
   if (ok) sha else FALSE
 }

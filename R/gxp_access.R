@@ -125,7 +125,10 @@ gxp_server <- function(server) {
       observeEvent(input$gxp_change_password, gxp_password_dialog(session))
       observeEvent(input$gxp_pwd_submit, gxp_password_submit(input, session))
       output$gxp_header <- renderUI(gxp_header_ui(session))
-      isolate(server(input, output, session))
+      isolate({
+        gxp_sign_server(input, output, session)
+        server(input, output, session)
+      })
     })
   }
 }
@@ -139,7 +142,7 @@ gxp_header_ui <- function(session) {
     if (exists("gxp_nav_links", mode = "function")) gxp_nav_links(session),
     tags$span(class = "badge border border-light text-light ms-2", style = "font-size: 0.7rem; font-weight: 500;",
               title = paste0("Controlled installation: ", cfg$org, " \u00B7 ", Sys.info()[["nodename"]]),
-              icon("shield-halved", class = "me-1"), "Controlled"),
+              icon("shield-halved"), tags$span(class = "visually-hidden", "Controlled installation")),
     tags$div(class = "dropdown ms-2 d-inline-block",
       tags$button(class = "btn btn-outline-light btn-sm dropdown-toggle", style = btn, type = "button",
                   `data-bs-toggle` = "dropdown", `aria-expanded` = "false",
