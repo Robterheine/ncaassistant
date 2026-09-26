@@ -63,7 +63,9 @@ for r in d.tables[0].rows:
 env = table_after(para("1.1 Test Environment"))
 names = [r.cells[0].text for r in env.rows]
 tpl = env.rows[names.index("digest")]._tr
-for extra in [e for e in ["replicateBE (validation only)", "shiny", "Validation script SHA-256"] if e not in names]:
+for extra in [e for e in ["replicateBE (validation only)", "shiny", "Validation script SHA-256",
+                          "shinymanager (controlled mode)", "DBI, RSQLite (controlled mode)",
+                          "Controlled-mode test server and directory"] if e not in names]:
     new = copy.deepcopy(tpl); env.rows[names.index("Executed by")]._tr.addprevious(new)
     set_cell([x for x in env.rows if x._tr is new][0].cells[0], extra)
 
@@ -110,7 +112,8 @@ src = open("validation/validation.R", encoding="utf-8").read()
 urs_all = (["URS-GEN-01"] + [f"URS-GEN-0{i}" for i in range(3,10)] + [f"URS-DAT-0{i}" for i in range(1,9)] +
            [f"URS-NCA-{i:02d}" for i in range(1,15)] + [f"URS-BE-{i:02d}" for i in range(1,12)] +
            [f"URS-PWR-0{i}" for i in range(1,7)] + [f"URS-EXP-0{i}" for i in range(1,9)] +
-           [f"URS-UI-0{i}" for i in range(1,6)] + [f"URS-VIZ-0{i}" for i in range(1,10)])
+           [f"URS-UI-0{i}" for i in range(1,6)] + [f"URS-VIZ-0{i}" for i in range(1,10)] +
+           [f"URS-GXP-{i:02d}" for i in range(1,21)])
 def refs(r): return [x.strip() for x in r["URS_Ref"].split(",")]
 tr_rows = []
 for u in urs_all:
