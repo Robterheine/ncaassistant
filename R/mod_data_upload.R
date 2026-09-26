@@ -524,6 +524,13 @@ data_upload_server <- function(id, shared) {
         interlocks = run_interlocks(raw_data(), col_map)))
       data   <- ds$data
       design <- ds$design
+      # Controlled mode: log the data before they become available (fail closed)
+      if (!gxp_guard("data_loaded", object = input$file_upload$name,
+                     sha256 = sha256_file(input$file_upload$datapath),
+                     details = list(source = "file", format = if (is_adnca) "adnca" else "flat",
+                                    adnca = if (is_adnca) adnca_conv()$options else NULL,
+                                    rows = nrow(data), subjects = design$n_subjects,
+                                    blq_rule = input$blq_rule, lloq = input$lloq))) return()
       
       shared$raw_data   <- raw_data()
       shared$pk_dataset <- ds

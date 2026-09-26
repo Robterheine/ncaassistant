@@ -5017,6 +5017,73 @@ skip_manual("MAN-GXP-08", "Open mode is unchanged",
             "Start the app without NCA_GXP_DIR; compare the hub and the four analysis paths with the previous release",
             "No login, no Controlled badge, no user menu, no hub line; the screens are the same as before", "URS-GXP-01")
 
+# --- Hooks in the analysis modules (T5) --------------------------------------
+check("GXP-24", "Every place results are produced or leave the app has its audit hook",
+      tryCatch({
+        n <- function(f, pat) sum(grepl(pat, readLines(f, warn = FALSE), fixed = TRUE))
+        n("R/mod_data_upload.R", 'gxp_guard("data_loaded"') == 1 &&
+          n("R/mod_path_single_nca.R", 'gxp_guard("data_loaded"') == 1 &&
+          n("R/mod_path_single_nca.R", 'gxp_guard("analysis_run"') == 2 &&
+          n("R/mod_path_multi_nca.R", 'gxp_guard("analysis_run"') == 2 &&
+          n("R/mod_path_be.R", 'gxp_guard("analysis_run"') == 3 &&
+          n("R/mod_path_single_nca.R", "gxp_export_done(") == 1 && n("R/mod_path_multi_nca.R", "gxp_export_done(") == 2 &&
+          n("R/mod_path_be.R", "gxp_export_done(") == 2 && n("R/mod_path_viz.R", "gxp_export_done(") == 1 &&
+          all(vapply(c("R/mod_path_single_nca.R", "R/mod_path_multi_nca.R", "R/mod_path_be.R", "R/mod_path_viz.R"),
+                     function(f) n(f, "gxp_record_done(") == 1 && n(f, "gxp_analyst(input$record_analyst)") == 1, logical(1)))
+      }, error = function(e) FALSE),
+      "URS-GXP-05", method = "count the hooks in the module sources",
+      expected = "data_loaded 2, analysis_run 7, export_downloaded 6, record_created 4, signed-in analyst in 4 records")
+
+check("GXP-25", "Record and export hooks stop the download when the audit trail cannot be written, and do nothing in open mode",
+      tryCatch({
+        gxp_unset(); z <- tempfile(fileext = ".zip", tmpdir = gxp_tmp); writeLines("content", z)
+        open_ok <- isTRUE(gxp_env$gxp_record_done(z, "r.zip", "batch_nca", "", NULL, session = NULL)) &&
+          isTRUE(gxp_env$gxp_export_done(z, "r.csv", "csv", session = NULL))
+        d <- gxp_ctl("hooks")
+        stored <- nchar(gxp_env$gxp_record_done(z, "r.zip", "batch_nca", "S1", structure(1, reproduction = "MATCH"), session = NULL)) == 64
+        exported <- isTRUE(gxp_env$gxp_export_done(z, "r.csv", "csv", "abc", session = NULL))
+        Sys.chmod(file.path(d, "audit.sqlite"), "0444")
+        rec_stop <- inherits(tryCatch(gxp_env$gxp_record_done(z, "r2.zip", "batch_nca", "", NULL, session = NULL),
+                                      error = function(e) e), "error")
+        exp_stop <- inherits(tryCatch(gxp_env$gxp_export_done(z, "r2.csv", "csv", session = NULL),
+                                      error = function(e) e), "error")
+        Sys.chmod(file.path(d, "audit.sqlite"), "0644")
+        tr <- gxp_env$audit_read(file.path(d, "audit.sqlite")); gxp_unset()
+        open_ok && stored && exported && rec_stop && exp_stop &&
+          identical(tr$event[-1], c("record_created", "export_downloaded")) && grepl('"reproduction":"MATCH"', tr$details[2])
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-07,URS-GXP-09", method = "gxp_record_done() and gxp_export_done() in open mode, with a writable and with a read-only trail",
+      expected = "no-ops in open mode; entries when writable; an error (download stopped) and no entry when read-only")
+
+check("GXP-26", "The analyst in a record is the signed-in user in controlled mode, the typed name otherwise",
+      tryCatch({
+        gxp_unset(); a <- gxp_env$gxp_analyst
+        typed <- a("J. Typed", session = NULL) == "J. Typed" && a("", session = NULL) == "Analyst" && a(NULL, session = NULL) == "Analyst"
+        gxp_set(file.path(gxp_tmp, "hooks")); signed <- a("J. Typed", session = gxp_session("analyst")) == "U One"; gxp_unset()
+        typed && signed
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-02", method = "gxp_analyst() in open and controlled mode", expected = "typed name or 'Analyst'; signed-in name in controlled mode")
+
+check("GXP-27", "Logging adds well under 100 ms to an analysis",
+      tryCatch({
+        d <- gxp_ctl("timing"); s <- gxp_session("analyst")
+        t <- system.time(for (i in 1:20) gxp_env$gxp_guard("analysis_run", object = "all subjects",
+                                                           sha256 = gxp_env$sha256_file("data/example_theoph.csv"),
+                                                           details = list(i = i), session = s))[["elapsed"]] / 20
+        gxp_unset(); t < 0.1
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-05", method = "20 x gxp_guard() with the SHA-256 of example_theoph.csv", expected = "mean < 0.1 s per entry",
+      detail = "controlled-mode overhead per analysis_run")
+
+skip_manual("MAN-GXP-09", "Each analysis path writes its entries with the right hashes",
+            "Controlled mode, signed in as an analyst: type data in One Subject and run it; upload example_theoph.csv, run All Subjects; upload example_be_crossover.csv, run Bioequivalence; draw a figure; in each path download the results and create a record; recalculate one half-life with other points",
+            "The trail shows data_loaded (typed in / the file's SHA-256), analysis_run (run and half-life override) with the same data SHA-256, export_downloaded per file and record_created per record; the records folder holds each zip under its SHA-256; the status line under each record button says 'Stored for review' (a figure: 'Stored')",
+            "URS-GXP-05,URS-GXP-09")
+skip_manual("MAN-GXP-10", "Fail closed in the app",
+            "Make audit.sqlite read-only on the test server; run an analysis; try a download; make it writable again",
+            "The 'Not carried out' dialog; no new results; the download fails with the same dialog; no entries were added",
+            "URS-GXP-07")
+
 gxp_unset()
 end_section("GXP")
 

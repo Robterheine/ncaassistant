@@ -402,3 +402,57 @@ gxp_is_locked <- function(user, store = gxp_store_read()) {
   n <- suppressWarnings(as.numeric(pm$n_wrong_pwd[pm$user == user]))
   length(n) == 1 && !is.na(n) && n >= GXP_PWD_FAILURE_LIMIT
 }
+
+# --- Hooks for the analysis modules --------------------------------------------
+# One call each in the modules; all are no-ops in open mode, and their
+# arguments are not even evaluated there.
+
+#' The analyst named in a record: the signed-in user in controlled mode, the
+#' typed name (or "Analyst") otherwise
+gxp_analyst <- function(typed, session = shiny::getDefaultReactiveDomain()) {
+  u <- if (gxp_enabled()) gxp_user(session) else NULL
+  if (!is.null(u)) return(u$name)
+  if (!is.null(typed) && nchar(typed) > 0) typed else "Analyst"
+}
+
+#' SHA-256 of the uploaded data file behind the current analysis
+gxp_data_sha256 <- function(study_info) {
+  p <- study_info$file_path
+  if (!is.null(p) && file.exists(p)) sha256_file(p) else NA_character_
+}
+
+#' After a record zip has been built: store it, log it, show its status
+#'
+#' Stops (so the download fails) when the record cannot be stored and logged.
+gxp_record_done <- function(file, record_name, record_type, study, rec_out, queued = TRUE,
+                            session = shiny::getDefaultReactiveDomain()) {
+  if (!gxp_enabled()) return(invisible(TRUE))
+  sha <- gxp_store_record(file, record_name, record_type,
+                          study = if (!is.null(study) && nzchar(study)) study else NA_character_,
+                          verdict = .or(attr(rec_out, "reproduction"), NA_character_),
+                          queued = queued, session = session)
+  if (isFALSE(sha)) stop("The record was not stored because it could not be recorded in the audit trail.", call. = FALSE)
+  # The status line under the record button. A download does not flush outputs,
+  # so it goes to the browser as a message, which is delivered at once.
+  panel <- c(single_nca = "path_single_nca", batch_nca = "path_multi_nca", be = "path_be", figure = "path_viz")
+  if (!is.null(session) && record_type %in% names(panel)) session$sendCustomMessage("gxp_record_status", list(
+    id = paste0(panel[[record_type]], "-gxp_record_status"),
+    html = as.character(tags$p(
+      class = "small mt-2 mb-0",
+      icon("shield-halved", class = "me-1 text-success"),
+      if (queued) paste0("Stored for review \u00B7 ", substr(sha, 1, 8), " \u00B7 Awaiting review \u00B7 ")
+      else paste0("Stored \u00B7 ", substr(sha, 1, 8), " "),
+      if (queued) tags$a(href = "#", onclick = "Shiny.setInputValue('nav_path', 'records', {priority: 'event'}); return false;",
+                         "Open in Records")))))
+  invisible(sha)
+}
+
+#' Before a results file is handed over: log it with its SHA-256
+gxp_export_done <- function(file, file_name, format, data_sha256 = NA_character_,
+                            session = shiny::getDefaultReactiveDomain()) {
+  if (!gxp_enabled()) return(invisible(TRUE))
+  if (!gxp_guard("export_downloaded", object = file_name, sha256 = sha256_file(file),
+                 details = list(format = format, data_sha256 = data_sha256), session = session))
+    stop("The download was stopped because it could not be recorded in the audit trail.", call. = FALSE)
+  invisible(TRUE)
+}

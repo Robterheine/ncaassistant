@@ -38,7 +38,7 @@ gxp_secure_ui <- function(ui) {
       tags$img(src = "logo.svg", height = "44px"),
       tags$h4("NCA Assistant", style = "margin-top: 8px;"),
       tags$p(class = "text-muted", style = "font-size: 0.85rem;",
-             "Controlled installation · ", cfg$org, " · ", Sys.info()[["nodename"]])),
+             "Controlled installation \u00B7 ", cfg$org, " \u00B7 ", Sys.info()[["nodename"]])),
     tags_bottom = tags$p(class = "text-muted", style = "font-size: 0.85rem; text-align: center;",
                          "Forgot your password? Ask the system owner to reset it."))
 }
@@ -138,7 +138,7 @@ gxp_header_ui <- function(session) {
   tagList(
     if (exists("gxp_nav_links", mode = "function")) gxp_nav_links(session),
     tags$span(class = "badge border border-light text-light ms-2", style = "font-size: 0.7rem; font-weight: 500;",
-              title = paste0("Controlled installation: ", cfg$org, " · ", Sys.info()[["nodename"]]),
+              title = paste0("Controlled installation: ", cfg$org, " \u00B7 ", Sys.info()[["nodename"]]),
               icon("shield-halved", class = "me-1"), "Controlled"),
     tags$div(class = "dropdown ms-2 d-inline-block",
       tags$button(class = "btn btn-outline-light btn-sm dropdown-toggle", style = btn, type = "button",
@@ -146,7 +146,7 @@ gxp_header_ui <- function(session) {
                   icon("user", class = "me-1"), u$name),
       tags$ul(class = "dropdown-menu dropdown-menu-end",
         tags$li(tags$span(class = "dropdown-item-text small text-muted",
-                          paste0(u$user, " · ", gsub(";", ", ", u$roles)))),
+                          paste0(u$user, " \u00B7 ", gsub(";", ", ", u$roles)))),
         tags$li(tags$hr(class = "dropdown-divider")),
         tags$li(tags$a(class = "dropdown-item", href = "#",
                        onclick = "Shiny.setInputValue('gxp_change_password', Date.now(), {priority: 'event'}); return false;",

@@ -47,6 +47,8 @@ path_single_nca_ui <- function(id) {
                  "Type your time points and matching concentrations below, ",
                  "one value per line. Both columns must have the same number of lines. ",
                  "Example values are shown \u2014 replace with your own data."),
+          if (gxp_enabled()) tags$p(class = "text-muted small",
+                                    "Typed values are marked on the record for the reviewer to check against the source."),
           layout_columns(
             col_widths = c(5, 5, 2),
             textAreaInput(ns("manual_time"), "Time points",
@@ -289,6 +291,8 @@ path_single_nca_server <- function(id, shared) {
     observeEvent(input$btn_use_manual, {
       p <- manual_parsed()
       if (!p$ok) { showNotification("Fix data issues first.", type = "error"); return() }
+      if (!gxp_guard("data_loaded", object = "typed in", sha256 = sha256_values(p$time, p$conc),
+                     details = list(source = "typed in", points = p$nt))) return()
       local$time <- p$time; local$conc <- p$conc
       local$manual_ready <- TRUE
       showNotification(paste0(p$nt, " points loaded."), type = "message")
@@ -428,6 +432,10 @@ path_single_nca_server <- function(id, shared) {
            mw = if (is.null(input$mw) || is.na(input$mw)) 0 else input$mw,
            partial_aucs = pauc_spec())
     }
+    # SHA-256 of the data behind this profile: the file, or the typed values
+    single_data_sha256 <- function(t, c) {
+      if (identical(input$data_mode, "manual")) sha256_values(t, c) else gxp_data_sha256(shared$study_info)
+    }
     observeEvent(input$run_nca, {
       local$lz_override <- NULL  # reset manual override on fresh NCA
       d <- tc(); req(length(d$time) >= 2)
@@ -493,6 +501,9 @@ path_single_nca_server <- function(id, shared) {
                                 "and MRT are not reported. Review the fit in Half-Life Review."),
                          type = "warning", duration = 12)
       }
+      if (!is.null(r) && !gxp_guard("analysis_run", object = "one subject", sha256 = single_data_sha256(t_num, c_num),
+                                    details = list(trigger = "run", path = "single_nca", data_source = input$data_mode,
+                                                   profile = input$sel_profile, settings = settings))) return()
       
       nca_res(r)
     })
@@ -704,7 +715,10 @@ path_single_nca_server <- function(id, shared) {
         r <- tryCatch(suppressWarnings(run_single_nca(t_num, c_num, single_settings(), time_used = t_sel,
                                                       is_blq = d$is_blq)),
                       error = function(e) NULL)
-        if (!is.null(r)) {
+        if (!is.null(r) && gxp_guard("analysis_run", object = "one subject", sha256 = single_data_sha256(t_num, c_num),
+                                     details = list(trigger = "half-life override", path = "single_nca",
+                                                    profile = input$sel_profile, time_used = t_sel,
+                                                    settings = single_settings()))) {
           nca_res(r)
         }
       }
@@ -729,6 +743,8 @@ path_single_nca_server <- function(id, shared) {
             Value = as.character(r)
           )
           write.csv(df, file, row.names = FALSE)
+          gxp_export_done(file, paste0("NCA_single_", Sys.Date(), ".csv"), "csv",
+                          single_data_sha256(tc()$time, tc()$conc))
         }
       }
     )
@@ -745,12 +761,13 @@ path_single_nca_server <- function(id, shared) {
     })
 
     # Complete Analysis Record for single subject — shared engine
+    record_file_name <- function() {
+      study <- if (nchar(input$record_study) > 0)
+        gsub("[^A-Za-z0-9_-]", "_", input$record_study) else "Single_NCA"
+      paste0("Analysis_Record_", study, "_", Sys.Date(), ".zip")
+    }
     output$dl_record <- downloadHandler(
-      filename = function() {
-        study <- if (nchar(input$record_study) > 0)
-          gsub("[^A-Za-z0-9_-]", "_", input$record_study) else "Single_NCA"
-        paste0("Analysis_Record_", study, "_", Sys.Date(), ".zip")
-      },
+      filename = record_file_name,
       content = function(file) {
         req(nca_res())
 
@@ -810,7 +827,7 @@ path_single_nca_server <- function(id, shared) {
             original_file_name = original_name,
             blq_rule           = blq_rule,
             lloq               = lloq,
-            analyst            = if (nchar(input$record_analyst) > 0) input$record_analyst else "Analyst",
+            analyst            = gxp_analyst(input$record_analyst),
             study_name         = if (nchar(input$record_study) > 0) input$record_study else "Untitled Study",
             lz_override        = lz_override,
             col_map            = if (has_file) shared$col_map else NULL,
@@ -818,6 +835,7 @@ path_single_nca_server <- function(id, shared) {
             adnca              = if (has_file && identical(shared$study_info$door, "adnca"))
                                    shared$study_info$adnca else NULL
           )
+          gxp_record_done(file, record_file_name(), "single_nca", input$record_study, rec_out)
           notify_reproduction(rec_out)
         })
       }

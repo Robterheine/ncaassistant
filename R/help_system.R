@@ -514,14 +514,17 @@ analysis_record_ui <- function(ns, intro = NULL,
       tags$p(class = "text-muted small mb-2", intro %||% default_intro),
       layout_columns(
         col_widths = c(6, 6),
-        textInput(ns("record_analyst"), "Analyst name (optional)",
-                  value = "", placeholder = "Your name"),
+        # Controlled mode: the signed-in user, not a typed name
+        if (gxp_enabled()) tags$p(class = "small mt-4 mb-0", paste0("Analyst: ", gxp_analyst(NULL), " (signed in)"))
+        else textInput(ns("record_analyst"), "Analyst name (optional)",
+                       value = "", placeholder = "Your name"),
         textInput(ns("record_study"), "Study name (optional)",
                   value = "", placeholder = "e.g., Study XYZ")
       ),
       downloadButton(ns("dl_record"), button_label,
                      class = "btn-outline-primary btn-sm",
-                     icon = icon("file-zipper"))
+                     icon = icon("file-zipper")),
+      if (gxp_enabled()) tags$div(id = ns("gxp_record_status"))
     )
   )
 }

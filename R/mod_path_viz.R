@@ -924,16 +924,17 @@ path_viz_server <- function(id, shared) {
     }
 
     # ---- Download handler --------------------------------------------------
+    plot_file_name <- function() {
+      fmt <- input$export_format %||% "png"
+      pt  <- input$plot_type     %||% "spaghetti"
+      pfx <- if (pt == "both") {
+        if ((input$export_which %||% "spaghetti") == "summary")
+          "summary" else "spaghetti"
+      } else pt
+      paste0(pfx, "_plot.", fmt)
+    }
     output$dl_plot <- downloadHandler(
-      filename = function() {
-        fmt <- input$export_format %||% "png"
-        pt  <- input$plot_type     %||% "spaghetti"
-        pfx <- if (pt == "both") {
-          if ((input$export_which %||% "spaghetti") == "summary")
-            "summary" else "spaghetti"
-        } else pt
-        paste0(pfx, "_plot.", fmt)
-      },
+      filename = plot_file_name,
       content = function(file) {
         w   <- as.numeric(input$export_width  %||% 7)
         h   <- as.numeric(input$export_height %||% 5)
@@ -968,6 +969,7 @@ path_viz_server <- function(id, shared) {
             showNotification(paste("Export failed:", conditionMessage(e)),
                              type = "error", duration = 8)
         )
+        if (file.exists(file)) gxp_export_done(file, plot_file_name(), fmt, gxp_data_sha256(shared$study_info))
       }
     )
 
@@ -984,12 +986,13 @@ path_viz_server <- function(id, shared) {
     })
 
     # ---- Figure Record download -------------------------------------------
+    record_file_name <- function() {
+      study <- if (!is.null(input$record_study) && nchar(input$record_study) > 0)
+        gsub("[^A-Za-z0-9_-]", "_", input$record_study) else "Figure"
+      paste0("Analysis_Record_", study, "_", Sys.Date(), ".zip")
+    }
     output$dl_record <- downloadHandler(
-      filename = function() {
-        study <- if (!is.null(input$record_study) && nchar(input$record_study) > 0)
-          gsub("[^A-Za-z0-9_-]", "_", input$record_study) else "Figure"
-        paste0("Analysis_Record_", study, "_", Sys.Date(), ".zip")
-      },
+      filename = record_file_name,
       content = function(file) {
         req(shared$data_ready, plot_rendered(), shared$col_map, shared$study_info)
 
@@ -1048,13 +1051,14 @@ path_viz_server <- function(id, shared) {
             original_file_name = original_name,
             blq_rule           = si$blq_rule %||% "none",
             lloq               = si$lloq %||% 0,
-            analyst            = if (!is.null(input$record_analyst) && nchar(input$record_analyst) > 0) input$record_analyst else "Analyst",
+            analyst            = gxp_analyst(input$record_analyst),
             study_name         = if (!is.null(input$record_study) && nchar(input$record_study) > 0) input$record_study else "Untitled Study",
             n_subjects         = n_subj,
             n_obs              = n_obs,
             read_args          = read_args,
             adnca              = adnca_rec
           )
+          gxp_record_done(file, record_file_name(), "figure", input$record_study, rec_out, queued = FALSE)
           notify_reproduction(rec_out)
           if (!is.null(fallback_dir)) unlink(fallback_dir, recursive = TRUE)
         })

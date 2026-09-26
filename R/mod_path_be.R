@@ -570,6 +570,8 @@ path_be_server <- function(id, shared) {
             type = "warning", duration = 12)
         }
         
+        if (!gxp_guard("analysis_run", object = "bioequivalence (NCA)", sha256 = gxp_data_sha256(shared$study_info),
+                       details = list(trigger = "run", path = "be_nca", settings = settings))) return()
         be_nca_result(nca_res)
         be_nca_settings(settings)
         shared$nca_results <- nca_res
@@ -776,6 +778,15 @@ path_be_server <- function(id, shared) {
                                            ifelse(pe >= 80 & pe <= 125, "YES", "NO"))
         }
 
+        if (!gxp_guard("analysis_run", object = "bioequivalence", sha256 = gxp_data_sha256(shared$study_info),
+                       details = list(trigger = "run", path = "be", nca_settings = settings,
+                                      be_settings = list(design_selected = input$be_design, design_analysed = design_used$design,
+                                                         reference = input$be_reference, model_type = input$model_type,
+                                                         log_transform = isTRUE(input$log_transform), ci_level = input$ci_level,
+                                                         acceptance_limits = c(input$be_lower, input$be_upper),
+                                                         pe_constraint = !identical(input$pe_constraint, FALSE),
+                                                         widened_scope = widened_scope_value(input$widened_scope),
+                                                         parameters = params)))) return()
         be_result(list(ci_table = ci_df, anova = anova_results, cv_table = cv_df, design = design_used$design,
                        m13a = c(be_m13a_checks(shared$pk_data, shared$col_map, nca_res,
                                                ci_df[ci_df$Parameter %in% setdiff(params, c(supportive, BE_NO_VERDICT_PARAMS)), ],
@@ -1416,7 +1427,9 @@ path_be_server <- function(id, shared) {
       if (is.null(settings)) return()
       r <- suppressWarnings(run_nca(shared$pk_data, shared$col_map, settings,
                                     lz_overrides = lz_state$overrides_log))
-      if (!is.null(r)) {
+      if (!is.null(r) && gxp_guard("analysis_run", object = "bioequivalence (NCA)", sha256 = gxp_data_sha256(shared$study_info),
+                                   details = list(trigger = "half-life override", path = "be_nca",
+                                                  overrides = lz_state$overrides_log, settings = settings))) {
         be_nca_result(r)
         shared$nca_results <- r
         # The confidence intervals came from the old NCA: they, their
@@ -1466,6 +1479,7 @@ path_be_server <- function(id, shared) {
           df$Source <- rownames(df); writeData(wb, sn, df)
         }
         saveWorkbook(wb, file, overwrite = TRUE)
+        gxp_export_done(file, paste0("BE_report_", Sys.Date(), ".xlsx"), "xlsx", gxp_data_sha256(shared$study_info))
       }
     )
     
@@ -1474,6 +1488,7 @@ path_be_server <- function(id, shared) {
       content = function(file) {
         req(be_result())
         write.csv(rename_be_columns(be_result()$ci_table, ci_level = run_ci_level()), file, row.names=FALSE)
+        gxp_export_done(file, paste0("BE_CI_table_", Sys.Date(), ".csv"), "csv", gxp_data_sha256(shared$study_info))
       }
     )
     
@@ -1489,12 +1504,13 @@ path_be_server <- function(id, shared) {
     })
 
     # Complete Analysis Record
+    record_file_name <- function() {
+      study <- if (nchar(input$record_study) > 0)
+        gsub("[^A-Za-z0-9_-]", "_", input$record_study) else "BE"
+      paste0("Analysis_Record_", study, "_", Sys.Date(), ".zip")
+    }
     output$dl_record <- downloadHandler(
-      filename = function() {
-        study <- if (nchar(input$record_study) > 0)
-          gsub("[^A-Za-z0-9_-]", "_", input$record_study) else "BE"
-        paste0("Analysis_Record_", study, "_", Sys.Date(), ".zip")
-      },
+      filename = record_file_name,
       content = function(file) {
         req(be_nca_result(), be_result(), be_run_settings(), shared$col_map, shared$study_info)
         
@@ -1534,7 +1550,7 @@ path_be_server <- function(id, shared) {
             original_file_name = original_name,
             blq_rule       = si$blq_rule,
             lloq           = si$lloq,
-            analyst        = if (nchar(input$record_analyst) > 0) input$record_analyst else "Analyst",
+            analyst        = gxp_analyst(input$record_analyst),
             study_name     = if (nchar(input$record_study) > 0) input$record_study else "Untitled Study",
             be_results     = be_result(),
             be_settings    = run$be,
@@ -1545,6 +1561,7 @@ path_be_server <- function(id, shared) {
             checks         = record_checks(shared$qc_result, c(be_result()$m13a, copy_note)),
             data_copy_note = copy_note
           )
+          gxp_record_done(file, record_file_name(), "be", input$record_study, rec_out)
           notify_reproduction(rec_out)
           if (!is.null(fallback_dir)) unlink(fallback_dir, recursive = TRUE)
         })

@@ -47,6 +47,11 @@
   }, 1000);
 
   $(document).on("shiny:connected", function () {
+    // The status line under a record button, sent when the record is stored
+    Shiny.addCustomMessageHandler("gxp_record_status", function (msg) {
+      var el = document.getElementById(msg.id);
+      if (el) el.innerHTML = msg.html;
+    });
     Shiny.addCustomMessageHandler("gxp_logout", function (msg) {
       Shiny.setInputValue(".shinymanager_logout", Date.now(), { priority: "event" });
     });

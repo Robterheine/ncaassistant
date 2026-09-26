@@ -447,6 +447,8 @@ path_multi_nca_server <- function(id, shared) {
           result <- add_dose_normalized(as.data.frame(result), settings$dose)
         }
         
+        if (!gxp_guard("analysis_run", object = "all subjects", sha256 = gxp_data_sha256(shared$study_info),
+                       details = list(trigger = "run", path = "multi_nca", settings = settings))) return()
         nca_result(result)
         shared$nca_results  <- result
         shared$nca_settings <- settings
@@ -844,6 +846,9 @@ path_multi_nca_server <- function(id, shared) {
                                     lz_overrides = lz_state$overrides_log))
       if (!is.null(r)) {
         if (isTRUE(input$dose_norm)) r <- add_dose_normalized(as.data.frame(r), settings$dose)
+        if (!gxp_guard("analysis_run", object = "all subjects", sha256 = gxp_data_sha256(shared$study_info),
+                       details = list(trigger = "half-life override", path = "multi_nca",
+                                      overrides = lz_state$overrides_log, settings = settings))) return()
         nca_result(r)
         shared$nca_results <- r
       }
@@ -918,6 +923,7 @@ path_multi_nca_server <- function(id, shared) {
       content = function(file) {
         req(nca_result())
         write.csv(rename_nca_columns(drop_duplicate_dose_normalised(nca_result()), units = list(dose = input$dose_unit, time = input$time_unit, conc = input$conc_unit)), file, row.names=FALSE)
+        gxp_export_done(file, paste0("NCA_results_", Sys.Date(), ".csv"), "csv", gxp_data_sha256(shared$study_info))
       }
     )
     output$dl_params_xlsx <- downloadHandler(
@@ -937,6 +943,7 @@ path_multi_nca_server <- function(id, shared) {
           writeData(wb, "Summary_Statistics", rename_summary_columns(summarize_pk_params(r, key, group_col = if ("Treatment" %in% names(r)) "Treatment" else NULL)))
         }
         saveWorkbook(wb, file, overwrite=TRUE)
+        gxp_export_done(file, paste0("NCA_results_", Sys.Date(), ".xlsx"), "xlsx", gxp_data_sha256(shared$study_info))
       }
     )
     
@@ -952,12 +959,13 @@ path_multi_nca_server <- function(id, shared) {
     })
 
     # Complete Analysis Record
+    record_file_name <- function() {
+      study <- if (nchar(input$record_study) > 0)
+        gsub("[^A-Za-z0-9_-]", "_", input$record_study) else "NCA"
+      paste0("Analysis_Record_", study, "_", Sys.Date(), ".zip")
+    }
     output$dl_record <- downloadHandler(
-      filename = function() {
-        study <- if (nchar(input$record_study) > 0)
-          gsub("[^A-Za-z0-9_-]", "_", input$record_study) else "NCA"
-        paste0("Analysis_Record_", study, "_", Sys.Date(), ".zip")
-      },
+      filename = record_file_name,
       content = function(file) {
         req(nca_result(), shared$col_map, shared$study_info)
         
@@ -1008,7 +1016,7 @@ path_multi_nca_server <- function(id, shared) {
             original_file_name = original_name,
             blq_rule       = si$blq_rule,
             lloq           = si$lloq,
-            analyst        = if (nchar(input$record_analyst) > 0) input$record_analyst else "Analyst",
+            analyst        = gxp_analyst(input$record_analyst),
             study_name     = if (nchar(input$record_study) > 0) input$record_study else "Untitled Study",
             summary_stats  = summ,
             lz_overrides   = if (length(lz_state$overrides_log) > 0) lz_state$overrides_log else NULL,
@@ -1018,6 +1026,7 @@ path_multi_nca_server <- function(id, shared) {
             checks         = record_checks(shared$qc_result, c(nca_excl_note(), pauc_notes(), copy_note)),
             data_copy_note = copy_note
           )
+          gxp_record_done(file, record_file_name(), "batch_nca", input$record_study, rec_out)
           notify_reproduction(rec_out)
           if (!is.null(fallback_dir)) unlink(fallback_dir, recursive = TRUE)
         })
