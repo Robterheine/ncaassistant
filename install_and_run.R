@@ -37,7 +37,9 @@ required_packages <- c(
   # Mixed effects for BE
   "nlme",
   # Export / reproducibility
-  "jsonlite", "digest"
+  "jsonlite", "digest",
+  # Controlled mode only (login, audit trail); the app starts without them
+  "shinymanager", "DBI", "RSQLite"
 )
 
 # --- Validated package versions (optional) ----------------------------------
