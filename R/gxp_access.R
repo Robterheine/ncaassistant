@@ -224,7 +224,7 @@ gxp_password_submit <- function(input, session) {
     gxp_guard("password_change_failed", object = u,
               details = list(attempt = .or(session$userData$gxp_failures, 0L) + 1L), session = session)
     left <- gxp_count_failure(session, "password_change_failures")
-    return(msg(sprintf("The current password is incorrect. %d attempts left before you are signed out.", left)))
+    return(msg(sprintf("The current password is incorrect. %d %s left before you are signed out.", left, if (left == 1) "attempt" else "attempts")))
   }
   if (!identical(input$gxp_pwd_new, input$gxp_pwd_repeat)) return(msg("The two new passwords are different."))
   if (identical(input$gxp_pwd_new, input$gxp_pwd_current)) return(msg("The new password must be different from the current one."))

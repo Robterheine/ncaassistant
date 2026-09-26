@@ -191,7 +191,8 @@ head = {
 archive = {
   need(1, "archive <folder>")
   out <- file.path(args[2], paste0("NCA_archive_", format(Sys.time(), "%Y%m%d-%H%M%S", tz = "UTC")))
-  if (!dir.create(out, recursive = TRUE)) fail("Cannot create ", out, ".")
+  if (!suppressWarnings(dir.create(out, recursive = TRUE)))
+    fail("Cannot create ", out, ". The folder must exist and be writable by the service account (", service, ").")
   # A consistent copy of the trail while the app may be writing
   con <- .audit_connect(cfg$trail)
   DBI::dbExecute(con, sprintf("VACUUM INTO '%s'", gsub("'", "''", file.path(out, "audit.sqlite"))))
@@ -228,7 +229,8 @@ archive = {
     "# Restoring this archive", "",
     sprintf("Archived %s by %s from %s (%s). App release: %s.", gxp_utc_now(), acting, Sys.info()[["nodename"]], cfg$org, tag), "",
     "1. Unzip `app_release.zip` into an empty folder.",
-    "2. Install the package versions of the release: `renv::restore(lockfile = \"renv.lock\")`.",
+    "2. Install the package versions of the release: `renv::restore(lockfile = \"renv.lock\")`. On Linux, install",
+    "   the system libraries first (user manual, appendix on controlled installations, step 1).",
     "3. Copy this folder (not the original) to a writable location, and copy the user store `users.sqlite` of the",
     "   installation into it if accounts are needed; without it, the trail and records can still be verified.",
     "4. Set NCA_GXP_DIR to that copy, NCA_GXP_KEY and NCA_GXP_ORG, and start the app with `shiny::runApp()`.",

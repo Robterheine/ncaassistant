@@ -5330,7 +5330,7 @@ check("GXP-37", "The forced change at first login is logged at the next login",
 
 skip_manual("MAN-GXP-11", "Records page and signing dialog",
             "As a reviewer: open Records; select a record awaiting review; check the details and the data history; Approve with a wrong, then the right password; Reject another without and with a reason",
-            "The dialog shows record, study, type, author, date, short SHA-256 and the meaning; the user ID stays after a failure; 'N attempts left'; Sign is disabled until a reason is typed; the row changes status at once; the browser does not fill in the password",
+            "The dialog shows record, study, type, author, date, short SHA-256 and the meaning; the user ID stays after a failure; 'N attempts left'; the record stays selected, and the right password typed with Enter pressed straight after it signs the record; Sign is disabled until a reason is typed; the row changes status at once; the browser does not fill in the password",
             "URS-GXP-08")
 skip_manual("MAN-GXP-12", "Inspector account", "Sign in as an inspector; open Records and Audit trail; try to sign from the browser console",
             "All records and the trail visible; no Approve, Reject or Sign trail review; the console attempt is refused", "URS-GXP-17")

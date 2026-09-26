@@ -207,8 +207,10 @@ gxp_sign_server <- function(input, output, session) {
           else data.frame(Created = substr(r$created, 1, 16), Study = r$study,
                           Type = unname(.or(GXP_TYPE_LABEL[r$type], r$type)), Author = r$author_name,
                           Status = r$status, stringsAsFactors = FALSE)
-    DT::datatable(df, selection = "single", rownames = FALSE,
-                  options = list(pageLength = 15, dom = "tip", language = list(emptyTable = "No records.")))
+    # The table redraws whenever the trail changes (also by other users): keep the selected record
+    keep <- which(r$sha %in% isolate(selected()))
+    DT::datatable(df, selection = list(mode = "single", selected = if (length(keep) == 1) keep else NULL),
+                  rownames = FALSE, options = list(pageLength = 15, dom = "tip", language = list(emptyTable = "No records.")))
   })
   observeEvent(input$gxp_rec_table_rows_selected, {
     i <- input$gxp_rec_table_rows_selected
@@ -320,7 +322,7 @@ gxp_sign_server <- function(input, output, session) {
                tags$input(id = "gxp_sign_user", type = "text", class = "form-control", autocomplete = "off", autofocus = NA)),
       gxp_password_field("gxp_sign_pwd", "Password"),
       uiOutput("gxp_sign_msg"),
-      tags$script(HTML(paste0("$('#gxp_sign_pwd').on('keydown', function(e){ if (e.key === 'Enter') $('#gxp_sign_submit').click(); });",
+      tags$script(HTML(paste0("$('#gxp_sign_pwd').on('keydown', function(e){ if (e.key === 'Enter') { $('#gxp_sign_reason, #gxp_sign_user, #gxp_sign_pwd').trigger('change'); $('#gxp_sign_submit').click(); } });",
         if (meaning == "review_rejected") paste0(
           "setTimeout(function(){ $('#gxp_sign_submit').prop('disabled', true);",
           " $('#gxp_sign_reason').on('input', function(){ $('#gxp_sign_submit').prop('disabled', !this.value.trim()); }); }, 0);")))),
@@ -351,7 +353,7 @@ gxp_sign_server <- function(input, output, session) {
       gxp_guard("signature_failed", object = r$name, sha256 = r$sha,
                 details = list(attempt = .or(session$userData$gxp_failures, 0L) + 1L, why = why))
       left <- gxp_count_failure(session, "signature_failures")
-      msg(sprintf("User ID or password is incorrect. %d attempts left before you are signed out.", left))
+      msg(sprintf("User ID or password is incorrect. %d %s left before you are signed out.", left, if (left == 1) "attempt" else "attempts"))
     }
     if (!identical(input$gxp_sign_user, me)) return(fail("user ID"))
     st <- tryCatch(gxp_store_read(), error = function(e) NULL)
@@ -491,8 +493,8 @@ gxp_sign_server <- function(input, output, session) {
     fail <- function() {
       gxp_guard("signature_failed", object = "audit trail review",
                 details = list(attempt = .or(session$userData$gxp_failures, 0L) + 1L))
-      msg(sprintf("User ID or password is incorrect. %d attempts left before you are signed out.",
-                  gxp_count_failure(session, "signature_failures")))
+      left <- gxp_count_failure(session, "signature_failures")
+      msg(sprintf("User ID or password is incorrect. %d %s left before you are signed out.", left, if (left == 1) "attempt" else "attempts"))
     }
     if (!identical(input$gxp_rev_user, me)) return(fail())
     st <- tryCatch(gxp_store_read(), error = function(e) NULL)
