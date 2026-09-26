@@ -5112,8 +5112,9 @@ gxp_rec <- function(u, roles, tok, label, data_sha = NULL) {
   s <- gxp_mock(u, roles, tok)
   if (!is.null(data_sha)) gxp_env$gxp_guard("analysis_run", object = "all subjects", sha256 = data_sha,
                                             details = list(trigger = "run", path = "multi_nca", settings = list(blq_rule = "rule1")), session = s)
-  gxp_env$gxp_store_record(z, paste0(label, ".zip"), "batch_nca", session = s)
+  gxp_env$gxp_store_record(z, paste0(label, ".zip"), "batch_nca", data_sha256 = .or_na(data_sha), session = s)
 }
+.or_na <- function(x) if (is.null(x)) NA_character_ else x
 gxp_as <- function(u, roles) function(input, output, session) {
   session$userData$gxp <- list(user = u, name = toupper(u), roles = roles); session$userData$gxp_failures <- 0L
   gxp_env$gxp_sign_server(input, output, session) }
@@ -5445,6 +5446,22 @@ check("GXP-44", "manage_users.R verify with a filed head detects entries removed
       }, error = function(e) FALSE),
       "URS-GXP-06,URS-GXP-12", method = "file the head of a trail; delete the last three entries in a copy; verify the copy without and with the filed head",
       expected = "intact trail with its head: exit 0; truncated copy: exit 0 without the head, exit 2 and 'entries removed' with it")
+
+check("GXP-45", "A record names the data it was made from, also after other data were loaded or run in the same session",
+      tryCatch({
+        gxp_team("recdata"); s <- gxp_mock("ana", "analyst", "abcd4545")
+        gxp_env$gxp_guard("data_loaded", object = "typed in", sha256 = strrep("b", 64), details = list(source = "typed in"), session = s)
+        z <- file.path(gxp_tmp, "rec45.zip"); writeLines("rec45", file.path(gxp_tmp, "rec45.txt"))
+        utils::zip(z, file.path(gxp_tmp, "rec45.txt"), flags = "-jq")
+        gxp_env$gxp_store_record(z, "rec45.zip", "figure", data_sha256 = strrep("a", 64), session = s)
+        tr <- gxp_env$audit_read(); rc <- tr[tr$event == "record_created", ]; gxp_unset()
+        nrow(rc) == 1 && identical(jsonlite::fromJSON(rc$details)$data_sha256, strrep("a", 64)) &&
+          all(grepl("data_sha256 = gxp_data_sha256\\(shared\\$study_info\\)|data_sha256 = \\.or\\(local\\$gxp_data_sha",
+                    vapply(c("R/mod_path_viz.R", "R/mod_path_multi_nca.R", "R/mod_path_be.R", "R/mod_path_single_nca.R"),
+                           function(f) paste(readLines(f), collapse = " "), "")))
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-05,URS-GXP-13", method = "log typed-in data, then store a figure record made from another dataset; each path passes its own data SHA-256 to gxp_record_done()",
+      expected = "record_created carries the figure's data SHA-256, not the latest entry's; all four paths pass it")
 
 gxp_unset()
 end_section("GXP")

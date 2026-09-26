@@ -269,7 +269,7 @@ sha256_values <- function(...) {
 #' @return The record's SHA-256, or FALSE when it could not be stored or logged
 #'   (the failure dialog has then been shown). In open mode: TRUE.
 gxp_store_record <- function(file, record_name, record_type, study = NA,
-                             verdict = NA, queued = TRUE,
+                             verdict = NA, queued = TRUE, data_sha256 = NA_character_,
                              session = shiny::getDefaultReactiveDomain()) {
   if (!gxp_enabled()) return(TRUE)
   cfg <- gxp_config()
@@ -285,15 +285,10 @@ gxp_store_record <- function(file, record_name, record_type, study = NA,
     s
   }, error = function(e) NULL)
   if (is.null(sha)) { gxp_failure_modal(session); return(FALSE) }
-  # The data behind the record: the latest run (or data load) of this session
-  data_sha <- tryCatch({
-    tr <- audit_read(cfg$trail)
-    mine <- tr[tr$session %in% substr(.or(session$token, ""), 1, 8) & tr$event %in% c("analysis_run", "data_loaded"), ]
-    if (nrow(mine) > 0) mine$sha256[nrow(mine)] else NA_character_
-  }, error = function(e) NA_character_)
+  # The data behind the record is passed by the path that built it
   ok <- gxp_guard("record_created", object = record_name, sha256 = sha,
                   details = list(record_type = record_type, study = study,
-                                 reproduction = verdict, queued = queued, data_sha256 = data_sha),
+                                 reproduction = verdict, queued = queued, data_sha256 = data_sha256),
                   session = session)
   if (ok) sha else FALSE
 }
@@ -450,12 +445,12 @@ gxp_data_sha256 <- function(study_info) {
 #'
 #' Stops (so the download fails) when the record cannot be stored and logged.
 gxp_record_done <- function(file, record_name, record_type, study, rec_out, queued = TRUE,
-                            session = shiny::getDefaultReactiveDomain()) {
+                            data_sha256 = NA_character_, session = shiny::getDefaultReactiveDomain()) {
   if (!gxp_enabled()) return(invisible(TRUE))
   sha <- gxp_store_record(file, record_name, record_type,
                           study = if (!is.null(study) && nzchar(study)) study else NA_character_,
                           verdict = .or(attr(rec_out, "reproduction"), NA_character_),
-                          queued = queued, session = session)
+                          queued = queued, data_sha256 = data_sha256, session = session)
   if (isFALSE(sha)) stop("The record was not stored because it could not be recorded in the audit trail.", call. = FALSE)
   # The status line under the record button. A download does not flush outputs,
   # so it goes to the browser as a message, which is delivered at once.

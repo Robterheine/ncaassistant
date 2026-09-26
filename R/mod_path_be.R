@@ -1561,7 +1561,8 @@ path_be_server <- function(id, shared) {
             checks         = record_checks(shared$qc_result, c(be_result()$m13a, copy_note)),
             data_copy_note = copy_note
           )
-          gxp_record_done(file, record_file_name(), "be", input$record_study, rec_out)
+          gxp_record_done(file, record_file_name(), "be", input$record_study, rec_out,
+                          data_sha256 = gxp_data_sha256(shared$study_info))
           notify_reproduction(rec_out)
           if (!is.null(fallback_dir)) unlink(fallback_dir, recursive = TRUE)
         })

@@ -1058,7 +1058,8 @@ path_viz_server <- function(id, shared) {
             read_args          = read_args,
             adnca              = adnca_rec
           )
-          gxp_record_done(file, record_file_name(), "figure", input$record_study, rec_out, queued = FALSE)
+          gxp_record_done(file, record_file_name(), "figure", input$record_study, rec_out, queued = FALSE,
+                          data_sha256 = gxp_data_sha256(shared$study_info))
           notify_reproduction(rec_out)
           if (!is.null(fallback_dir)) unlink(fallback_dir, recursive = TRUE)
         })

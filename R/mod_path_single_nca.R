@@ -503,7 +503,9 @@ path_single_nca_server <- function(id, shared) {
       }
       if (!is.null(r) && !gxp_guard("analysis_run", object = "one subject", sha256 = single_data_sha256(t_num, c_num),
                                     details = list(trigger = "run", path = "single_nca", data_source = input$data_mode,
-                                                   profile = input$sel_profile, settings = settings))) return()
+                                                   profile = if (identical(input$data_mode, "manual")) NULL else input$sel_profile,
+                                                   settings = settings))) return()
+      local$gxp_data_sha <- single_data_sha256(t_num, c_num)  # the data a record of this result is made from
       
       nca_res(r)
     })
@@ -835,7 +837,8 @@ path_single_nca_server <- function(id, shared) {
             adnca              = if (has_file && identical(shared$study_info$door, "adnca"))
                                    shared$study_info$adnca else NULL
           )
-          gxp_record_done(file, record_file_name(), "single_nca", input$record_study, rec_out)
+          gxp_record_done(file, record_file_name(), "single_nca", input$record_study, rec_out,
+                          data_sha256 = .or(local$gxp_data_sha, NA_character_))
           notify_reproduction(rec_out)
         })
       }
