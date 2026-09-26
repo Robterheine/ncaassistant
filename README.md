@@ -31,7 +31,7 @@ Alongside the paths: a **Statistical Methods** page with wording to adapt for a 
 
 ## Intended use
 
-NCA Assistant is for pharmacokineticists doing non-compartmental analysis, average bioequivalence testing and study planning. It gives no reference-scaled bioequivalence verdict (ABEL, RSABE), and it has no audit trail, electronic signature or access control. The public instance on shinyapps.io is for evaluation and training, with synthetic or pseudonymised data. For regulated work, install a tagged release on your own system and qualify it there with the validation package. Responsibility for the analysis and its conclusions stays with the user. Not for dosing decisions for individual patients.
+NCA Assistant is for pharmacokineticists doing non-compartmental analysis, average bioequivalence testing and study planning. It gives no reference-scaled bioequivalence verdict (ABEL, RSABE). The public instance and a standard installation have no audit trail, electronic signature or access control; a controlled installation on your own server adds them (see [Controlled mode](#controlled-mode)). The public instance on shinyapps.io is for evaluation and training, with synthetic or pseudonymised data. For regulated work, install a tagged release on your own system and qualify it there with the validation package. Responsibility for the analysis and its conclusions stays with the user. Not for dosing decisions for individual patients.
 
 **Your data.** On the public instance, uploads are processed on shinyapps.io servers run by Posit PBC (USA). Upload only synthetic, example or anonymised data there. Pseudonymised trial data are still personal data under the GDPR. Sending them to a third-party host needs agreements your organisation must have in place, and may breach sponsor confidentiality. For real study data, run the app on your own computer.
 
@@ -48,7 +48,7 @@ NCA Assistant has not been checked against a specific version of the ADNCA Imple
 
 ## Complete Analysis Record
 
-**One Subject at a Time**, **All Subjects (Batch)** and **Bioequivalence** can generate a **Complete Analysis Record**: a self-contained zip file for archiving, publication supplements, and inclusion in a sponsor's study documentation. It documents one analysis; it is not an audit trail, and it is not signed. The *Generate Analysis Record* panel appears once there are results.
+**One Subject at a Time**, **All Subjects (Batch)** and **Bioequivalence** can generate a **Complete Analysis Record**: a self-contained zip file for archiving, publication supplements, and inclusion in a sponsor's study documentation. It documents one analysis. On the public instance and in a standard installation it is not an audit trail, and it is not signed; in controlled mode the record is also stored on the server and reviewed there (see [Controlled mode](#controlled-mode)). The *Generate Analysis Record* panel appears once there are results.
 
 For the NCA and bioequivalence paths the record contains:
 
@@ -57,11 +57,25 @@ For the NCA and bioequivalence paths the record contains:
 - **analysis_settings.json**: every setting that affects the analysis (including per-profile doses and, for bioequivalence, the design, Reference treatment, model, confidence level, limits and point-estimate constraint), with package versions, schema version, timestamp, the partial AUC intervals and their roles, and (if used in the same session) visualization settings
 - **nca_pipeline.R**: the app's own data-processing code, so the reproduction runs exactly the code the app used
 - **reproduce_analysis.R**: a standalone R script that reproduces the analysis without the app. It re-checks the source-data SHA-256 against the recorded value and **compares** its output with `app_results_reference.csv`, printing `MATCH`, `CLOSE`, `DIFFERENT` or `NOT COMPARED`. A changed source file or a parameter present on one side only also counts as `DIFFERENT`. The app runs this script when it creates the record and stores the outcome in `reproduction_check.txt`. For a bioequivalence record it recomputes the NCA parameters; the ANOVA, confidence intervals and verdict are recorded in results.xlsx but not recomputed
-- **data_integrity.txt**: SHA-256 hashes of the source data, the analysis settings, the results, the reference results, the pipeline code and the reproduction script. The manifest is not signed: store the zip, or its hash, in a controlled system
+- **data_integrity.txt**: SHA-256 hashes of the source data, the analysis settings, the results, the reference results, the pipeline code and the reproduction script. The manifest is not signed: store the zip, or its hash, in a controlled system. In controlled mode the note says where the record's audit trail and review signature are kept
 - **analysis_summary.html**: a self-contained summary with statistical methods, software environment, checks and notes, and instructions
 - **Original data file**: a copy, so the package is self-contained. When the uploaded file was no longer available, the record holds the table as the app read it, written as CSV, and says so
 
 **Visualize Data** produces an equivalent **Figure Record**: the exported figure, `figure_settings.json`, a `reproduce_figure.R` script that rebuilds the plot from the data, an integrity manifest (source data, figure settings, figure, pipeline code and script), an HTML provenance summary, and a copy of the original data.
+
+---
+
+## Controlled mode
+
+For regulated work, NCA Assistant can run in **controlled mode** on a server your organisation runs (Shiny Server behind HTTPS, in an environment where two-factor sign-in is standard). Controlled mode is off unless the environment variable `NCA_GXP_DIR` points to a controlled directory; without it, the app behaves exactly as described above. In controlled mode:
+
+- **Access control.** Everyone signs in with a personal account (via `shinymanager`): *analyst*, *reviewer* or read-only *inspector*. Passwords follow a policy (12 characters, expiry, lockout, inactivity timeout); new accounts start with the one-time password `admin`, which must be changed at first sign-in.
+- **Audit trail.** Every sign-in, data load, analysis run, download, record and signature is written to a hash-chained SQLite trail that refuses changes, with user, role, organisation and UTC time. If an entry cannot be written, the action does not happen. Attempted misuse is also reported to the server's system log.
+- **Records and signatures.** Every Analysis Record is stored read-only under its SHA-256. A reviewer approves or rejects it on the **Records** page with user ID and password, after seeing the history of the data; signed records download together with a signature sheet.
+- **Review.** The **Audit trail** page offers exceptions, filters, chain verification, CSV export, a users overview and a signed trail review.
+- **Administration.** `gxp/manage_users.R` adds, changes, resets and deactivates accounts, and archives the trail and records together with the software to restore them.
+
+Setting up a controlled installation, and what stays the organisation's responsibility, is described in the user manual (chapter *Working on a Controlled Installation*, and the appendix on setting up and administering a controlled installation). A local installation can run controlled mode for training, but is not a qualified setup.
 
 ---
 
@@ -102,12 +116,13 @@ Available at [robterheine.shinyapps.io/NCAassistant](https://robterheine.shinyap
 | Path | What is in it | What it is for |
 |---|---|---|
 | [`app.R`](app.R) | The Shiny app: UI shell, navigation, the About page and `APP_VERSION` | Entry point. `shiny::runApp()` starts here, and it sources everything in `R/` |
-| [`R/`](R/) | 21 files: one module per workflow path (`mod_path_*.R`), the Shiny-free analysis pipeline (`pipeline.R`), bioequivalence statistics (`be_analysis.R`), Analysis Records (`export_record.R`), data checks, help text and the Statistical Methods page | All application code. `pipeline.R` is deliberately free of Shiny, so the validation suite and every Analysis Record can run it outside the app |
+| [`R/`](R/) | 24 files: one module per workflow path (`mod_path_*.R`), the Shiny-free analysis pipeline (`pipeline.R`), bioequivalence statistics (`be_analysis.R`), Analysis Records (`export_record.R`), data checks, help text, the Statistical Methods page, and controlled mode (`gxp_audit.R`, `gxp_access.R`, `gxp_sign.R`) | All application code. `pipeline.R` is deliberately free of Shiny, so the validation suite and every Analysis Record can run it outside the app |
 | [`data/`](data/) | Six small example datasets (theophylline, crossover, parallel, replicate, ADNCA, BLQ results) | The example files the Data Preparation Guide offers for download, and the datasets the worked examples in the manual use |
 | [`cdisc/`](cdisc/) | One pinned release of CDISC SDTM Controlled Terminology: the release metadata, the extracted PK parameter terms, the map from app parameters to PPTESTCD, and the extractor script | Lets results, downloads and records state the official CDISC code of each parameter, from one stated release. A code lookup only: the app produces no SDTM PP datasets |
 | [`converters/`](converters/) | `adnca_to_flat.R` and its documentation | Converts a CDISC ADNCA dataset to a flat CSV outside the app, for scripted use. It calls the same conversion code as the app's ADNCA upload, so both give the same result. The app itself never loads this folder |
 | [`validation/`](validation/) | The validation package: the test script, the URS and IQ/OQ/PQ documents, the protocol generator, the release manifest and package lockfile, and `fixtures/` with committed test data and their deterministic generators | Qualification evidence. `fixtures/` is required to run the suite; see [`validation/README.md`](validation/README.md) |
-| [`www/`](www/) | The user manual PDF, the stylesheet and the logo | Files the app serves to the browser. The manual link in the header points here |
+| [`gxp/`](gxp/) | `manage_users.R` | Account administration and archiving for controlled mode, run by the system owner on the server |
+| [`www/`](www/) | The user manual PDF, the stylesheet, the logo and `gxp_activity.js` (controlled mode only) | Files the app serves to the browser. The manual link in the header points here |
 | [`install_and_run.R`](install_and_run.R) | Dependency installation and launch | One-step setup for a new machine |
 | `NCA_Assistant_User_Manual_v1.8.docx` | The manual source | Edited in Word; the PDF in `www/` is exported from it |
 
@@ -123,13 +138,13 @@ The validation package in [`validation/`](validation/) follows a risk-based appr
 Rscript validation/validation.R
 ```
 
-This executes 431 automated tests (plus 49 manual tests defined for a running app) and writes a results CSV with per-section results and URS traceability, and an environment file with the R and package versions and the SHA-256 of every tested file. Each release also ships a manifest of file hashes and a package lockfile (`validation/release_manifest.csv`, `validation/renv.lock`), which the installation checks compare against.
+This executes 475 automated tests (plus 62 manual tests defined for a running app) and writes a results CSV with per-section results and URS traceability, and an environment file with the R and package versions and the SHA-256 of every tested file. Each release also ships a manifest of file hashes and a package lockfile (`validation/release_manifest.csv`, `validation/renv.lock`), which the installation checks compare against.
 
 **Validation deliverables:**
 
-- **User Requirement Specification** ([`validation/NCA_Assistant_URS.docx`](validation/NCA_Assistant_URS.docx)): 69 requirements across 8 categories (GEN, DAT, NCA, BE, PWR, EXP, UI, VIZ), with a hazard-based FMEA, supplier assessment, and change control procedures
+- **User Requirement Specification** ([`validation/NCA_Assistant_URS.docx`](validation/NCA_Assistant_URS.docx)): 89 requirements across 9 categories (GEN, DAT, NCA, BE, PWR, EXP, UI, VIZ, GXP), with a hazard-based FMEA, supplier assessment, and change control procedures
 - **IQ/OQ/PQ Protocol** ([`validation/NCA_Assistant_IQOQPQ.docx`](validation/NCA_Assistant_IQOQPQ.docx)): approval before execution, a checklist for adopting organisations, every automated and manual test listed individually with method, expected result, URS cross-reference and criticality, and a template for the user's own PQ
-- **Consolidated test script** ([`validation/validation.R`](validation/validation.R)): automated tests and manual test definitions, covering IQ, data handling, NCA accuracy, bioequivalence, power/sample size, export/reproducibility, usability, and visualization (URS-VIZ)
+- **Consolidated test script** ([`validation/validation.R`](validation/validation.R)): automated tests and manual test definitions, covering IQ, data handling, NCA accuracy, bioequivalence, power/sample size, export/reproducibility, usability, visualization (URS-VIZ) and controlled mode (URS-GXP)
 
 NCA accuracy is checked against analytical ground truth (mono-exponential IV bolus) and R's built-in Theoph and Indometh datasets; bioequivalence results against `replicateBE` (30 reference data sets) and sample sizes against PowerTOST; every Analysis Record type is checked to reproduce. Every test is CRITICAL (a failure blocks qualification) or SUPPORTIVE (a failure needs a risk assessment). The visualization tests are SUPPORTIVE, because a figure does not change NCA parameters or conclusions.
 

@@ -834,8 +834,22 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.7.0",
+            tags$h6(class = "fw-bold mb-1", "vX.Y.Z",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "Month 2026"),
+            tags$p(class = "mb-1", tags$strong("Results are the same as in v1.7.0."),
+                   " The release adds an optional controlled mode for installations under GxP. Without it, the app works as before."),
+            tags$ul(class = "mb-0",
+              tags$li(tags$strong("New: "), "controlled mode on a server: sign-in with personal accounts and roles (analyst, reviewer, inspector), a tamper-evident audit trail of every data load, analysis, download and record, and review signatures on stored records"),
+              tags$li(tags$strong("New: "), "Records page with the data history of each record, approval or rejection with user ID and password, signature sheets and a check for copies of a record"),
+              tags$li(tags$strong("New: "), "Audit trail page with exceptions, filters, chain verification, export, a users overview and a signed review; gxp/manage_users.R for accounts and archives"),
+              tags$li("Validation: 475 automated and 62 manual tests (was 431 and 49), with a section for controlled mode")
+            )
+          ),
+
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.7.0"),
             tags$p(class = "text-muted mb-1", "September 2026"),
             tags$p(class = "mb-1", tags$strong("Results can differ from v1.6.0"),
                    " for the lag time under Rules 3, 4 and 6, for a profile without measurable values under Rule 6, for a bioequivalence study in which a period has no measurable concentrations, and at steady state. The changes come from a review of the user manual by a tutor, a clinical pharmacologist and a regulatory compliance officer."),

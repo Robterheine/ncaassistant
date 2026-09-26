@@ -19,13 +19,15 @@ if (!file.exists("app.R") || !dir.exists("R")) stop("Run from the project root."
 app_version <- sub('^APP_VERSION <- "([^"]+)".*$', "\\1", grep("^APP_VERSION", readLines("app.R"), value = TRUE)[1])
 
 pkgs <- c("NonCompart", "PowerTOST", "nlme", "digest", "openxlsx", "jsonlite", "readxl", "dplyr",
-          "shiny", "bslib", "shinyWidgets", "DT", "plotly", "ggplot2", "htmltools", "tidyr", "replicateBE")
+          "shiny", "bslib", "shinyWidgets", "DT", "plotly", "ggplot2", "htmltools", "tidyr", "replicateBE",
+          "shinymanager", "DBI", "RSQLite")
 lock <- renv::lockfile_create(type = "custom", packages = pkgs)
 renv::lockfile_write(lock, file = "validation/renv.lock")
 
 files <- c("app.R", sort(list.files("R", "\\.R$", full.names = TRUE)),
            sort(list.files("converters", "\\.R$", full.names = TRUE)),
-           sort(list.files("cdisc", full.names = TRUE)), sort(list.files("www", full.names = TRUE)))
+           sort(list.files("cdisc", full.names = TRUE)), sort(list.files("www", full.names = TRUE)),
+           sort(list.files("gxp", "\\.R$", full.names = TRUE)))
 manifest <- data.frame(app_version = app_version, file = files,
                        sha256 = vapply(files, function(f) digest::digest(file = f, algo = "sha256"), character(1)),
                        stringsAsFactors = FALSE)

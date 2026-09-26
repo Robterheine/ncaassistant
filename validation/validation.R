@@ -25,7 +25,8 @@ if (!file.exists("app.R") || !dir.exists("R")) {
 # replicateBE is a validation-only dependency (reference implementation for
 # the replicate-design checks in section REP); the app does not use it.
 required_pkgs <- c("NonCompart", "PowerTOST", "nlme", "digest",
-                   "openxlsx", "jsonlite", "readxl", "dplyr", "replicateBE")
+                   "openxlsx", "jsonlite", "readxl", "dplyr", "replicateBE",
+                   "shinymanager", "DBI", "RSQLite")   # the last three: section GXP (controlled mode)
 missing <- required_pkgs[!sapply(required_pkgs, requireNamespace, quietly = TRUE)]
 if (length(missing) > 0) {
   cat("Installing:", paste(missing, collapse=", "), "
@@ -54,7 +55,8 @@ APP_VERSION <- tryCatch({
 source_files <- c("R/utils.R", "R/nca_helpers.R", "R/data_quality.R",
                   "R/export_record.R", "R/mod_data_upload.R", "R/designs.R", "R/be_analysis.R",
                   "R/pipeline.R", "R/interlocks.R", "R/adnca_import.R", "R/cdisc_terms.R",
-                  "converters/adnca_to_flat.R")
+                  "converters/adnca_to_flat.R", "R/gxp_audit.R", "R/gxp_access.R", "R/gxp_sign.R",
+                  "gxp/manage_users.R")
 hash_files <- c("validation/validation.R", source_files)
 file_hashes <- sapply(hash_files, function(f) {
   if (file.exists(f)) digest(file = f, algo = "sha256") else "FILE_NOT_FOUND"
@@ -4889,7 +4891,7 @@ check("GXP-17", "archive: a read-only folder whose manifest checks out, verified
           file.access(file.path(out, "audit.sqlite"), 2) != 0 &&
           any(grepl("^Intact", fresh)) && tail(gxp_mu_trail()$event, 1) == "trail_archived"
       }, error = function(e) FALSE),
-      "URS-GXP-19", method = "manage_users.R archive; SHA-256 of every file; unzip the archived release and run its verify on the archive",
+      "URS-GXP-12,URS-GXP-19", method = "manage_users.R archive; SHA-256 of every file; unzip the archived release and run its verify on the archive",
       expected = "all files present and matching; read-only; 'Intact' from the archived release; trail_archived written")
 
 check("GXP-18", "Two account changes at the same moment both survive (one transaction each)",
@@ -5031,7 +5033,7 @@ check("GXP-24", "Every place results are produced or leave the app has its audit
           all(vapply(c("R/mod_path_single_nca.R", "R/mod_path_multi_nca.R", "R/mod_path_be.R", "R/mod_path_viz.R"),
                      function(f) n(f, "gxp_record_done(") == 1 && n(f, "gxp_analyst(input$record_analyst)") == 1, logical(1)))
       }, error = function(e) FALSE),
-      "URS-GXP-05", method = "count the hooks in the module sources",
+      "URS-GXP-05,URS-GXP-15", method = "count the hooks in the module sources",
       expected = "data_loaded 2, analysis_run 7, export_downloaded 6, record_created 4, signed-in analyst in 4 records")
 
 check("GXP-25", "Record and export hooks stop the download when the audit trail cannot be written, and do nothing in open mode",
@@ -5411,7 +5413,7 @@ if (nrow(cf)>0) {
 
 all_urs <- c(paste0("URS-GEN-0",c(1,3:9)),paste0("URS-DAT-0",1:8),paste0("URS-NCA-",sprintf("%02d",1:14)),
              paste0("URS-BE-0",1:9),"URS-BE-10","URS-BE-11",paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:8),paste0("URS-UI-0",1:5),
-             paste0("URS-VIZ-0",1:9))
+             paste0("URS-VIZ-0",1:9),paste0("URS-GXP-",sprintf("%02d",1:20)))
 covered <- unique(unlist(strsplit(results_df$URS_Ref,",\\s*")))
 # Coverage by executed tests only: a requirement whose only tests are manual
 # (SKIP in this run) is reported as such, not as covered by this run
@@ -5426,7 +5428,8 @@ if (length(miss)>0) cat("  Missing:",paste(miss,collapse=", "),"\n")
 write.csv(results_df, "validation/validation_results.csv", row.names=FALSE)
 # The environment of this run, next to the results: R and package versions,
 # and the SHA-256 of every file that was tested
-env_pkgs <- c(required_pkgs, "shiny", "bslib", "shinyWidgets", "DT", "plotly", "ggplot2", "htmltools", "tidyr")
+env_pkgs <- c(required_pkgs, "shiny", "bslib", "shinyWidgets", "DT", "plotly", "ggplot2", "htmltools", "tidyr",
+              "shinymanager", "DBI", "RSQLite")
 writeLines(c(paste("NCA Assistant", APP_VERSION, "- validation run", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")), "",
              "Packages:", paste0("  ", env_pkgs, " ", vapply(env_pkgs, function(p)
                tryCatch(as.character(packageVersion(p)), error = function(e) "not installed"), character(1))), "",
