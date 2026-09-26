@@ -1,6 +1,6 @@
 # NCA Assistant
 
-**Version 1.7.0** | Designed by Rob ter Heine
+**Version 1.8.0** | Designed by Rob ter Heine
 
 A free, open-source Shiny application for non-compartmental pharmacokinetic analysis (NCA), bioequivalence testing, study planning and figures. It is written for people who run such an analysis now and then rather than daily: parameters carry plain-language names, the app says what it did and what it refused to do, and any analysis can be exported as a package that re-runs itself. Built by the [Radboud Applied Pharmacometrics](https://www.radboudumc.nl/en/research/research-groups/radboud-applied-pharmacometrics) research group at Radboudumc, Nijmegen, The Netherlands.
 
@@ -131,7 +131,7 @@ To try controlled mode without a server, for example for training or Tutorial 8,
 | [`gxp/`](gxp/) | `manage_users.R` | Account administration and archiving for controlled mode, run by the system owner on the server |
 | [`www/`](www/) | The user manual PDF, the stylesheet, the logo and `gxp_activity.js` (controlled mode only) | Files the app serves to the browser. The manual link in the header points here |
 | [`install_and_run.R`](install_and_run.R) | Dependency installation and launch | One-step setup for a new machine |
-| `NCA_Assistant_User_Manual_v1.8.docx` | The manual source | Edited in Word; the PDF in `www/` is exported from it |
+| `NCA_Assistant_User_Manual_v1.9.docx` | The manual source | Edited in Word; the PDF in `www/` is exported from it |
 
 ---
 
@@ -161,7 +161,7 @@ See [`validation/README.md`](validation/README.md) for detailed instructions on 
 
 ## Citation
 
-> ter Heine R. NCA Assistant (v1.7.0). Radboud Applied Pharmacometrics, Radboudumc, Nijmegen, The Netherlands. https://github.com/Robterheine/NCAassistant
+> ter Heine R. NCA Assistant (v1.8.0). Radboud Applied Pharmacometrics, Radboudumc, Nijmegen, The Netherlands. https://github.com/Robterheine/NCAassistant
 
 > Kim H, Han S, Cho YS, Yoon SK, Bae KS. Development of R packages: 'NonCompart' and 'ncar' for noncompartmental analysis (NCA). *Transl Clin Pharmacol*. 2018;26(1):10-15.
 

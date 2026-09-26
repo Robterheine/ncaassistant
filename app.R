@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.7.0
+# Non-Compartmental Analysis Assistant v1.8.0
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # Designed by Rob ter Heine
@@ -21,7 +21,7 @@
 #   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.7.0"
+APP_VERSION <- "1.8.0"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 # Mirror APP_VERSION into the global environment. When RStudio runs a single-file
@@ -141,7 +141,7 @@ ui <- page_fluid(
           icon("circle-info", class = "me-1"), "About"
         ),
         tags$a(
-          href = "NCA_Assistant_User_Manual_v1.8.pdf",
+          href = "NCA_Assistant_User_Manual_v1.9.pdf",
           target = "_blank",
           class = "btn btn-outline-light btn-sm ms-2",
           style = "font-size: 0.7rem; padding: 2px 8px;",
@@ -834,9 +834,9 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "vX.Y.Z",
+            tags$h6(class = "fw-bold mb-1", "v1.8.0",
                     tags$span(class = "badge bg-primary ms-2", "current")),
-            tags$p(class = "text-muted mb-1", "Month 2026"),
+            tags$p(class = "text-muted mb-1", "September 2026"),
             tags$p(class = "mb-1", tags$strong("Results are the same as in v1.7.0."),
                    " The release adds an optional controlled mode for installations under GxP. Without it, the app works as before."),
             tags$ul(class = "mb-0",
