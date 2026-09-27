@@ -154,6 +154,13 @@ data_upload_server <- function(id, shared) {
     output$lloq_apply_ui <- renderUI({
       sug <- lloq_suggestion()
       if (is.null(sug)) return(NULL)
+      # Different limits in the "<x" entries: no suggestion, the user decides
+      if (length(sug) > 1) return(tags$div(
+        class = "alert alert-warning py-2 small mt-2",
+        icon("triangle-exclamation", class = "me-1"),
+        tags$strong(paste0("The '<' entries give different limits: ", paste(sug, collapse = ", "))),
+        tags$br(),
+        "Check the assay report, enter the LLOQ above and click Process Data again."))
       tags$div(
         class = "alert alert-info py-2 small mt-2",
         icon("circle-info", class = "me-1"),
@@ -173,7 +180,7 @@ data_upload_server <- function(id, shared) {
     # This two-step keeps the flow transparent without adding package dependencies.
     observeEvent(input$btn_apply_lloq, {
       sug <- lloq_suggestion()
-      req(!is.null(sug), sug > 0)
+      req(length(sug) == 1, sug > 0)
       updateNumericInput(session, "lloq", value = sug)
       lloq_suggestion(NULL)
       showNotification(
@@ -491,8 +498,9 @@ data_upload_server <- function(id, shared) {
 
       if (input$lloq <= 0 && n_blq_text > 0) {
         detected_lloq <- blq_txt$suggested_lloq
-        # Store suggestion so the "Apply and continue" button can use it
-        lloq_suggestion(detected_lloq)
+        # Store suggestion so the "Apply and continue" button can use it; when
+        # the "<x" limits differ, store them all (listed, nothing to apply)
+        lloq_suggestion(if (length(blq_txt$lloq_candidates) > 1) blq_txt$lloq_candidates else detected_lloq)
         # Hard stop: BLQ text present but no LLOQ — show persistent apply button
         showNotification(
           paste0(n_blq_text, " BLQ entr", if (n_blq_text == 1) "y" else "ies",
@@ -500,6 +508,9 @@ data_upload_server <- function(id, shared) {
                  if (!is.null(detected_lloq))
                    paste0("LLOQ auto-detected as ", detected_lloq, ". Click 'Set LLOQ to ", detected_lloq,
                           "' below the LLOQ field, then click Process Data again.")
+                 else if (length(blq_txt$lloq_candidates) > 1)
+                   paste0("The '<' entries give different limits (", paste(blq_txt$lloq_candidates, collapse = ", "),
+                          "). Check the assay report, set the LLOQ and click Process Data again.")
                  else
                    "Set an LLOQ value above 0 and click Process Data again."),
           type = "error", duration = 12)

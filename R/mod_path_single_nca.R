@@ -663,9 +663,8 @@ path_single_nca_server <- function(id, shared) {
     
     observe({
       d <- tc(); req(length(d$time) >= 3)
-      valid <- !is.na(d$conc) & d$conc > 0
-      cmax_t <- d$time[which.max(d$conc)]
-      term <- valid & (if (identical(input$admin_route, "iv_bolus")) d$time >= cmax_t & d$time > 0 else d$time > cmax_t)
+      cand <- lz_candidate_points(d$time, d$conc, d$is_blq, input$admin_route)
+      term <- cand$term
       if (any(term)) {
         ch <- paste0("t=", d$time[term], "  C=", round(d$conc[term], 3))
         names(ch) <- which(term)
@@ -677,7 +676,7 @@ path_single_nca_server <- function(id, shared) {
           sel <- if (length(lz$time_used) > 0)
             as.character(which(term)[d$time[term] %in% lz$time_used]) else NULL
         }
-        updateCheckboxGroupInput(session, "lz_points",
+        updateCheckboxGroupInput(session, "lz_points", label = cand$label,
                                  choices = setNames(names(ch), ch), selected = sel)
       }
     })
@@ -688,7 +687,7 @@ path_single_nca_server <- function(id, shared) {
       sel_idx <- as.integer(input$lz_points)
       
       # Shared computation via helper — validation, regression, R²
-      lz_calc <- recalculate_lambda_z(d$time, d$conc, sel_idx)
+      lz_calc <- recalculate_lambda_z(d$time, d$conc, sel_idx, is_blq = d$is_blq)
       
       if (!is.null(lz_calc$error)) {
         showNotification(lz_calc$error, type = "error", duration = 10)

@@ -265,17 +265,17 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
       
       # Try to auto-detect LLOQ from "<X" patterns
       lt_vals <- conc_char[grepl("^<", conc_char)]
-      if (length(lt_vals) > 0) {
-        lt_nums_str <- gsub("^<\\s*", "", lt_vals)
-        lt_nums_str <- gsub(",", ".", lt_nums_str)  # handle European decimal comma
-        lt_nums <- suppressWarnings(as.numeric(lt_nums_str))
-        lt_nums <- lt_nums[!is.na(lt_nums)]
-        if (length(lt_nums) > 0) {
-          add("INFO", "Concentration",
-              paste0("Auto-detected LLOQ candidate: ", min(lt_nums)),
-              paste("From '<' entries:", paste(head(unique(lt_vals), 3), collapse=", ")),
-              "Verify and set this value in the LLOQ field.")
-        }
+      lt_nums <- blq_text_summary(lt_vals)$lloq_candidates
+      if (length(lt_nums) == 1) {
+        add("INFO", "Concentration",
+            paste0("Auto-detected LLOQ candidate: ", lt_nums),
+            paste("From '<' entries:", paste(head(unique(lt_vals), 3), collapse=", ")),
+            "Verify and set this value in the LLOQ field.")
+      } else if (length(lt_nums) > 1) {
+        add("WARNING", "Concentration",
+            paste0("The '<' entries give different limits: ", paste(lt_nums, collapse = ", ")),
+            paste("From '<' entries:", paste(head(unique(lt_vals), 5), collapse=", ")),
+            "Check the assay report and enter the LLOQ. Different limits usually mean a data-entry error or a mixed export.")
       }
     }
     

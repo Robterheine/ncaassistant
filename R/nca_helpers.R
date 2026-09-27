@@ -84,6 +84,27 @@ estimate_lambda_z <- function(time, conc, r2adj_threshold = 0.7,
        all_time = time, all_conc = conc, valid_mask = valid, message = "OK")
 }
 
+#' Points the half-life review offers for a manual fit
+#'
+#' The positive concentrations after Cmax (from Cmax on after an IV bolus), as
+#' in the automatic fit. Values set by a BLQ rule are not offered: ICH M13A
+#' (2.2.2.2) leaves BLQ values out of the half-life, and so does run_nca().
+#' @param time,conc One profile; is_blq flag per sample (NULL: none)
+#' @param route "extravascular", "iv_bolus" or "iv_infusion"
+#' @return list(term = logical, the points offered; n_blq = values set by the
+#'   BLQ rule left out; label = label for the checkbox group)
+lz_candidate_points <- function(time, conc, is_blq = NULL, route = "extravascular") {
+  imputed <- if (is.null(is_blq)) rep(FALSE, length(conc)) else is_blq %in% TRUE
+  cmax_t <- time[which.max(conc)]
+  after <- if (identical(route, "iv_bolus")) time >= cmax_t & time > 0 else time > cmax_t
+  pos <- (!is.na(conc) & conc > 0 & after) %in% TRUE
+  n_blq <- sum(pos & imputed)
+  list(term = pos & !imputed, n_blq = n_blq,
+       label = if (n_blq == 0) "Points for half-life:" else
+         paste0("Points for half-life (", n_blq, if (n_blq == 1) " value" else " values",
+                " set by the BLQ rule left out):"))
+}
+
 #' Add dose-normalized parameters to NCA results
 #' 
 #' @param nca_result Data frame of NCA results (from tblNCA)
@@ -137,7 +158,7 @@ add_dose_normalized <- function(nca_result, dose) {
 # The $result list is structurally identical to the override list consumed by
 # lz_state$override and local$lz_override in each module — do not change
 # field names without updating all three modules.
-recalculate_lambda_z <- function(time_vals, conc_vals, selected_idx) {
+recalculate_lambda_z <- function(time_vals, conc_vals, selected_idx, is_blq = NULL) {
 
   out <- list(result = NULL, error = NULL, warning = NULL)
 
@@ -151,15 +172,21 @@ recalculate_lambda_z <- function(time_vals, conc_vals, selected_idx) {
   t_sel <- suppressWarnings(as.numeric(time_vals[selected_idx]))
   c_sel <- suppressWarnings(as.numeric(conc_vals[selected_idx]))
 
-  # Guard 2: keep only positive, non-NA concentrations
-  valid <- !is.na(c_sel) & !is.na(t_sel) & c_sel > 0
+  # Guard 2: keep only positive, non-NA concentrations. Values set by a BLQ
+  # rule stay out, as in the automatic fit (ICH M13A 2.2.2.2)
+  blq_sel <- if (is.null(is_blq)) rep(FALSE, length(selected_idx)) else is_blq[selected_idx] %in% TRUE
+  left_out <- t_sel[blq_sel & !is.na(c_sel) & c_sel > 0]
+  valid <- !is.na(c_sel) & !is.na(t_sel) & c_sel > 0 & !blq_sel
   t_sel <- t_sel[valid]
   c_sel <- c_sel[valid]
+  blq_note <- if (length(left_out) > 0)
+    paste0("Left out of the fit: t = ", paste(left_out, collapse = ", "),
+           " (set by the BLQ rule; BLQ values are not used for the half-life).") else NULL
 
   if (length(t_sel) < 2) {
-    out$error <- paste0("Need at least 2 points with positive concentration. ",
-                        "The selected points include only ",
-                        sum(valid), " positive value(s).")
+    out$error <- paste(c(paste0("Need at least 2 measured points with positive concentration. ",
+                                "Only ", sum(valid), " of the selected points qualify."), blq_note),
+                       collapse = " ")
     return(out)
   }
 
@@ -203,6 +230,7 @@ recalculate_lambda_z <- function(time_vals, conc_vals, selected_idx) {
     out$warning <- paste0("Half-life computed from 2 points (R\u00B2 not available \u2014 ",
                           "at least 3 points needed for validation).")
   }
+  if (!is.null(blq_note)) out$warning <- paste(c(blq_note, out$warning), collapse = " ")
 
   out$result <- list(
     lambda_z  = as.numeric(lambda_z),

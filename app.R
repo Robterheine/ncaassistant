@@ -93,9 +93,11 @@ pharma_theme <- bs_theme(
   info       = "#1F6FAE",
   warning    = "#A85B00",
   danger     = "#C0392B",
-  base_font  = font_google("Source Sans Pro"),
-  heading_font = font_google("Source Sans Pro"),
-  code_font  = font_google("Fira Code"),
+  # The fonts are served from www/fonts (ui below), not downloaded from Google:
+  # an offline server could not build the theme, and browsers contact no one
+  base_font  = c("Source Sans Pro", "sans-serif"),
+  heading_font = c("Source Sans Pro", "sans-serif"),
+  code_font  = c("Fira Code", "monospace"),
   "navbar-bg" = "#2C3E50",
   font_scale = 0.95
 )
@@ -103,6 +105,8 @@ pharma_theme <- bs_theme(
 # --- UI ----------------------------------------------------------------------
 ui <- page_fluid(
   theme = pharma_theme,
+  tags$head(tags$link(rel = "stylesheet", href = "fonts/source-sans-pro/font.css"),
+            tags$link(rel = "stylesheet", href = "fonts/fira-code/font.css")),
   if (gxp_enabled()) tags$script(src = "gxp_activity.js", `data-timeout` = GXP_TIMEOUT_MIN),
   
   # Global header
@@ -183,17 +187,6 @@ ui <- page_fluid(
 # --- Server ------------------------------------------------------------------
 server <- function(input, output, session) {
   
-  # === SESSION CLEANUP =======================================================
-  # Register a cleanup handler so any orphaned temp directories created during
-  # Complete Analysis Record generation are removed when the session ends,
-  # regardless of whether the download completed or the browser tab was closed.
-  session_temp_dirs <- character(0)
-  session$onSessionEnded(function() {
-    for (d in session_temp_dirs) {
-      if (dir.exists(d)) unlink(d, recursive = TRUE)
-    }
-  })
-
   # === GLOBAL STATE ==========================================================
   # Shared across all paths
   shared <- reactiveValues(

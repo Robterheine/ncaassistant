@@ -26,7 +26,7 @@ renv::lockfile_write(lock, file = "validation/renv.lock")
 
 files <- c("app.R", sort(list.files("R", "\\.R$", full.names = TRUE)),
            sort(list.files("converters", "\\.R$", full.names = TRUE)),
-           sort(list.files("cdisc", full.names = TRUE)), sort(list.files("www", full.names = TRUE)),
+           sort(list.files("cdisc", full.names = TRUE)), sort(list.files("www", full.names = TRUE, recursive = TRUE)),
            sort(list.files("gxp", "\\.R$", full.names = TRUE)))
 manifest <- data.frame(app_version = app_version, file = files,
                        sha256 = vapply(files, function(f) digest::digest(file = f, algo = "sha256"), character(1)),

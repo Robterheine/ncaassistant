@@ -107,19 +107,23 @@ is_blq_text <- function(x) {
 
 #' Count BLQ text entries and suggest an LLOQ from "<x" values
 #'
+#' Entries with different limits ("<0.5" and "<0.1") usually mean a data-entry
+#' error or a mixed export, so no LLOQ is suggested then: the limits are
+#' listed and the user checks the assay report.
 #' @param conc_raw Concentration column as uploaded
-#' @return list(n_blq_text, suggested_lloq (NULL if none))
+#' @return list(n_blq_text, suggested_lloq (NULL if none, or if the limits
+#'   differ), lloq_candidates (the different limits, sorted))
 blq_text_summary <- function(conc_raw) {
   conc_chr <- as.character(conc_raw)
   n_blq_text <- sum(is_blq_text(conc_chr))
-  suggested <- NULL
+  cand <- numeric(0)
   lt_vals <- conc_chr[grepl("^<", conc_chr)]
   if (length(lt_vals) > 0) {
     lt_nums <- suppressWarnings(as.numeric(gsub(",", ".", gsub("^<\\s*", "", lt_vals))))
-    lt_nums <- lt_nums[!is.na(lt_nums)]
-    if (length(lt_nums) > 0) suggested <- min(lt_nums)
+    cand <- sort(unique(lt_nums[!is.na(lt_nums)]))
   }
-  list(n_blq_text = n_blq_text, suggested_lloq = suggested)
+  list(n_blq_text = n_blq_text, suggested_lloq = if (length(cand) == 1) cand else NULL,
+       lloq_candidates = cand)
 }
 
 #' Turn an uploaded table into the canonical analysis dataset
@@ -233,7 +237,7 @@ prepare_pk_dataset <- function(raw, col_map, opts = list()) {
 dose_by_profile <- function(data, col_map) {
   d <- suppressWarnings(as.numeric(data[[col_map$dose]]))
   key <- profile_key(data, col_map)$key
-  v <- tapply(d, key, max, na.rm = TRUE)
+  v <- tapply(d, key, max_or_na)
   stats::setNames(as.numeric(v), names(v))
 }
 
@@ -243,9 +247,12 @@ dose_by_profile <- function(data, col_map) {
 #' run_nca() matches a multi-element dose vector by these names.
 dose_by_subject <- function(data, col_map) {
   d <- suppressWarnings(as.numeric(data[[col_map$dose]]))
-  v <- tapply(d, as.character(data[[col_map$subject]]), max, na.rm = TRUE)
+  v <- tapply(d, as.character(data[[col_map$subject]]), max_or_na)
   stats::setNames(as.numeric(v), names(v))
 }
+
+#' Largest value, or NA when there is none (max(na.rm = TRUE) would give -Inf)
+max_or_na <- function(v) if (all(is.na(v))) NA_real_ else max(v, na.rm = TRUE)
 
 #' Suggest a column mapping from common column names
 #'
@@ -558,9 +565,11 @@ override_use_points <- function(data, col_map, nca_key, final_keys, lz_overrides
     rows <- data[data[[nca_key]] == k, , drop = FALSE]
     x <- rows[[col_map$time]]; y <- rows[[col_map$conc]]
     keep <- !(is.na(x) | is.na(y))
+    # Values set by a BLQ rule are never fitted, also not on request (ICH M13A 2.2.2.2)
+    imputed <- if (BLQ_FLAG_COLUMN %in% names(rows)) rows[[BLQ_FLAG_COLUMN]][keep] %in% TRUE else FALSE
     x <- x[keep]; y <- y[keep]
     tu <- as.numeric(unlist(ov$time_used))
-    chosen <- which(y > 0 & vapply(x, function(t) any(abs(t - tu) <= 1e-9 * max(1, abs(t))), logical(1)))
+    chosen <- which(y > 0 & !imputed & vapply(x, function(t) any(abs(t - tu) <= 1e-9 * max(1, abs(t))), logical(1)))
     if (length(chosen) >= 2) { out[[i]] <- chosen; any_set <- TRUE }
   }
   if (any_set) out else NULL
@@ -825,6 +834,8 @@ run_single_nca <- function(time, conc, settings, time_used = NULL, is_blq = NULL
     r <- steady_state_parameters(r, t_all, c_all, tau, lamz_rejected = low)
     note <- steady_state_predose_note(list(t_all), list(c_all), "this profile", adm)
     if (!is.null(note)) warning(note)
+    note <- steady_state_peak_note(list(t_all), list(c_all), "this profile", tau)
+    if (!is.null(note)) warning(note)
   }
   if (!is.null(pauc)) {
     p <- partial_auc_profile(r, pauc, t_num, c_num, is_blq, partial_auc_blq_fraction(settings))
@@ -853,6 +864,24 @@ steady_state_predose_note <- function(times, concs, labels, adm) {
          "of the first sample / 2. Add the pre-dose (trough) sample at time 0.")
 }
 
+#' Steady-state note for profiles whose highest concentration lies after tau
+#'
+#' Fluctuation and swing use the highest concentration within 0-tau; the CMAX
+#' column is NonCompart's, over the whole profile, so the two then differ.
+#' @return message, or NULL when every peak lies within 0-tau
+steady_state_peak_note <- function(times, concs, labels, tau) {
+  late <- labels[vapply(seq_along(times), function(i) {
+    ok <- !is.na(times[[i]]) & !is.na(concs[[i]])
+    inside <- ok & times[[i]] <= tau + 1e-9
+    any(inside) && any(ok & !inside) && max(concs[[i]][ok & !inside]) > max(concs[[i]][inside])
+  }, logical(1))]
+  if (length(late) == 0) return(NULL)
+  paste0("Steady state: ", length(late), " profile(s) have their highest concentration after \u03C4 (",
+         paste(head(late, 5), collapse = ", "), if (length(late) > 5) ", ..." else "",
+         "). Fluctuation and swing use the highest concentration within 0\u2013\u03C4, while the Cmax column ",
+         "is the highest of the whole profile. Check the dosing times: a sample after \u03C4 may follow the next dose.")
+}
+
 #' The dosing interval entered for a steady-state analysis, or NA
 steady_state_tau <- function(settings) {
   tau <- suppressWarnings(as.numeric(settings$tau))
@@ -865,16 +894,19 @@ steady_state_tau <- function(settings) {
 #' samples, extrapolated with lambda-z beyond the last one). It is missing when
 #' that extrapolation would need a lambda-z fit rejected by the R2 rule.
 #' CAVG = AUCTAU / tau; CMIN_SS is the lowest observed concentration within
-#' 0-tau; fluctuation = (Cmax - Cmin) / Cavg x 100; swing = (Cmax - Cmin) / Cmin.
+#' 0-tau; fluctuation = (Cmax - Cmin) / Cavg x 100; swing = (Cmax - Cmin) / Cmin,
+#' with Cmax the highest observed concentration within 0-tau (a sample after
+#' tau belongs to the next interval).
 #' NonCompart computes CL/F and Vz/F at steady state from AUClast; they are
 #' rescaled to AUCTAU, so they stay correct when sampling does not end at tau.
 #' @param r Named NCA result (sNCA output, or one row of tblNCA as a list)
 steady_state_parameters <- function(r, time, conc, tau, lamz_rejected = FALSE) {
   get <- function(n) if (n %in% names(r)) suppressWarnings(as.numeric(r[[n]])) else NA_real_
-  auctau <- get("AUCTAU"); auclst <- get("AUCLST"); tlst <- get("TLST"); cmax <- get("CMAX")
+  auctau <- get("AUCTAU"); auclst <- get("AUCLST"); tlst <- get("TLST")
   if (isTRUE(lamz_rejected) && !is.na(tlst) && tau > tlst + 1e-9) auctau <- NA_real_
   ok <- !is.na(time) & !is.na(conc) & time <= tau + 1e-9
   cmin  <- if (any(ok)) min(conc[ok]) else NA_real_
+  cmax  <- if (any(ok)) max(conc[ok]) else NA_real_
   # C(tau): the observed concentration at the end of the interval. Not the
   # same as Cmin when the minimum falls after the dose (a lag); empty when
   # no sample was taken at tau
@@ -1262,9 +1294,11 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
     by_profile <- all(as.character(final_keys) %in% names(dose_in))
     dose_num <- suppressWarnings(as.numeric(
       if (by_profile) dose_in[as.character(final_keys)] else dose_in[subj_by_key]))
-    if (anyNA(dose_num)) {
+    # A missing or infinite dose would give plausible Cmax and AUC next to
+    # meaningless CL/F and Vz/F, so the analysis stops
+    if (any(!is.finite(dose_num))) {
       warning("No dose value for subject(s): ",
-              paste(unique(subj_by_key[is.na(dose_num)]), collapse = ", "),
+              paste(unique(subj_by_key[!is.finite(dose_num)]), collapse = ", "),
               ". Check the Dose column.")
       return(NULL)
     }
@@ -1370,11 +1404,13 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
     low <- (below_r2_threshold(result$R2ADJ, settings$r2adj_threshold) | no_fit[k]) & !manual[k]
     if (ss) {
       keys_ss <- as.character(result[[1]])
-      note <- steady_state_predose_note(
-        lapply(keys_ss, function(k) data_all[[col_map$time]][data_all[[nca_key]] == k]),
-        lapply(keys_ss, function(k) data_all[[col_map$conc]][data_all[[nca_key]] == k]),
-        if (use_composite_key) profile_labels(key_parts[match(keys_ss, key_parts$.nca_key), pk$cols, drop = FALSE])
-        else keys_ss, adm)
+      t_ss <- lapply(keys_ss, function(k) data_all[[col_map$time]][data_all[[nca_key]] == k])
+      c_ss <- lapply(keys_ss, function(k) data_all[[col_map$conc]][data_all[[nca_key]] == k])
+      lab_ss <- if (use_composite_key) profile_labels(key_parts[match(keys_ss, key_parts$.nca_key), pk$cols, drop = FALSE])
+                else keys_ss
+      note <- steady_state_predose_note(t_ss, c_ss, lab_ss, adm)
+      if (!is.null(note)) warning(note)
+      note <- steady_state_peak_note(t_ss, c_ss, lab_ss, tau)
       if (!is.null(note)) warning(note)
       # Steady-state parameters per profile, before any rows are blanked
       for (n in c("TAU", "CAVG", "CMIN_SS", "CTAU_SS", "FLUCTP", "SWING")) if (!n %in% names(result)) result[[n]] <- NA_real_
@@ -1536,6 +1572,31 @@ verify_file_hash <- function(path, recorded, label) {
   status <- if (identical(digest::digest(file = path, algo = "sha256"), recorded)) "MATCH" else "MISMATCH"
   cat(label, ": ", status, if (status == "MISMATCH") " - this file differs from the one analysed!", "\n", sep = "")
   invisible(status)
+}
+
+#' Compare the R and package versions here with those the record was made with
+#'
+#' A reproduction under other versions can differ for that reason alone, so
+#' the script says so before its result. Nothing is installed or changed.
+#' @return "SAME", "DIFFERENT" or "NOT RECORDED"; prints one line
+verify_versions <- function(rec) {
+  pk <- unlist(rec$packages)
+  if (length(pk) == 0) {
+    cat("R and package versions: NOT RECORDED\n")
+    return(invisible("NOT RECORDED"))
+  }
+  here <- vapply(names(pk), function(p) tryCatch(as.character(utils::packageVersion(p)),
+                                                 error = function(e) "not installed"), character(1))
+  diff <- paste0(names(pk), " ", here, " here, ", pk, " in the record")[here != pk]
+  if (!is.null(rec$r_version) && !identical(rec$r_version, R.version.string))
+    diff <- c(paste0(R.version.string, " here, ", rec$r_version, " in the record"), diff)
+  if (length(diff) == 0) {
+    cat("R and package versions: SAME as when the record was made\n")
+    return(invisible("SAME"))
+  }
+  cat("R and package versions: DIFFERENT (", paste(diff, collapse = "; "),
+      "). That alone can give a result other than MATCH.\n", sep = "")
+  invisible("DIFFERENT")
 }
 
 #' Read the data of an Analysis Record the way the app read it

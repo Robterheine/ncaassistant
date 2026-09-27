@@ -29,9 +29,11 @@ required_pkgs <- c("NonCompart", "PowerTOST", "nlme", "digest",
                    "shinymanager", "DBI", "RSQLite")   # the last three: section GXP (controlled mode)
 missing <- required_pkgs[!sapply(required_pkgs, requireNamespace, quietly = TRUE)]
 if (length(missing) > 0) {
-  cat("Installing:", paste(missing, collapse=", "), "
-")
-  install.packages(missing, repos = "https://cloud.r-project.org", quiet = TRUE)
+  # A qualification run tests the installation as it is. Installing here would
+  # qualify whatever versions CRAN serves today, so the run stops instead
+  stop("Missing package(s): ", paste(missing, collapse = ", "), ". Install the validated versions ",
+       "first, from the project root: in R, renv::restore(lockfile = \"validation/renv.lock\"), ",
+       "or Rscript install_and_run.R --validated (which then starts the app).", call. = FALSE)
 }
 library(NonCompart); library(PowerTOST); library(nlme); library(digest)
 
@@ -161,16 +163,29 @@ check("IQ-REL-01", "App files match the release manifest",
   }, error = function(e) FALSE),
   "URS-GEN-01, URS-GEN-08", method = "SHA-256 of app.R, R/, converters/, cdisc/ and www/ against validation/release_manifest.csv",
   expected = "Every file matches the manifest of this version", critical = TRUE)
+# The packages make_release_files.R writes to the lockfile: the app's, the
+# validation-only replicateBE and those of controlled mode
+rel_pkgs <- c("NonCompart", "PowerTOST", "nlme", "digest", "openxlsx", "jsonlite", "readxl", "dplyr",
+              "shiny", "bslib", "shinyWidgets", "DT", "plotly", "ggplot2", "htmltools", "tidyr", "replicateBE",
+              "shinymanager", "DBI", "RSQLite")
+#' Installed packages whose version differs from the lockfile, as
+#' "name installed (validated: version)"
+lock_differences <- function(lockfile, pkgs) tryCatch({
+  lock <- jsonlite::fromJSON(lockfile)$Packages
+  inst <- vapply(pkgs, function(p) {
+    v <- suppressWarnings(utils::packageDescription(p, fields = "Version"))
+    if (is.na(v)) "not installed" else v }, character(1))
+  want <- vapply(pkgs, function(p) if (is.null(lock[[p]])) "not in the lockfile" else lock[[p]]$Version, character(1))
+  d <- pkgs[inst != want]
+  if (length(d) == 0) character(0) else paste0(d, " ", inst[d], " (validated: ", want[d], ")")
+}, error = function(e) paste(lockfile, "could not be read"))
+rel_diff <- lock_differences("validation/renv.lock", rel_pkgs)
 check("IQ-REL-02", "Installed packages are the validated versions",
-  tryCatch({
-    lock <- jsonlite::fromJSON("validation/renv.lock")$Packages
-    direct <- intersect(c("NonCompart", "PowerTOST", "nlme", "digest", "openxlsx", "jsonlite", "readxl", "dplyr",
-                          "shiny", "bslib", "shinyWidgets", "DT", "plotly", "ggplot2", "htmltools", "tidyr"), names(lock))
-    length(direct) > 0 && all(vapply(direct, function(p)
-      identical(utils::packageDescription(p)$Version, lock[[p]]$Version), logical(1)))
-  }, error = function(e) FALSE),
-  "URS-GEN-01, URS-GEN-08", method = "Installed package versions (DESCRIPTION) against validation/renv.lock",
-  expected = "Same versions; a difference needs a risk assessment", critical = FALSE)
+  length(rel_diff) == 0,
+  "URS-GEN-01, URS-GEN-08", method = "Installed versions (DESCRIPTION) of the 20 packages in validation/renv.lock, controlled mode and replicateBE included",
+  expected = "Same versions; a difference needs a risk assessment, and the differing packages are listed", critical = FALSE,
+  detail = if (length(rel_diff) == 0) "all as in validation/renv.lock" else paste(rel_diff, collapse = "; "))
+if (length(rel_diff) > 0) cat("    Not the validated version:", paste(rel_diff, collapse = "; "), "\n")
 
 end_section("IQ")
 
@@ -337,10 +352,12 @@ check("DAT-PREP-04", "Without an LLOQ no BLQ rule is applied and text becomes mi
 check("DAT-PREP-05", "LLOQ suggestion from '<x' text, including decimal commas",
   tryCatch({
     b <- blq_text_summary(c("<0,5", "<0.25", "BLQ", "3.1"))
-    b$n_blq_text == 3 && identical(b$suggested_lloq, 0.25) &&
+    b$n_blq_text == 3 && is.null(b$suggested_lloq) && identical(b$lloq_candidates, c(0.25, 0.5)) &&
+      identical(blq_text_summary(c("<0,5", "<0.5", "BLQ"))$suggested_lloq, 0.5) &&
       is.null(blq_text_summary(c("1", "2"))$suggested_lloq)
   }, error = function(e) FALSE),
-  "URS-DAT-04", critical = FALSE, method = "blq_text_summary()", expected = "3 entries, LLOQ 0.25")
+  "URS-DAT-04", critical = FALSE, method = "blq_text_summary()",
+  expected = "3 entries; '<0,5' with '<0.25' lists 0.25 and 0.5 without a suggestion; '<0,5' with '<0.5' suggests 0.5")
 check("DAT-PREP-06", "Files are read with the recorded separator and decimal mark",
   tryCatch({
     f <- tempfile(fileext = ".csv")
@@ -4162,8 +4179,8 @@ check("REL-42", "R-30: the Half-Life Review shows the fit the results use and ke
       x <- rd(f)
       grepl("lz_state$override <- lz_state$fits[[input$lz_profile]]", x, fixed = TRUE) &&
         grepl("lz_state$fits[[sel]] <- override", x, fixed = TRUE) && grepl('observeEvent(input$lz_reset', x, fixed = TRUE) &&
-        grepl('sd$time >= cmax_t & sd$time > 0', x, fixed = TRUE)
-    }, logical(1)))
+        grepl('lz_candidate_points(sd$time, sd$conc, sd$is_blq, input$admin_route)', x, fixed = TRUE)
+    }, logical(1))) && grepl("time >= cmax_t & time > 0", rd("R/nca_helpers.R"), fixed = TRUE)
     lz$n_points == r[["LAMZNPT"]] && abs(lzb$lambda_z - rb[["LAMZ"]]) < 1e-12 && lzb$n_points == rb[["LAMZNPT"]] && wired
   }, error = function(e) FALSE),
   "URS-NCA-12", critical = FALSE, method = "Profile with an embedded zero; IV bolus; review module code",
@@ -5527,6 +5544,265 @@ check("GXP-47", "manage_users.R list shows every account with its roles, status 
 
 gxp_unset()
 end_section("GXP")
+
+# =============================================================================
+# SECTION ADV: Adversarial audit of v1.8.0 (September 2026)
+# =============================================================================
+# One or more regression tests per finding of the external adversarial audit
+# that held up on verification, each built from the failing case.
+start_section("ADV")
+
+adv_quiet <- function(expr) {
+  w <- character(0)
+  r <- withCallingHandlers(expr, warning = function(x) { w <<- c(w, conditionMessage(x)); invokeRestart("muffleWarning") })
+  list(value = r, warnings = w)
+}
+
+check("ADV-01", "F-19: names from the data file cannot put markup or script into a record's HTML",
+  tryCatch({
+    x <- "<img src=x onerror=alert(1)>"
+    cm <- list(subject = x, time = paste0(x, "t"), conc = paste0(x, "c"), treatment = paste0(x, "trt"),
+               period = paste0(x, "p"), sequence = paste0(x, "s"), dose = paste0(x, "d"))
+    st <- list(admin_route = "iv_infusion", infusion_duration = 1, dose = 100, dose_unit = "<script>mg</script>",
+               time_unit = "<script>h</script>", conc_unit = "<script>ng/mL</script>", is_steady_state = TRUE,
+               tau = 24, trap_method = "linear", r2adj_threshold = 0.7, partial_aucs = NULL)
+    ov <- list(p = list(profile = x, original_lambda_z = 0.1, adjusted_lambda_z = 0.12, original_r2adj = 0.9,
+                        adjusted_r2adj = 0.95, points_used = 3))
+    h1 <- generate_summary_html(st, cm, "data.csv", strrep("0", 64), "rule4", 0.5, "Validation", "Study",
+                                2, 20, lz_overrides = ov)
+    h2 <- generate_viz_html(list(plot_type = x, y_scale = x, color_by = x, summary_statistic = x, colour_palette = x),
+                            cm, "data.csv", strrep("0", 64), "Validation", "Study", 2, 20)
+    ok <- function(h) !grepl("<img", h, fixed = TRUE) && !grepl("<script", h, fixed = TRUE) &&
+      grepl("&lt;img src=x onerror=alert(1)&gt;", h, fixed = TRUE)
+    ok(h1) && ok(h2) && grepl("&lt;script&gt;ng/mL", h1, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-EXP-01, URS-VIZ-09", critical = TRUE,
+  method = "generate_summary_html() and generate_viz_html() with the column names, units, subject ID and figure settings set to '<img src=x onerror=alert(1)>' and '<script>'",
+  expected = "No raw <img> or <script> in either HTML; the names appear escaped (was: column names, units and the override profile pasted unescaped)")
+
+check("ADV-02", "F-05: values set by a BLQ rule are not offered for a manual half-life fit and are left out of it",
+  tryCatch({
+    raw <- data.frame(Subject = "S1", Time = c(0, 1, 2, 4, 6, 8, 10, 12),
+                      Conc = c("BLQ", 5, 10, 8, 4, "BLQ", 2, 1.5), stringsAsFactors = FALSE)
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc")
+    d <- prepare_pk_dataset(raw, cm, list(lloq = 1, blq_rule = "rule4"))$data
+    cand <- lz_candidate_points(d$Time, d$Conc, d$BLQ_flag, "extravascular")
+    pick <- which(d$Time %in% c(6, 8, 10, 12))
+    rc <- recalculate_lambda_z(d$Time, d$Conc, pick, is_blq = d$BLQ_flag)
+    st <- list(admin_route = "extravascular", dose = 100, dose_unit = "mg", time_unit = "h", conc_unit = "ng/mL",
+               trap_method = "linear", r2adj_threshold = 0.7, infusion_duration = 0, mw = 0,
+               is_steady_state = FALSE, tau = NA, partial_aucs = NULL)
+    r <- suppressWarnings(run_nca(d, cm, st, lz_overrides = list(list(subject = "S1", time_used = c(6, 8, 10, 12)))))
+    d$Conc[d$Time == 8] == 0.5 && d$BLQ_flag[d$Time == 8] &&
+      identical(d$Time[cand$term], c(4, 6, 10, 12)) && cand$n_blq == 1 && grepl("1 value set by the BLQ rule", cand$label) &&
+      identical(rc$result$time_used, c(6, 10, 12)) && grepl("t = 8", rc$warning, fixed = TRUE) &&
+      as.numeric(r$LAMZNPT) == 3
+  }, error = function(e) FALSE),
+  "URS-DAT-04, URS-NCA-12", critical = TRUE,
+  method = "Rule 4, LLOQ 1, an embedded BLQ at 8 h set to 0.5; the point list, recalculate_lambda_z() with 6, 8, 10 and 12 h, and run_nca() with an override naming the same times",
+  expected = "8 h not offered and counted in the label; the manual fit uses 6, 10 and 12 h with a note on 8 h; NonCompart fits 3 points (was: 8 h offered and fitted, 4 points)")
+
+check("ADV-03", "F-21: '<x' entries with different limits give no LLOQ suggestion but a warning listing them",
+  tryCatch({
+    b <- blq_text_summary(c("<0.5", "<0.1", "3"))
+    one <- blq_text_summary(c("<0.5", "<0.5", "BLQ"))
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc")
+    raw <- data.frame(Subject = 1, Time = c(0, 1, 2, 4, 8), Conc = c("<0.5", 3, 5, 2, "<0.1"), stringsAsFactors = FALSE)
+    qc <- run_data_quality_check(raw, cm, lloq = 0.5)
+    f <- qc$findings
+    is.null(b$suggested_lloq) && identical(b$lloq_candidates, c(0.1, 0.5)) && identical(one$suggested_lloq, 0.5) &&
+      any(f$Severity == "WARNING" & grepl("different limits: 0.1, 0.5", f$Message, fixed = TRUE)) &&
+      !any(grepl("Auto-detected LLOQ candidate", f$Message, fixed = TRUE))
+  }, error = function(e) FALSE),
+  "URS-DAT-03, URS-DAT-04", critical = TRUE,
+  method = "blq_text_summary() on '<0.5' and '<0.1', and on '<0.5' twice; run_data_quality_check() on a file with both limits",
+  expected = "No suggestion, limits 0.1 and 0.5 listed, a WARNING in the quality report; one limit still suggested (was: 0.1 suggested, the minimum)")
+
+check("ADV-04", "F-22: a record that fails part-way leaves no folder behind; the unused cleanup handler is gone",
+  tryCatch((function() {
+    real_zip <- zip_record_dir
+    on.exit(assign("zip_record_dir", real_zip, envir = globalenv()))
+    assign("zip_record_dir", function(rec_dir, output_path) stop("simulated failure while zipping"), envir = globalenv())
+    before <- list.files(tempdir(), "^analysis_record_")
+    out <- tryCatch(create_analysis_record(tempfile(fileext = ".zip"), theoph_result, theoph_settings, theoph_cm,
+                                           "data/example_theoph.csv", "example_theoph.csv", blq_rule = "rule1",
+                                           lloq = 0, analyst = "Validation", study_name = "Cleanup"),
+                    error = function(e) conditionMessage(e))
+    after <- list.files(tempdir(), "^analysis_record_")
+    identical(out, "simulated failure while zipping") && length(setdiff(after, before)) == 0 &&
+      !any(grepl("session_temp_dirs", readLines("app.R"), fixed = TRUE))
+  })(), error = function(e) FALSE),
+  "URS-GEN-04", critical = FALSE,
+  method = "create_analysis_record() for theophylline with the zip step replaced by one that fails; tempdir() before and after; app.R",
+  expected = "The error reaches the caller and no analysis_record_ folder is left (was: left behind until the R process ends)")
+
+check("ADV-05", "F-03: a profile without a dose stops the NCA and names the subject, also inside run_nca()",
+  tryCatch({
+    raw <- data.frame(Subject = rep(c("A", "B"), each = 5), Time = rep(c(0, 1, 2, 4, 8), 2),
+                      Conc = c(0, 10, 8, 4, 1, 0, 12, 9, 5, 2), Dose = c(rep(100, 5), rep(NA, 5)))
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc", dose = "Dose")
+    d <- prepare_pk_dataset(raw, cm, list(lloq = 0, blq_rule = "rule1"))$data
+    vp <- dose_by_profile(d, cm); vs <- dose_by_subject(d, cm)
+    st <- list(admin_route = "extravascular", dose = vp, dose_unit = "mg", time_unit = "h", conc_unit = "ng/mL",
+               trap_method = "linear", r2adj_threshold = 0.7, infusion_duration = 0, mw = 0,
+               is_steady_state = FALSE, tau = NA, partial_aucs = NULL)
+    r1 <- adv_quiet(run_nca(d, cm, st))
+    st$dose <- c(A = 100, B = Inf); r2 <- adv_quiet(run_nca(d, cm, st))
+    vp[[1]] == 100 && is.na(vp[[2]]) && is.na(vs[["B"]]) &&
+      is.null(r1$value) && any(grepl("No dose value for subject(s): B.", r1$warnings, fixed = TRUE)) &&
+      is.null(r2$value) && any(grepl("subject(s): B.", r2$warnings, fixed = TRUE))
+  }, error = function(e) FALSE),
+  "URS-NCA-09", critical = TRUE,
+  method = "Two subjects, subject B's Dose column empty; dose_by_profile(), dose_by_subject(), run_nca(); run_nca() with an infinite dose",
+  expected = "Dose NA for B (was -Inf); run_nca() returns no result and names B (was: a result with CL/F from -Inf)")
+
+check("ADV-06", "F-06: at steady state fluctuation and swing use the peak within 0-tau, with a note when the highest value lies later",
+  tryCatch({
+    tt <- c(0, 1, 2, 4, 8, 12, 24, 26, 28)
+    late <- c(3, 10, 12, 9, 6, 4, 3, 14, 11); norm <- c(3, 10, 12, 9, 6, 4, 3, 2.5, 2)
+    st <- list(admin_route = "extravascular", dose = 100, dose_unit = "mg", time_unit = "h", conc_unit = "ng/mL",
+               trap_method = "linear", r2adj_threshold = 0.7, infusion_duration = 0, mw = 0,
+               is_steady_state = TRUE, tau = 24, partial_aucs = NULL)
+    s1 <- adv_quiet(run_single_nca(tt, late, st))
+    raw <- data.frame(Subject = rep(c("LATE", "NORMAL"), each = 9), Time = rep(tt, 2), Conc = c(late, norm))
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc")
+    b <- adv_quiet(run_nca(prepare_pk_dataset(raw, cm, list(lloq = 0, blq_rule = "rule1"))$data, cm, st))
+    rl <- b$value[b$value$Subject == "LATE", ]; rn <- b$value[b$value$Subject == "NORMAL", ]
+    note <- grep("highest concentration after", b$warnings, value = TRUE)
+    abs(as.numeric(s1$value[["SWING"]]) - 3) < 1e-9 && any(grepl("highest concentration after", s1$warnings)) &&
+      abs(rl$SWING - 3) < 1e-9 && abs(rl$FLUCTP - 9 / rl$CAVG * 100) < 1e-6 && rl$CMAX == 14 &&
+      abs(rn$SWING - 3) < 1e-9 && rn$CMIN_SS == 3 &&
+      length(note) == 1 && grepl("(LATE)", note, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-NCA-07", critical = TRUE,
+  method = "Samples 0-28 h, tau 24 h, one profile with its highest value (14) at 26 h and one declining after tau; single-profile and batch NCA",
+  expected = "Swing (12 - 3) / 3 = 3 and fluctuation from 12 for both (was 3.67 from the 26 h value); Cmax column 14; one note naming LATE")
+
+check("ADV-07", "F-16: a password falls due after 90 days counted in UTC, whatever the server's time zone",
+  tryCatch((function() {
+    old_tz <- Sys.getenv("TZ", unset = NA)
+    on.exit(if (is.na(old_tz)) Sys.unsetenv("TZ") else Sys.setenv(TZ = old_tz))
+    v <- gxp_env$GXP_PWD_VALIDITY_DAYS
+    today <- as.Date(format(Sys.time(), "%Y-%m-%d", tz = "UTC"))
+    due <- function(days_ago) gxp_env$gxp_must_change("ana", list(credentials = data.frame(user = "ana")),
+      data.frame(object = "ana", event = "password_changed", details = "",
+                 time_utc = paste0(format(today - days_ago), "T12:00:00.000Z"), stringsAsFactors = FALSE))
+    res <- vapply(c("Etc/GMT-14", "Etc/GMT+12", "UTC"), function(z) { Sys.setenv(TZ = z); c(!due(v), due(v + 1)) },
+                  logical(2))
+    all(res) && identical(gxp_env$gxp_utc_today(), as.Date(format(Sys.time(), "%Y-%m-%d", tz = "UTC")))
+  })(), error = function(e) FALSE),
+  "URS-GXP-03", critical = TRUE,
+  method = "gxp_must_change() for a change exactly 90 and 91 UTC days ago, with the server at UTC+14, UTC-12 and UTC",
+  expected = "Not due at 90 days and due at 91 in every time zone (was: a day early or late depending on the zone and the hour)")
+
+check("ADV-08", "F-07: the validation run installs nothing, and the version check covers every package of the lockfile and names the differences",
+  tryCatch({
+    src <- readLines("validation/validation.R")
+    code <- src[!grepl("^\\s*#", src)]
+    mr <- parse("validation/make_release_files.R")
+    i <- which(vapply(mr, function(e) is.call(e) && identical(e[[1]], as.name("<-")) && identical(e[[2]], as.name("pkgs")), logical(1)))
+    lock_pkgs <- eval(mr[[i]][[3]])
+    lf <- tempfile(fileext = ".lock")
+    writeLines(jsonlite::toJSON(list(Packages = list(NonCompart = list(Version = "0.0.1"),
+                                                     digest = list(Version = as.character(utils::packageDescription("digest")$Version)))),
+                                auto_unbox = TRUE), lf)
+    dd <- lock_differences(lf, c("NonCompart", "digest", "DBI"))
+    !any(grepl(paste0("install", ".packages("), code, fixed = TRUE)) && setequal(rel_pkgs, lock_pkgs) &&
+      length(dd) == 2 && grepl("^NonCompart .* \\(validated: 0\\.0\\.1\\)$", dd[1]) && grepl("^DBI .*not in the lockfile", dd[2])
+  }, error = function(e) FALSE),
+  "URS-GEN-08", critical = FALSE,
+  method = "validation.R source; the package list of IQ-REL-02 against make_release_files.R; lock_differences() on a lockfile with NonCompart 0.0.1 and without DBI",
+  expected = "No package installation in the script (was: missing packages installed from CRAN mid-run); the same 20 packages; NonCompart and DBI listed with the reason")
+
+check("ADV-09", "F-09: sign-out removes the session's token on the server, through the shinymanager internals it relies on",
+  tryCatch({
+    tk <- get(".tok", envir = asNamespace("shinymanager"))
+    tok <- tk$generate("adv09"); tk$add(tok, list(user = "adv09"))
+    before <- tk$is_valid(tok)
+    got <- gxp_env$gxp_end_token(list(clientData = list(url_search = paste0("?token=", tok))))
+    src <- paste(readLines("R/gxp_access.R"), collapse = "\n")
+    before && isTRUE(got == tok) && !tk$is_valid(tok) &&
+      grepl("gxp_sign_out, \\{\\s*signing_out <<- TRUE\\s*gxp_end_token\\(session\\)", src)
+  }, error = function(e) FALSE),
+  "URS-GXP-02", critical = TRUE,
+  method = "A shinymanager 1.1.0 token added to its store; gxp_end_token() with a session carrying it; the sign-out handler in R/gxp_access.R",
+  expected = "The token is valid before and gone after; sign-out calls gxp_end_token(). Fails when a shinymanager upgrade renames getToken or .tok")
+
+check("ADV-10", "F-01: the reproduction scripts say whether R and the packages are the versions of the record",
+  tryCatch({
+    rec <- list(packages = list(NonCompart = as.character(packageVersion("NonCompart"))), r_version = R.version.string)
+    o1 <- capture.output(v1 <- verify_versions(rec))
+    rec2 <- rec; rec2$packages$NonCompart <- "0.0.1"; rec2$r_version <- "R version 3.6.0 (2019-04-26)"
+    o2 <- capture.output(v2 <- verify_versions(rec2))
+    o3 <- capture.output(v3 <- verify_versions(list()))
+    scripts <- c(generate_nca_script(), generate_single_nca_script(), generate_viz_script(list(), theoph_cm))
+    td <- tempfile("adv10_"); dir.create(td); zf <- file.path(td, "rec.zip")
+    cm <- list(subject = "Subject", time = "Time", conc = "conc")
+    d <- prepare_pk_dataset(read.csv("data/example_theoph.csv"), cm, list(lloq = 0, blq_rule = "rule1"))$data
+    create_analysis_record(zf, run_nca(d, cm, theoph_settings), theoph_settings, cm, "data/example_theoph.csv",
+                           "example_theoph.csv", blq_rule = "rule1", lloq = 0, analyst = "Validation", study_name = "Versions")
+    utils::unzip(zf, exdir = td)
+    chk <- readLines(file.path(td, "reproduction_check.txt"))
+    identical(v1, "SAME") && identical(v2, "DIFFERENT") && grepl("NonCompart .* here, 0.0.1 in the record", o2) &&
+      grepl("R version 3.6.0 (2019-04-26) in the record", o2, fixed = TRUE) && identical(v3, "NOT RECORDED") &&
+      all(grepl("verify_versions(rec)", scripts, fixed = TRUE)) &&
+      any(grepl("R and package versions: SAME", chk, fixed = TRUE)) && any(grepl("^Result: MATCH", chk))
+  }, error = function(e) FALSE),
+  "URS-EXP-02", critical = TRUE,
+  method = "verify_versions() with the installed NonCompart, with 0.0.1 and an old R, and with no versions; the three script generators; a theophylline record's reproduction check",
+  expected = "SAME; DIFFERENT naming both differences; NOT RECORDED; every script calls it; the record's check says SAME and MATCH")
+
+check("ADV-11", "F-08: the fonts come from www/fonts, and the theme builds without a network connection",
+  tryCatch({
+    app <- paste(readLines("app.R"), collapse = "\n")
+    css <- c("www/fonts/source-sans-pro/font.css", "www/fonts/fira-code/font.css")
+    urls <- unlist(lapply(css, function(f) {
+      l <- grep("url\\(", readLines(f), value = TRUE)
+      stats::setNames(sub(".*url\\(([^)]+)\\).*", "\\1", l), rep(dirname(f), length(l)))
+    }))
+    ex <- parse("app.R")
+    i <- which(vapply(ex, function(e) is.call(e) && identical(e[[1]], as.name("<-")) &&
+                        identical(e[[2]], as.name("pharma_theme")), logical(1)))
+    theme <- eval(ex[[i]][[3]], new.env(parent = asNamespace("bslib")))
+    px <- Sys.getenv(c("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"), unset = NA)
+    Sys.setenv(http_proxy = "http://127.0.0.1:9", https_proxy = "http://127.0.0.1:9",
+               HTTP_PROXY = "http://127.0.0.1:9", HTTPS_PROXY = "http://127.0.0.1:9")
+    built <- tryCatch({ bslib::bs_theme_dependencies(theme); TRUE }, error = function(e) FALSE)
+    for (n in names(px)) if (is.na(px[[n]])) Sys.unsetenv(n) else do.call(Sys.setenv, as.list(px[n]))
+    !grepl("font_google", app, fixed = TRUE) && !grepl("googleapis", app, fixed = TRUE) &&
+      all(vapply(css, function(f) grepl(sub("^www/", "", f), app, fixed = TRUE), logical(1))) &&
+      length(urls) == 14 && !any(grepl("^(https?:)?//", urls)) && all(file.exists(file.path(names(urls), urls))) &&
+      all(file.exists(file.path(dirname(css), "OFL.txt"))) && built
+  }, error = function(e) FALSE),
+  "URS-GEN-01", critical = FALSE,
+  method = "app.R; the url() entries of www/fonts/*/font.css; the app's theme built with bslib::bs_theme_dependencies() while every proxy points to a closed port",
+  expected = "No font_google() or Google address in app.R; both font files linked; all 14 font files present with their licences; the theme builds offline (was: fetched from Google on first use, and an offline server without a cache could not build it)")
+
+check("ADV-12", "Scaled-method planning gives the same sample size and power whatever the random state, and every simulation fixes its seed",
+  tryCatch({
+    runs <- lapply(c(1, 2), function(seed) {
+      set.seed(seed)
+      c(abel = planner_sample_size("abel", 0.05, 0.8, 0.90, 0.8, 1.25, 0.35, planner_cv("abel", 35, 45), "2x2x4")[["Sample size"]],
+        rsabe = planner_sample_size("rsabe", 0.05, 0.8, 0.90, 0.8, 1.25, 0.35, planner_cv("rsabe", 35, 45), "2x2x4")[["Sample size"]],
+        pw = planner_power(24, "abel", 0.05, 0.90, 0.8, 1.25, 0.35, 0.45, "2x2x4", nsims = 1e4))
+    })
+    # Every call that passes nsims (PowerTOST's simulations), except the app's wrappers around planner_power()
+    calls <- list()
+    walk <- function(x) if (is.call(x)) {
+      a <- as.list(x)
+      if ("nsims" %in% names(a) && !deparse(x[[1]]) %in% c("planner_power", "compute_power", "function"))
+        calls[[length(calls) + 1]] <<- x
+      for (k in seq_along(a)[-1]) if (is.call(a[[k]])) walk(a[[k]])
+    }
+    for (f in c("R/designs.R", "R/mod_path_power.R")) for (e in parse(f)) walk(e)
+    identical(runs[[1]], runs[[2]]) && length(calls) == 9 &&
+      all(vapply(calls, function(x) identical(x[["setseed"]], TRUE), logical(1)))
+  }, error = function(e) FALSE),
+  "URS-PWR-01", critical = FALSE,
+  method = "planner_sample_size() for ABEL and RSABE and planner_power() for ABEL after set.seed(1) and set.seed(2); every PowerTOST call with nsims in R/designs.R and R/mod_path_power.R",
+  expected = "Identical results; all 9 simulation calls pass setseed = TRUE")
+
+end_section("ADV")
 
 # =============================================================================
 # Post-execution

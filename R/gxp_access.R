@@ -24,6 +24,16 @@ gxp_roles <- function(session = shiny::getDefaultReactiveDomain()) {
 #' capability; hiding a button is never the only check.
 has_role <- function(session, role) any(role %in% gxp_roles(session))
 
+#' End the sign-in on the server too, not only through the browser: remove
+#' the session's shinymanager token, so the page cannot be reloaded signed in.
+#' Uses shinymanager 1.1.0 internals; validation (ADV-09) fails when an upgrade
+#' removes them.
+gxp_end_token <- function(session) {
+  tok <- tryCatch(shinymanager:::getToken(session = session), error = function(e) NULL)
+  if (!is.null(tok)) tryCatch(shinymanager:::.tok$remove(tok), error = function(e) NULL)
+  invisible(tok)
+}
+
 #' The login page, around the app UI
 gxp_secure_ui <- function(ui) {
   cfg <- gxp_config()
@@ -107,9 +117,7 @@ gxp_server <- function(server) {
       # shinymanager signs out on its own input; the browser sets it (gxp_activity.js)
       observeEvent(input$gxp_sign_out, {
         signing_out <<- TRUE
-        # End the sign-in on the server too, not only through the browser (shinymanager 1.1.0 internals)
-        tok <- tryCatch(shinymanager:::getToken(session = session), error = function(e) NULL)
-        if (!is.null(tok)) tryCatch(shinymanager:::.tok$remove(tok), error = function(e) NULL)
+        gxp_end_token(session)
         session$sendCustomMessage("gxp_logout", TRUE)
         later::later(function() if (!session$isClosed()) session$close(), 5)
       })

@@ -294,6 +294,8 @@ tags$h6(class = "fw-semibold mt-3", "Descriptive Statistics"),
         tags$p(class = "small text-muted",
                "Note: C", tags$sub("avg"), ", Fluctuation, and Swing were derived by the application ",
                "from AUC", tags$sub("\u03C4"), " and the observed concentration data. ",
+               "In fluctuation and swing, C", tags$sub("max"), " was the highest observed concentration ",
+               "from 0 to \u03C4. ",
                "These parameters are not computed by the NonCompart package directly."),
         
         tags$h6(class = "fw-semibold mt-3", "AUC", tags$sub("\u03C4"), " vs. AUC", tags$sub("0\u2013\u221E"),

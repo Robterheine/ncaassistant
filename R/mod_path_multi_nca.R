@@ -817,10 +817,10 @@ path_multi_nca_server <- function(id, shared) {
     # Populate checkboxes when profile changes
     observe({
       sd <- lz_sub_data(); req(length(sd$time) >= 3)
-      valid <- !is.na(sd$conc) & sd$conc > 0
-      cmax_t <- sd$time[which.max(sd$conc)]
-      # The automatic fit excludes Cmax except after an IV bolus: offer the same points
-      term <- valid & (if (identical(input$admin_route, "iv_bolus")) sd$time >= cmax_t & sd$time > 0 else sd$time > cmax_t)
+      # The automatic fit excludes Cmax except after an IV bolus, and values
+      # set by a BLQ rule: offer the same points
+      cand <- lz_candidate_points(sd$time, sd$conc, sd$is_blq, input$admin_route)
+      term <- cand$term
       if (any(term)) {
         ch <- paste0("t=", sd$time[term], "  C=", round(sd$conc[term], 3))
         names(ch) <- which(term)
@@ -831,7 +831,7 @@ path_multi_nca_server <- function(id, shared) {
           sel <- if (length(lz$time_used) > 0)
             as.character(which(term)[sd$time[term] %in% lz$time_used]) else NULL
         }
-        updateCheckboxGroupInput(session, "lz_points",
+        updateCheckboxGroupInput(session, "lz_points", label = cand$label,
                                  choices = setNames(names(ch), ch), selected = sel)
       }
     })
@@ -871,7 +871,7 @@ path_multi_nca_server <- function(id, shared) {
       sel_idx <- as.integer(input$lz_points)
       
       # Shared computation via helper
-      lz_calc <- recalculate_lambda_z(sd$time, sd$conc, sel_idx)
+      lz_calc <- recalculate_lambda_z(sd$time, sd$conc, sel_idx, is_blq = sd$is_blq)
       
       if (!is.null(lz_calc$error)) {
         showNotification(lz_calc$error, type = "error", duration = 10)

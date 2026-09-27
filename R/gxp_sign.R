@@ -408,7 +408,7 @@ gxp_sign_server <- function(input, output, session) {
         nav_panel("Exceptions", uiOutput("gxp_exceptions")),
         nav_panel("All entries", tags$div(class = "pt-2",
           layout_columns(col_widths = c(3, 3, 3, 3),
-            dateRangeInput("gxp_f_dates", "Dates (UTC)", start = Sys.Date() - 30, end = Sys.Date()),
+            dateRangeInput("gxp_f_dates", "Dates (UTC)", start = gxp_utc_today() - 30, end = gxp_utc_today()),
             selectInput("gxp_f_user", "User", choices = c("All" = "")),
             selectInput("gxp_f_event", "Event", choices = c("All" = "", stats::setNames(names(GXP_EVENT_LABEL), GXP_EVENT_LABEL))),
             textInput("gxp_f_search", "Search (text or SHA-256)")),

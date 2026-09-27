@@ -68,6 +68,8 @@ gxp_check_startup <- function(app_dir = ".") {
 # --- Audit trail -------------------------------------------------------------
 
 gxp_utc_now <- function() format(Sys.time(), "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC")
+#' Today's date in UTC, the time zone of the trail (Sys.Date() is the server's)
+gxp_utc_today <- function() as.Date(format(Sys.time(), "%Y-%m-%d", tz = "UTC"))
 
 # RSQLite sets `synchronous = off` on connect by default: that fails while
 # another process holds the lock, and could lose committed entries in a power
@@ -439,7 +441,7 @@ gxp_must_change <- function(user, store = gxp_store_read(), tr = tryCatch(audit_
   ev <- ev[keep, ]
   if (nrow(ev) == 0 || ev$event[nrow(ev)] != "password_changed") return(TRUE)
   d <- as.Date(substr(ev$time_utc[nrow(ev)], 1, 10))
-  is.na(d) || as.numeric(Sys.Date() - d) > GXP_PWD_VALIDITY_DAYS
+  is.na(d) || as.numeric(gxp_utc_today() - d) > GXP_PWD_VALIDITY_DAYS
 }
 
 #' Does the user hold the role now? Read from the store, so that a role taken

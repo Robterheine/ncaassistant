@@ -148,6 +148,9 @@ generate_summary_html <- function(settings, col_map, file_name, file_hash,
   
   ver <- tryCatch(get("APP_VERSION", envir = globalenv()), error = function(e) "?")
   r_ver <- tryCatch(R.version.string, error = function(e) "R")
+  # Column names, units and subject IDs come from the uploaded file: escaped,
+  # so the record's HTML cannot carry markup or script from the data
+  esc <- function(x) htmltools::htmlEscape(as.character(x))
   
   pkg_ver <- function(pkg) {
     tryCatch(as.character(packageVersion(pkg)), error = function(e) "?")
@@ -247,9 +250,9 @@ this analysis was performed.
 <table>
 <tr><th>Route of administration</th><td>', route_desc, '</td></tr>',
 if (settings$admin_route == "iv_infusion")
-  paste0('<tr><th>Infusion duration</th><td>', settings$infusion_duration, ' ', settings$time_unit, '</td></tr>') else "",
+  paste0('<tr><th>Infusion duration</th><td>', settings$infusion_duration, ' ', esc(settings$time_unit), '</td></tr>') else "",
 '<tr><th>Dose</th><td>', if (length(settings$dose) > 1) paste(unique(settings$dose), collapse=", ") else settings$dose,
-  ' ', settings$dose_unit, if (length(settings$dose) > 1) " (per profile, from the Dose column)" else "", '</td></tr>
+  ' ', esc(settings$dose_unit), if (length(settings$dose) > 1) " (per profile, from the Dose column)" else "", '</td></tr>
 <tr><th>Steady state</th><td>', if (settings$is_steady_state) "Yes" else "No", '</td></tr>',
 if (!is.null(pauc)) paste0('<tr><th>Partial AUC intervals</th><td>',
   paste(htmltools::htmlEscape(paste0(.pauc_num(pauc$start), "\u2013", pauc$end, " ", settings$time_unit,
@@ -259,20 +262,20 @@ if (!is.null(pauc)) paste0('<tr><th>Partial AUC intervals</th><td>',
 <tr><th>Trapezoidal method</th><td>', trap_desc, '</td></tr>
 <tr><th>Min R&sup2; for half-life</th><td>', settings$r2adj_threshold, '</td></tr>
 <tr><th>BLQ handling</th><td>', blq_desc, '</td></tr>
-<tr><th>LLOQ</th><td>', lloq, ' ', settings$conc_unit, '</td></tr>
-<tr><th>Units</th><td>Dose: ', settings$dose_unit, ' | Time: ', settings$time_unit,
-  ' | Conc: ', settings$conc_unit, '</td></tr>
+<tr><th>LLOQ</th><td>', lloq, ' ', esc(settings$conc_unit), '</td></tr>
+<tr><th>Units</th><td>Dose: ', esc(settings$dose_unit), ' | Time: ', esc(settings$time_unit),
+  ' | Conc: ', esc(settings$conc_unit), '</td></tr>
 </table>
 
 <h2>4. Column Mapping</h2>
 <table>
-<tr><th>Subject</th><td>', col_map$subject, '</td></tr>
-<tr><th>Time</th><td>', col_map$time, '</td></tr>
-<tr><th>Concentration</th><td>', col_map$conc, '</td></tr>',
-if (!is.null(col_map$treatment)) paste0('<tr><th>Treatment</th><td>', col_map$treatment, '</td></tr>') else "",
-if (!is.null(col_map$period)) paste0('<tr><th>Period</th><td>', col_map$period, '</td></tr>') else "",
-if (!is.null(col_map$sequence)) paste0('<tr><th>Sequence</th><td>', col_map$sequence, '</td></tr>') else "",
-if (!is.null(col_map$dose)) paste0('<tr><th>Dose</th><td>', col_map$dose, '</td></tr>') else "",
+<tr><th>Subject</th><td>', esc(col_map$subject), '</td></tr>
+<tr><th>Time</th><td>', esc(col_map$time), '</td></tr>
+<tr><th>Concentration</th><td>', esc(col_map$conc), '</td></tr>',
+if (!is.null(col_map$treatment)) paste0('<tr><th>Treatment</th><td>', esc(col_map$treatment), '</td></tr>') else "",
+if (!is.null(col_map$period)) paste0('<tr><th>Period</th><td>', esc(col_map$period), '</td></tr>') else "",
+if (!is.null(col_map$sequence)) paste0('<tr><th>Sequence</th><td>', esc(col_map$sequence), '</td></tr>') else "",
+if (!is.null(col_map$dose)) paste0('<tr><th>Dose</th><td>', esc(col_map$dose), '</td></tr>') else "",
 '</table>
 
 <h2>5. Statistical Methods</h2>
@@ -288,7 +291,7 @@ settings$r2adj_threshold, '). The terminal half-life was calculated as
 ln(2)/&lambda;<sub>z</sub>. C<sub>max</sub> and T<sub>max</sub> were obtained
 directly from the observed data.</p>',
 if (isTRUE(settings$is_steady_state))
-paste0('<p>Steady-state analysis with a dosing interval &tau; = ', settings$tau, ' ', settings$time_unit,
+paste0('<p>Steady-state analysis with a dosing interval &tau; = ', settings$tau, ' ', esc(settings$time_unit),
 '. AUC<sub>&tau;</sub> is the AUC from 0 to &tau; (interpolated between samples, extrapolated with
 &lambda;<sub>z</sub> beyond the last sample). Clearance and volume were calculated from AUC<sub>&tau;</sub>;
 C<sub>avg</sub> = AUC<sub>&tau;</sub>/&tau;.</p>') else "",
@@ -303,7 +306,7 @@ intervals only a ratio and confidence interval. A metric with a value of zero in
 estimate and no verdict, because zero cannot be log-transformed.' else "",
 ' The intervals are recorded as entered; the app cannot check that they were pre-specified in the
 protocol.</p>') else "",
-if (lloq > 0) paste0('<p>Concentrations below the LLOQ (', lloq, ' ', settings$conc_unit,
+if (lloq > 0) paste0('<p>Concentrations below the LLOQ (', lloq, ' ', esc(settings$conc_unit),
   ') were handled using ', blq_desc, '.</p>') else "",
 '
 
@@ -332,7 +335,8 @@ if (lloq > 0) paste0('<p>Concentrations below the LLOQ (', lloq, ' ', settings$c
 <code>reproduced_results.csv</code>, and <strong>automatically compares</strong> its
 output against the app\'s results (<code>app_results_reference.csv</code>, included),
 printing a <code>MATCH</code> / <code>DIFFERENT</code> verdict. It also re-checks the
-data file\'s SHA-256 against the recorded value.</li>
+data file\'s SHA-256 against the recorded value, and says whether R and the packages are
+the versions the record was made with.</li>
 </ol>
 <p style="font-size:12px; color:#7f8c8d; margin-bottom:0;">
 Independent integrity: <code>data_integrity.txt</code> lists SHA-256 hashes for the
@@ -348,7 +352,7 @@ R Foundation for Statistical Computing, Vienna, Austria.</p>
 
 ', if (!is.null(lz_overrides) && length(lz_overrides) > 0) {
   rows <- sapply(lz_overrides, function(ov) {
-    paste0('<tr><td>', ov$profile, '</td>',
+    paste0('<tr><td>', esc(ov$profile), '</td>',
            '<td>', if (!is.na(ov$original_lambda_z)) signif(ov$original_lambda_z, 5) else "N/A", '</td>',
            '<td>', signif(ov$adjusted_lambda_z, 5), '</td>',
            '<td>', if (!is.na(ov$original_r2adj)) signif(ov$original_r2adj, 4) else "N/A", '</td>',
@@ -365,7 +369,6 @@ R Foundation for Statistical Computing, Vienna, Austria.</p>
          '<p style="font-size:12px;color:#666;">These adjustments are reflected in the results Excel ',
          'and are applied by the reproducibility script (reproduce_analysis.R).</p>\n')
 } else '', if (!is.null(checks)) {
-  esc <- function(x) htmltools::htmlEscape(as.character(x))
   paste0('<h2>10. Checks and Notes</h2>\n',
          if (nrow(checks) == 0) '<p>No data quality findings and no notes from the analysis.</p>\n' else paste0(
            '<p>The data quality findings of the upload and the notes shown with the results ',
@@ -426,6 +429,8 @@ create_analysis_record <- function(output_path, results, settings, col_map,
   rec_dir <- tempfile("analysis_record_")
   if (dir.exists(rec_dir)) unlink(rec_dir, recursive = TRUE)
   dir.create(rec_dir, recursive = TRUE)
+  # Removed however the function ends, also after an error part-way
+  on.exit(unlink(rec_dir, recursive = TRUE), add = TRUE)
   
   n_subjects <- if ("Subject" %in% names(results)) length(unique(results$Subject))
                 else nrow(results)
@@ -581,7 +586,6 @@ create_analysis_record <- function(output_path, results, settings, col_map,
 
   # Create zip — session-safe, no global setwd (see zip_record_dir).
   zip_record_dir(rec_dir, output_path)
-  unlink(rec_dir, recursive = TRUE)
 
   attr(output_path, "reproduction") <- verdict
   invisible(output_path)
@@ -628,6 +632,8 @@ create_single_analysis_record <- function(output_path, result, settings,
   rec_dir <- tempfile("analysis_record_")
   if (dir.exists(rec_dir)) unlink(rec_dir, recursive = TRUE)
   dir.create(rec_dir, recursive = TRUE)
+  # Removed however the function ends, also after an error part-way
+  on.exit(unlink(rec_dir, recursive = TRUE), add = TRUE)
 
   has_file <- !is.null(original_file_path) && file.exists(original_file_path) && !is.null(col_map)
 
@@ -751,7 +757,6 @@ create_single_analysis_record <- function(output_path, result, settings,
   }, error = function(e) warning("Could not create summary HTML: ", e$message))
 
   zip_record_dir(rec_dir, output_path)
-  unlink(rec_dir, recursive = TRUE)
   attr(output_path, "reproduction") <- verdict
   invisible(output_path)
 }
@@ -767,6 +772,7 @@ generate_viz_html <- function(viz_settings, col_map, file_name, file_hash,
   pkg_ver <- function(pkg) tryCatch(as.character(packageVersion(pkg)), error = function(e) "?")
   vs <- viz_settings
   yn <- function(x) if (isTRUE(x)) "Yes" else "No"
+  esc <- function(x) htmltools::htmlEscape(as.character(x))
 
   paste0('<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
@@ -810,12 +816,12 @@ NCA Assistant app. The SHA-256 hash verifies the data file is unchanged.</div>
 
 <h2>3. Figure Settings</h2>
 <table>
-<tr><th>Plot type</th><td>', vs$plot_type %||% "spaghetti", '</td></tr>
-<tr><th>Y-axis scale</th><td>', vs$y_scale %||% "linear", '</td></tr>
-<tr><th>Colour by</th><td>', vs$color_by %||% "subject", '</td></tr>
-<tr><th>Summary statistic</th><td>', vs$summary_statistic %||% "geomean", '</td></tr>
+<tr><th>Plot type</th><td>', esc(vs$plot_type %||% "spaghetti"), '</td></tr>
+<tr><th>Y-axis scale</th><td>', esc(vs$y_scale %||% "linear"), '</td></tr>
+<tr><th>Colour by</th><td>', esc(vs$color_by %||% "subject"), '</td></tr>
+<tr><th>Summary statistic</th><td>', esc(vs$summary_statistic %||% "geomean"), '</td></tr>
 <tr><th>Dose-normalized</th><td>', yn(vs$dose_normalized), '</td></tr>
-<tr><th>Colour palette</th><td>', vs$colour_palette %||% "default", '</td></tr>
+<tr><th>Colour palette</th><td>', esc(vs$colour_palette %||% "default"), '</td></tr>
 <tr><th>Figure size</th><td>', vs$figure_width_in %||% 7, ' &times; ',
   vs$figure_height_in %||% 5, ' in @ ', vs$dpi %||% 300, ' DPI</td></tr>
 <tr><th>Export format</th><td>', toupper(vs$export_format %||% "png"), '</td></tr>
@@ -866,6 +872,8 @@ create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
   rec_dir <- tempfile("figure_record_")
   if (dir.exists(rec_dir)) unlink(rec_dir, recursive = TRUE)
   dir.create(rec_dir, recursive = TRUE)
+  # Removed however the function ends, also after an error part-way
+  on.exit(unlink(rec_dir, recursive = TRUE), add = TRUE)
 
   fmt <- viz_settings$export_format %||% "png"
   w   <- viz_settings$figure_width_in  %||% 7
@@ -943,7 +951,6 @@ create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
   }, error = function(e) warning("Could not create provenance HTML: ", e$message))
 
   zip_record_dir(rec_dir, output_path)
-  unlink(rec_dir, recursive = TRUE)
   attr(output_path, "reproduction") <- verdict
   invisible(output_path)
 }
@@ -995,6 +1002,7 @@ integrity <- c("Pipeline code" = if (identical(digest::digest(file = "nca_pipeli
 cat("Pipeline code:", integrity[["Pipeline code"]], "\n")
 source("nca_pipeline.R")
 integrity[["Data file"]] <- verify_file_hash(rec$input_file, rec$data_sha256, "Data file")
+verify_versions(rec)
 
 # 2. Read and prepare the data exactly as the app did
 if (identical(rec$door, "adnca")) {
@@ -1038,6 +1046,7 @@ integrity <- c("Pipeline code" = if (identical(digest::digest(file = "nca_pipeli
 cat("Pipeline code:", integrity[["Pipeline code"]], "\n")
 source("nca_pipeline.R")
 integrity[["Data file"]] <- verify_file_hash(rec$input_file, rec$data_sha256, "Data file")
+verify_versions(rec)
 
 # The profile: from the uploaded file (prepared as in the app) or manual entry
 if (identical(rec$data_source, "uploaded_file")) {
@@ -1339,6 +1348,7 @@ cat("Pipeline code:", if (identical(digest::digest(file = "nca_pipeline.R", algo
                                     rec$pipeline_sha256)) "MATCH" else "MISMATCH", "\\n")
 source("nca_pipeline.R")
 verify_file_hash(rec$input_file, rec$data_sha256, "Data file")
+verify_versions(rec)
 if (identical(rec$door, "adnca")) {
   cat("ADNCA import code:", if (identical(digest::digest(file = "adnca_import.R", algo = "sha256"),
                                         rec$adnca_import_sha256)) "MATCH" else "MISMATCH", "\\n")

@@ -737,17 +737,17 @@ path_power_server <- function(id, shared) {
             "abel"  = sampleN.scABEL(alpha = alpha, targetpower = target_pwr,
                                      theta0 = theta0_dec, CV = cv_val,
                                      design = design, print = FALSE,
-                                     nsims = 1e4),
+                                     nsims = 1e4, setseed = TRUE),
             "rsabe" = sampleN.RSABE(alpha = alpha, targetpower = target_pwr,
                                     theta0 = theta0_dec, CV = cv_val,
                                     design = design, print = FALSE,
-                                    nsims = 1e4),
+                                    nsims = 1e4, setseed = TRUE),
             "ntid"  = {
               if (is.null(ntid_sampleN)) return(NULL)
               ntid_sampleN(alpha = alpha, targetpower = target_pwr,
                            theta0 = theta0_dec, CV = cv_val,
                            design = design, print = FALSE,
-                           nsims = 1e4)
+                           nsims = 1e4, setseed = TRUE)
             },
             NULL
           )
