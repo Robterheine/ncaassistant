@@ -38,6 +38,7 @@ gxp_event_label <- function(event, object, details) {
                   if (identical(d$trigger, "half-life override")) ", half-life override" else "", ")"))
   }
   if (identical(event, "export_downloaded")) return(paste0("Downloaded results (", toupper(.or(d$format, "")), ")"))
+  if (identical(event, "security_alert") && !is.null(d$trigger)) return(paste0("Security alert (", gsub("_", " ", d$trigger), ")"))
   unname(base)
 }
 
@@ -210,7 +211,8 @@ gxp_sign_server <- function(input, output, session) {
     # The table redraws whenever the trail changes (also by other users): keep the selected record
     keep <- which(r$sha %in% isolate(selected()))
     DT::datatable(df, selection = list(mode = "single", selected = if (length(keep) == 1) keep else NULL),
-                  rownames = FALSE, options = list(pageLength = 15, dom = "tip", language = list(emptyTable = "No records.")))
+                  rownames = FALSE, options = list(pageLength = 15, dom = "tip", language = list(emptyTable = "No records."))) |>
+      DT::formatStyle("Created", whiteSpace = "nowrap")
   })
   observeEvent(input$gxp_rec_table_rows_selected, {
     i <- input$gxp_rec_table_rows_selected
@@ -339,7 +341,11 @@ gxp_sign_server <- function(input, output, session) {
     meaning <- session$userData$gxp_sign_meaning
     r <- rec_now()
     # Checks, in the order of the handover (Part A, A.6)
-    if (!can_review()) return(msg("Only a reviewer can sign a record."))
+    if (!can_review()) {
+      # The page offers no signing to this user: the request was made by hand
+      gxp_alert("signing_without_role", me, "a record signature was requested without the reviewer role")
+      return(msg("Only a reviewer can sign a record."))
+    }
     if (is.null(meaning)) return(msg("Open the record and click Approve or Reject first."))
     if (is.null(r)) return(msg("Select a record first."))
     if (r$author == me) return(msg("You cannot review your own record."))
@@ -455,7 +461,8 @@ gxp_sign_server <- function(input, output, session) {
     v <- audit_verify()
     if (!gxp_guard("trail_verified", details = list(intact = v$intact, n = v$n, warnings = length(v$warnings)))) return()
     output$gxp_verify_msg <- renderUI(tags$div(class = paste("alert py-2 small", if (v$intact) "alert-success" else "alert-danger"),
-      if (v$intact) sprintf("Intact: %d entries.", v$n) else sprintf("NOT INTACT: first broken entry %s.", v$first_broken),
+      paste0(if (v$intact) sprintf("Intact: %d entries", v$n) else sprintf("NOT INTACT: first broken entry %s", v$first_broken),
+             ", checked ", substr(gxp_utc_now(), 12, 16), " UTC."),
       if (length(c(v$errors, v$warnings))) tags$ul(lapply(c(v$errors, v$warnings), tags$li))))
   })
   output$gxp_trail_csv <- downloadHandler(
@@ -484,11 +491,15 @@ gxp_sign_server <- function(input, output, session) {
       tags$div(class = "mb-2", tags$label(`for` = "gxp_rev_user", class = "form-label", "User ID"),
                tags$input(id = "gxp_rev_user", type = "text", class = "form-control", autocomplete = "off")),
       gxp_password_field("gxp_rev_pwd", "Password"), uiOutput("gxp_rev_msg"),
+      tags$script(HTML("$('#gxp_rev_pwd').on('keydown', function(e){ if (e.key === 'Enter') { $('#gxp_rev_user, #gxp_rev_pwd').trigger('change'); $('#gxp_rev_submit').click(); } });")),
       footer = tagList(modalButton("Cancel"), actionButton("gxp_rev_submit", "Sign", class = "btn-primary"))))
     output$gxp_rev_msg <- renderUI(NULL)
   })
   observeEvent(input$gxp_rev_submit, {
-    req(can_review())
+    if (!can_review()) {
+      gxp_alert("signing_without_role", me, "a trail review signature was requested without the reviewer role")
+      return()
+    }
     msg <- function(t) output$gxp_rev_msg <- renderUI(tags$div(class = "alert alert-danger py-2 small", t))
     fail <- function() {
       gxp_guard("signature_failed", object = "audit trail review",
@@ -552,9 +563,11 @@ gxp_users_overview <- function(store, tr) {
 
 #' The fixed exception queries of the handover (Part A, A.6)
 gxp_exceptions <- function(tr, recs = gxp_records(tr)) {
+  # The same plain-language events as All entries, with the reason given
   pick <- function(x) data.frame(Seq = x$seq, Time_UTC = substr(x$time_utc, 1, 19), User = x$user,
-                                 Event = x$event, Object = x$object, Details = substr(x$details, 1, 120),
-                                 stringsAsFactors = FALSE)
+                                 Event = if (nrow(x)) unname(mapply(gxp_event_label, x$event, x$object, x$details)) else character(0),
+                                 Object = x$object, Reason = ifelse(is.na(x$reason), "", x$reason),
+                                 Details = substr(x$details, 1, 120), stringsAsFactors = FALSE)
   runs <- tr[tr$event == "analysis_run" & !is.na(tr$sha256), ]
   rec_data <- if (nrow(recs) > 0) recs$data_sha else character(0)
   # Per record: the runs on its data before it was created (as the review panel shows them)

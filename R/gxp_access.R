@@ -53,7 +53,8 @@ audited_check <- function() {
     store <- tryCatch(gxp_store_read(), error = function(e) NULL)
     locked <- !is.null(store) && gxp_is_locked(user, store)
     known <- !is.null(store) && user %in% store$credentials$user
-    event <- if (isTRUE(res$result) && !locked) "login_ok" else if (isTRUE(res$result)) "login_locked" else "login_failed"
+    # Any attempt on a locked account, with the right password or not, is its own event (and an alert)
+    event <- if (locked) "login_locked" else if (isTRUE(res$result)) "login_ok" else "login_failed"
     role <- if (known) store$credentials$roles[store$credentials$user == user] else "unknown user"
     tryCatch(audit_append(event, object = user, user = user, role = role,
                           details = list(expired = isTRUE(res$expired), known_user = known)),
@@ -132,7 +133,11 @@ gxp_server <- function(server) {
       # shinymanager signs out on its own input; the browser sets it (gxp_activity.js)
       observeEvent(input$gxp_sign_out, {
         signing_out <<- TRUE
+        # End the sign-in on the server too, not only through the browser (shinymanager 1.1.0 internals)
+        tok <- tryCatch(shinymanager:::getToken(session = session), error = function(e) NULL)
+        if (!is.null(tok)) tryCatch(shinymanager:::.tok$remove(tok), error = function(e) NULL)
         session$sendCustomMessage("gxp_logout", TRUE)
+        later::later(function() if (!session$isClosed()) session$close(), 5)
       })
       observeEvent(input$gxp_change_password, gxp_password_dialog(session))
       observeEvent(input$gxp_pwd_submit, gxp_password_submit(input, session))
@@ -242,7 +247,13 @@ gxp_password_submit <- function(input, session) {
     })
     TRUE
   }, error = function(e) FALSE)
-  if (!done) return(msg("The password could not be saved. Please contact the system owner."))
+  if (!done) {
+    # The change was logged before the save (fail closed): record that it did not take effect
+    tryCatch(audit_append("password_change_failed", object = u, user = u, role = gxp_user(session)$roles,
+                          details = list(why = "not saved; the password is unchanged"),
+                          session = substr(.or(session$token, ""), 1, 8)), error = function(e) NULL)
+    return(msg("The password could not be saved. Please contact the system owner."))
+  }
   shiny::removeModal(session)
   shiny::showNotification("Your password has been changed.", type = "message", session = session)
 }

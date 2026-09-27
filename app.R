@@ -817,7 +817,7 @@ server <- function(input, output, session) {
                  "qualify it there with the validation package. Responsibility for the analysis and its ",
                  "conclusions stays with the user. Not for dosing decisions for individual patients."),
           tags$h6(class = "fw-bold mt-3", "Your data"),
-          tags$p(class = "small", DATA_PROTECTION_NOTICE),
+          tags$p(class = "small", data_protection_notice()),
           if (gxp_enabled()) tags$p(class = "small",
                  tags$strong("Controlled installation: "), gxp_config()$org, " \u00B7 ",
                  Sys.info()[["nodename"]], " \u00B7 controlled directory ", tags$code(gxp_config()$dir)),
@@ -843,7 +843,7 @@ server <- function(input, output, session) {
               tags$li(tags$strong("New: "), "controlled mode on a server: sign-in with personal accounts and roles (analyst, reviewer, inspector), a tamper-evident audit trail of every data load, analysis, download and record, and review signatures on stored records"),
               tags$li(tags$strong("New: "), "Records page with the data history of each record, approval or rejection with user ID and password, signature sheets and a check for copies of a record"),
               tags$li(tags$strong("New: "), "Audit trail page with exceptions, filters, chain verification, export, a users overview and a signed review; gxp/manage_users.R for accounts and archives"),
-              tags$li("Validation: 480 automated and 62 manual tests (was 431 and 49), with a section for controlled mode")
+              tags$li("Validation: 482 automated and 62 manual tests (was 431 and 49), with a section for controlled mode")
             )
           ),
 

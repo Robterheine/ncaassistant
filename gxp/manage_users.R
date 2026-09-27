@@ -94,7 +94,8 @@ add = {
   if (!grepl("^[A-Za-z0-9._-]{2,64}$", id)) fail("A user ID has 2 to 64 letters, digits, dots, hyphens or underscores.")
   if (!nzchar(name)) fail("A printed name is required.")
   tr <- audit_read()
-  if (id %in% c(tr$user, tr$object[grepl("^user_|^password_", tr$event)]))
+  # IDs typed at the login page that were never accounts ("unknown user") do not count
+  if (id %in% c(tr$user[!tr$role %in% "unknown user"], tr$object[grepl("^user_|^password_", tr$event)]))
     fail("The ID ", id, " has been used before; IDs are never reused.")
   gxp_store_update(function(store) {
     if (id %in% store$credentials$user) fail("The ID ", id, " already exists.")

@@ -273,11 +273,13 @@ gxp_store_record <- function(file, record_name, record_type, study = NA,
                              session = shiny::getDefaultReactiveDomain()) {
   if (!gxp_enabled()) return(TRUE)
   cfg <- gxp_config()
+  new_copy <- NULL
   sha <- tryCatch({
     s <- sha256_file(file)
     dir.create(cfg$records, showWarnings = FALSE)
     dest <- file.path(cfg$records, paste0(s, ".zip"))
     if (!file.exists(dest)) {
+      new_copy <- dest
       if (!file.copy(file, dest)) stop("copy failed")
       Sys.chmod(dest, "0444")
     }
@@ -290,6 +292,8 @@ gxp_store_record <- function(file, record_name, record_type, study = NA,
                   details = list(record_type = record_type, study = study,
                                  reproduction = verdict, queued = queued, data_sha256 = data_sha256),
                   session = session)
+  # Not logged: a copy made here must not stay in the records folder without its entry
+  if (!ok && !is.null(new_copy)) { Sys.chmod(new_copy, "0644"); unlink(new_copy) }
   if (ok) sha else FALSE
 }
 

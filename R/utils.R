@@ -663,6 +663,13 @@ DATA_PROTECTION_NOTICE <- paste0(
   "data under the GDPR. Sending them to a third-party host needs agreements your organisation must have ",
   "in place, and may breach sponsor confidentiality. For real study data, run the app on your own computer.")
 
+#' The notice for this installation: on a controlled installation, the data stay on its server
+data_protection_notice <- function() {
+  if (!(exists("gxp_enabled") && gxp_enabled())) return(DATA_PROTECTION_NOTICE)
+  paste0("On this controlled installation of ", gxp_config()$org, ", uploads are processed on its own server ",
+         "and recorded in its audit trail. Follow your organisation's rules on which data may be uploaded here.")
+}
+
 #' A file-reading error in words a user can act on
 friendly_read_error <- function(msg) {
   hint <- if (grepl("more columns than column names|did not have|no lines available|incomplete final line|duplicate 'row.names'", msg))

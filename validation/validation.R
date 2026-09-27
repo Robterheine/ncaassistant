@@ -3935,7 +3935,7 @@ check("REL-27", "R-17/R-18: records use private folders, and the app states wher
     grepl("Result: MATCH", rec_check_text(r1$ex)) && length(setdiff(after, before)) == 0 &&
       basename(fallback_copy_path("../y.xlsx")) == "y.csv" && basename(fp) == "x.csv" && dir.exists(dirname(fp)) && dirname(fp) != tempdir() &&
       !grepl('file.path(tmp, "analysis_record")', er, fixed = TRUE) && all(mods) &&
-      grepl("DATA_PROTECTION_NOTICE", rd("R/mod_data_upload.R"), fixed = TRUE) &&
+      grepl("data_protection_notice()", rd("R/mod_data_upload.R"), fixed = TRUE) &&
       grepl("Intended use", app, fixed = TRUE) && grepl("Posit PBC", DATA_PROTECTION_NOTICE, fixed = TRUE) &&
       !grepl('label = "Validated"', rd("R/utils.R"), fixed = TRUE)
   }, error = function(e) FALSE),
@@ -4844,7 +4844,7 @@ check("GXP-14", "manage_users.R: each command writes its event, with the person 
       "URS-GXP-04", method = "init, add x3, role, reset, deactivate through Rscript with SUDO_USER=validator",
       expected = "six account entries by validator, reasons, old/new values; trail intact")
 
-check("GXP-15", "manage_users.R refuses a reused ID, an inspector with a second role, a missing reason, and the service account acting as itself",
+check("GXP-15", "manage_users.R refuses a reused ID, an inspector with a second role, a missing reason, and the service account acting as itself; an ID only typed at the login page stays free",
       tryCatch({
         reused <- gxp_mu("add", "ana", "'Someone Else'", "analyst", "'again'")
         combo  <- gxp_mu("add", "qa1", "'Q A'", "'inspector;reviewer'", "'x'")
@@ -4852,14 +4852,19 @@ check("GXP-15", "manage_users.R refuses a reused ID, an inspector with a second 
         service <- gxp_mu("add", "qa3", "'Q A'", "analyst", "'x'",
                           env = c(setdiff(gxp_mu_env, "SUDO_USER=validator"), "SUDO_USER=",
                                   sprintf("NCA_GXP_SERVICE_ACCOUNT=%s", Sys.info()[["user"]])))
+        gxp_env$audit_append("login_failed", object = "newcomer", user = "newcomer", role = "unknown user",
+                             details = list(known_user = FALSE), org = "Validation Org",
+                             path = file.path(gxp_mu_dir, "ctl", "audit.sqlite"))
+        fresh <- gxp_mu("add", "newcomer", "'New Comer'", "analyst", "'joined'")
         st <- gxp_env$gxp_store_read(file.path(gxp_mu_dir, "ctl", "users.sqlite"), "validation-key")
+        fresh$status == 0 && "newcomer" %in% st$credentials$user &&
         all(c(reused$status, combo$status, noreason$status, service$status) != 0) &&
           grepl("never reused", paste(reused$out, collapse = " ")) &&
           grepl("cannot be combined", paste(combo$out, collapse = " ")) &&
           grepl("through sudo", paste(service$out, collapse = " ")) &&
           !any(c("qa1", "qa2", "qa3") %in% st$credentials$user)
       }, error = function(e) FALSE),
-      "URS-GXP-04", method = "four invalid calls", expected = "each refused with its message; no account created")
+      "URS-GXP-04", method = "four invalid calls; then add an ID that only appears as a failed sign-in", expected = "each refused with its message; no account created for them; the ID from the login page is added")
 
 check("GXP-16", "New and reset accounts start with admin and must change it; a deactivated account cannot sign in or sign",
       tryCatch({
@@ -4984,15 +4989,16 @@ check("GXP-23", "Sign-in attempts are logged (ok, failed, locked) and a lockout 
         ck("u1", "Wrong2026pass")                       # the fifth failure locks the account
         gxp_env$gxp_store_update(function(st) { st$pwd_mngt$n_wrong_pwd[st$pwd_mngt$user == "u1"] <- 5; st })
         ck("u1", "Valid2026pass")                       # right password, locked account
+        ck("u1", "Wrong2026pass")                       # wrong password, locked account
         tr <- gxp_env$audit_read(file.path(d, "audit.sqlite")); gxp_unset()
         ev <- tr$event[-1]
         ok && bad && identical(ev[1:3], c("login_ok", "login_failed", "login_failed")) &&
           tr$role[tr$object %in% "nobody"][1] == "unknown user" &&
-          any(ev == "login_locked") && sum(ev == "security_alert") == 2 &&
+          sum(ev == "login_locked") == 2 && sum(ev == "security_alert") == 3 &&
           all(grepl("account_locked|login_locked", tr$details[tr$event == "security_alert"]))
       }, error = function(e) { gxp_unset(); FALSE }),
-      "URS-GXP-03,URS-GXP-05,URS-GXP-16", method = "audited_check() with a right, a wrong and an unknown login; at the fifth failure; on a locked account",
-      expected = "login_ok, login_failed x2, login_locked; two security alerts")
+      "URS-GXP-03,URS-GXP-05,URS-GXP-16", method = "audited_check() with a right, a wrong and an unknown login; at the fifth failure; on a locked account with the right and a wrong password",
+      expected = "login_ok, login_failed x2, login_locked x2; three security alerts")
 
 skip_manual("MAN-GXP-02", "Nothing runs before sign-in",
             "On the login page and on the forced password-change page, run Shiny.setInputValue('nav_path','be') in the browser console",
@@ -5049,13 +5055,17 @@ check("GXP-25", "Record and export hooks stop the download when the audit trail 
                                       error = function(e) e), "error")
         exp_stop <- inherits(tryCatch(gxp_env$gxp_export_done(z, "r2.csv", "csv", session = NULL),
                                       error = function(e) e), "error")
+        z3 <- tempfile(fileext = ".zip", tmpdir = gxp_tmp); writeLines("other content", z3)   # a record not stored before
+        new_stop <- inherits(tryCatch(gxp_env$gxp_record_done(z3, "r3.zip", "batch_nca", "", NULL, session = NULL),
+                                      error = function(e) e), "error")
+        no_orphan <- !file.exists(file.path(d, "records", paste0(gxp_env$sha256_file(z3), ".zip")))
         Sys.chmod(file.path(d, "audit.sqlite"), "0644")
         tr <- gxp_env$audit_read(file.path(d, "audit.sqlite")); gxp_unset()
-        open_ok && stored && exported && rec_stop && exp_stop &&
+        open_ok && stored && exported && rec_stop && exp_stop && new_stop && no_orphan &&
           identical(tr$event[-1], c("record_created", "export_downloaded")) && grepl('"reproduction":"MATCH"', tr$details[2])
       }, error = function(e) { gxp_unset(); FALSE }),
       "URS-GXP-07,URS-GXP-09", method = "gxp_record_done() and gxp_export_done() in open mode, with a writable and with a read-only trail",
-      expected = "no-ops in open mode; entries when writable; an error (download stopped) and no entry when read-only")
+      expected = "no-ops in open mode; entries when writable; an error (download stopped), no entry and no stored copy when read-only")
 
 check("GXP-26", "The analyst in a record is the signed-in user in controlled mode, the typed name otherwise",
       tryCatch({
@@ -5145,11 +5155,12 @@ check("GXP-28", "Signing: own record, wrong password, a closed record, an analys
         tr <- gxp_env$audit_read(); sg <- tr[tr$event == "record_signed", ]; gxp_unset()
         grepl("own record", res$own) && grepl("2 attempts left", res$wrong) && grepl("already been reviewed", res$closed) &&
           grepl("Only a reviewer", res$ana) && grepl("Only a reviewer", res$insp) &&
+          sum(grepl("signing_without_role", tr$details[tr$event == "security_alert"])) == 2 &&
           nrow(sg) == 1 && sg$sha256 == sha_ana && sg$user == "rev" && grepl('"meaning":"review_approved","printed_name":"REV"', sg$details) &&
           sum(tr$event == "signature_failed") == 1
       }, error = function(e) { gxp_unset(); FALSE }),
       "URS-GXP-08,URS-GXP-10,URS-GXP-17", method = "testServer(gxp_sign_server) as reviewer, analyst and inspector",
-      expected = "refusals with their messages; one record_signed on ana's record, by rev, with meaning and printed name")
+      expected = "refusals with their messages; a security alert for each attempt without the reviewer role; one record_signed on ana's record, by rev, with meaning and printed name")
 
 check("GXP-29", "The third failed signature ends the session and sends a security alert; a locked account cannot sign",
       tryCatch({
@@ -5462,6 +5473,34 @@ check("GXP-45", "A record names the data it was made from, also after other data
       }, error = function(e) { gxp_unset(); FALSE }),
       "URS-GXP-05,URS-GXP-13", method = "log typed-in data, then store a figure record made from another dataset; each path passes its own data SHA-256 to gxp_record_done()",
       expected = "record_created carries the figure's data SHA-256, not the latest entry's; all four paths pass it")
+
+check("GXP-46", "Ten failed sign-ins within an hour raise one alert; three wrong current passwords end the session with an alert",
+      tryCatch({
+        gxp_team("alerts"); ck <- gxp_env$audited_check()
+        for (k in 1:11) ck("ghost", paste0("Wrong2026pass", k))
+        closed <- FALSE
+        srv <- function(input, output, session) {
+          session$userData$gxp <- list(user = "ana", name = "ANA", roles = "analyst"); session$userData$gxp_failures <- 0L
+          observeEvent(input$go, gxp_env$gxp_password_submit(input, session)) }
+        testServer(srv, {
+          for (k in 1:3) session$setInputs(gxp_pwd_current = "Wrong2026pass", gxp_pwd_new = "Better2026pass",
+                                           gxp_pwd_repeat = "Better2026pass", go = k)
+          closed <<- session$isClosed() })
+        tr <- gxp_env$audit_read(); al <- tr$details[tr$event == "security_alert"]; gxp_unset()
+        sum(grepl("failed_sign_ins", al)) == 1 && sum(tr$event == "login_failed" & tr$object == "ghost") == 11 &&
+          closed && sum(tr$event == "password_change_failed") == 3 && sum(grepl("password_change_failures|3 failed attempts", al)) == 1
+      }, error = function(e) { gxp_unset(); FALSE }),
+      "URS-GXP-16,URS-GXP-03", method = "audited_check() 11 times with a wrong password for one ID; three wrong current passwords in the Change password dialog",
+      expected = "one failed_sign_ins alert at the tenth failure; the session closes after the third wrong current password, with one alert")
+
+check("GXP-47", "manage_users.R list shows every account with its roles, status and history",
+      tryCatch({
+        l <- gxp_mu("list"); out <- paste(l$out, collapse = "\n")
+        l$status == 0 && all(vapply(c("ana", "rev", "insp"), function(u) grepl(paste0("(^|\n)", u, " "), out), logical(1))) &&
+          grepl("analyst;reviewer", out) && grepl("role_changed", out) && grepl("password_reset", out) && grepl("by validator", out)
+      }, error = function(e) FALSE),
+      "URS-GXP-20,URS-GXP-04", method = "manage_users.R list on the store built by the manage_users.R tests (add, role, reset)",
+      expected = "exit 0; each account with its current roles; the role change and reset in its history, by the person who ran them")
 
 gxp_unset()
 end_section("GXP")
