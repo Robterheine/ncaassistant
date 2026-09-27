@@ -123,8 +123,9 @@ add_dose_normalized <- function(nca_result, dose) {
   # Parameters that should be dose-normalized. Partial AUCs and the maximum
   # concentration within an interval are exposure metrics like the others, so
   # they are normalised as well; Tmax within an interval is a time.
+  # At steady state the exposure metrics are AUCtau, Cavg, Cmin and Ctau.
   dn_params <- c("CMAX", "AUCLST", "AUCIFO", "AUCIFP",
-                  "AUMCLST", "AUMCIFO", "AUMCIFP",
+                  "AUMCLST", "AUMCIFO", "AUMCIFP", "AUCTAU", "CAVG", "CMIN_SS", "CTAU_SS",
                   grep("^(AUC|CMAX)_", partial_auc_cols(names(nca_result)), value = TRUE))
   
   for (p in dn_params) {

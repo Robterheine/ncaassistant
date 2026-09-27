@@ -831,7 +831,7 @@ server <- function(input, output, session) {
                     tags$span(class = "badge bg-primary ms-2", "current")),
             tags$p(class = "text-muted mb-1", "September 2026"),
             tags$p(class = "mb-1", tags$strong("Results can differ from v1.7.0"),
-                   " in two cases: fluctuation and swing at steady state when the highest concentration lies after \u03C4, and a manual half-life fit that included values set by a BLQ rule. The release adds an optional controlled mode for installations under GxP. Without it, the app works as before."),
+                   " for fluctuation and swing at steady state when the highest concentration lies after \u03C4, for a manual half-life fit that included values set by a BLQ rule, for a profile with a single measurable concentration (now analysed) and for partial AUCs in bioequivalence that pass a profile's last measurable concentration (now no verdict). The release adds an optional controlled mode for installations under GxP. Without it, the app works as before."),
             tags$ul(class = "mb-0",
               tags$li(tags$strong("New: "), "controlled mode on a server: sign-in with personal accounts and roles (analyst, reviewer, inspector), a tamper-evident audit trail of every data load, analysis, download and record, and review signatures on stored records"),
               tags$li(tags$strong("New: "), "Records page with the data history of each record, approval or rejection with user ID and password, signature sheets and a check for copies of a record"),
@@ -839,7 +839,9 @@ server <- function(input, output, session) {
               tags$li(tags$strong("Correctness fix: "), "at steady state, fluctuation and swing use the highest concentration within 0\u2013\u03C4, with a note when the highest value lies after \u03C4; the half-life review no longer offers or fits values set by a BLQ rule; a profile without a dose stops the analysis"),
               tags$li(tags$strong("Changed: "), "'<x' entries with different limits are listed instead of the lowest being suggested as the LLOQ; reproduction scripts say whether R and the packages match the record; names from the data file are escaped in record summaries; the fonts are served by the app itself"),
               tags$li("These fixes come from an external adversarial audit of this release"),
-              tags$li("Validation: 494 automated and 62 manual tests (was 431 and 49), with sections for controlled mode and for the audit findings")
+              tags$li(tags$strong("Correctness fix: "), "a profile with one measurable concentration gets Cmax, Tmax and AUClast and stays in a bioequivalence comparison; a partial AUC past a profile's last measurable concentration gives no verdict, like a zero; in a decimal-comma file 0.250 is refused instead of read as 250; an ADNCA dataset without APERIOD converts"),
+              tags$li(tags$strong("Changed: "), "negative pre-dose times and several analytes in one flat file stop the analysis; the mean profile leaves out time points that are mostly BLQ and says when sampling times differ; AUC\u03C4, Cavg, Cmin and C\u03C4 are dose-normalised; a byte-order mark in a CSV is ignored. From a review of data processing and statistics"),
+              tags$li("Validation: 503 automated and 62 manual tests (was 431 and 49), with sections for controlled mode and for the two reviews")
             )
           ),
 

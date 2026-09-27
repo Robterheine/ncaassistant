@@ -174,7 +174,11 @@ pk_param_labels <- c(
   "AUCIFP_DN"= "Dose-Normalised AUC Inf (pred)",
   "AUMCLST_DN" = "Dose-Normalised AUMC Last",
   "AUMCIFO_DN" = "Dose-Normalised AUMC Inf",
-  "AUMCIFP_DN" = "Dose-Normalised AUMC Inf (pred)"
+  "AUMCIFP_DN" = "Dose-Normalised AUMC Inf (pred)",
+  "AUCTAU_DN" = "Dose-Normalised AUC Within Dosing Interval",
+  "CAVG_DN"   = "Dose-Normalised Average Concentration",
+  "CMIN_SS_DN" = "Dose-Normalised Minimum Concentration",
+  "CTAU_SS_DN" = "Dose-Normalised Concentration at Tau"
 )
 
 #' NonCompart's own dose-normalised values, dropped from tables and exports
@@ -432,6 +436,7 @@ add_units_to_labels <- function(labels, dose_unit = "mg", time_unit = "h", conc_
     if (is.na(u)) u <- if (startsWith(labels[i], "Dose-Normalised Cmax")) paste0(conc_unit, " per ", dose_unit) else
                        if (startsWith(labels[i], "Dose-Normalised AUC")) paste0(auc_unit, " per ", dose_unit) else
                        if (startsWith(labels[i], "Dose-Normalised AUMC")) paste0(aumc_unit, " per ", dose_unit) else
+                       if (grepl("^Dose-Normalised .*Concentration", labels[i])) paste0(conc_unit, " per ", dose_unit) else
                        if (startsWith(labels[i], "Partial AUC ")) auc_unit else
                        if (grepl("^Cmax [0-9.]+\u2013", labels[i])) conc_unit else
                        if (grepl("^Tmax [0-9.]+\u2013", labels[i])) time_unit else NA
@@ -676,4 +681,62 @@ friendly_read_error <- function(msg) {
     paste0(" Check the delimiter (comma, semicolon or tab) and the decimal mark under the file choice, and ",
            "that the first row holds the column names.") else ""
   paste0("The file could not be read (", msg, ").", hint)
+}
+
+
+#' Summary statistics per time point for the mean-profile figure
+#'
+#' Groups by exact time (and treatment). The geometric mean uses the positive
+#' concentrations only, so at a time point where more than half of them are
+#' zero or below it would describe the few positive ones: such a point is not
+#' plotted (.center missing, .hidden TRUE). The arithmetic mean uses all.
+#' @param d data.frame with .time, .conc and optionally .treatment
+#' @param stat_type "geomean" or "arithmean"
+#' @return data.frame(.time, .center, .lo, .hi, .n, .hidden[, .treatment])
+viz_summary_stats <- function(d, stat_type) {
+  group_vars <- if (".treatment" %in% names(d)) c(".time", ".treatment") else ".time"
+  combos <- unique(d[, group_vars, drop = FALSE])
+  out <- lapply(seq_len(nrow(combos)), function(i) {
+    mask <- rep(TRUE, nrow(d))
+    for (gv in group_vars) mask <- mask & (d[[gv]] == combos[[gv]][i])
+    vals <- d$.conc[mask]; vals <- vals[!is.na(vals)]
+    hidden <- FALSE
+    if (stat_type == "geomean") {
+      pos <- vals[vals > 0]
+      hidden <- length(vals) > 0 && length(pos) < length(vals) / 2
+      if (hidden || length(pos) == 0) {
+        gm <- NA_real_; lo <- NA_real_; hi <- NA_real_
+      } else if (length(pos) >= 2) {
+        gm <- exp(mean(log(pos))); gsd <- exp(sd(log(pos)))   # multiplicative geometric SD
+        lo <- gm / gsd; hi <- gm * gsd
+      } else {
+        gm <- pos[1]; lo <- NA_real_; hi <- NA_real_
+      }
+      row <- data.frame(.time = combos$.time[i], .center = gm, .lo = lo, .hi = hi, stringsAsFactors = FALSE)
+    } else {
+      am <- if (length(vals) > 0) mean(vals) else NA_real_
+      s  <- if (length(vals) > 1) sd(vals) else NA_real_
+      row <- data.frame(.time = combos$.time[i], .center = am,
+                        .lo = if (!is.na(s)) am - s else NA_real_, .hi = if (!is.na(s)) am + s else NA_real_,
+                        stringsAsFactors = FALSE)
+    }
+    row$.n <- length(vals); row$.hidden <- hidden
+    if (".treatment" %in% names(d)) row$.treatment <- combos$.treatment[i]
+    row
+  })
+  do.call(rbind, out)
+}
+
+#' A note when sampling times differ between profiles
+#'
+#' The mean profile groups by exact time. With actual sampling times most time
+#' points then hold one profile, and a "mean" is a single value.
+#' @return message, or NULL
+viz_exact_time_note <- function(d) {
+  if (!".profile" %in% names(d) || length(unique(d$.profile)) < 2) return(NULL)
+  grp <- if (".treatment" %in% names(d)) paste(d$.time, d$.treatment) else as.character(d$.time)
+  n <- table(grp[!is.na(d$.time) & !is.na(d$.conc)])
+  if (length(n) == 0 || mean(n == 1) <= 0.5) return(NULL)
+  paste0("Most time points hold a single profile (", sum(n == 1), " of ", length(n), "): the sampling times ",
+         "differ between profiles, so the mean profile shows single values. Use nominal times for this figure.")
 }

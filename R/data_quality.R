@@ -155,10 +155,13 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
   time_valid <- time_num[!is.na(time_num)]
   n_neg_time <- sum(time_valid < 0)
   if (n_neg_time > 0) {
-    add("WARNING", "Time",
+    # NCA starts the curve at the first sample time: a pre-dose sample at a
+    # negative time adds area before the dose and gives a negative lag time.
+    # The ADNCA upload refuses them too.
+    add("ERROR", "Time",
         paste(n_neg_time, "negative time values detected"),
         paste("Range:", min(time_valid), "to", max(time_valid)),
-        "Pre-dose samples? Negative times are kept in the analysis; set pre-dose samples to time 0 or remove them.")
+        "Pre-dose samples? A negative time adds area before the dose to AUC and gives a negative lag time. Set pre-dose samples to time 0 (or remove them), then upload the file again.")
   }
   
   if (length(time_valid) > 0 && all(!is.na(time_valid))) {

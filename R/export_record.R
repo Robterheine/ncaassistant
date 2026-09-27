@@ -1262,10 +1262,14 @@ y_label <- "Dose-normalised concentration (C/Dose)"
   plot_section <- if (plot_type == "summary") {
     grp <- if (has_treat) paste0('c(".time", ', deparse(col_map$treatment), ')') else 'c(".time")'
     stat_code <- if (summary_st == "geomean") {
-'# Geometric mean multiplied/divided by the geometric SD (positive concentrations only)
-summ <- d[!is.na(d$.conc) & d$.conc > 0, ]
+'# Geometric mean multiplied/divided by the geometric SD (positive concentrations
+# only). A time point where more than half of the values are <= 0 is not
+# plotted, as in the app
+summ <- d[!is.na(d$.conc), ]
+summ$.pos <- summ$.conc > 0
 summ <- summ |>
   dplyr::group_by(dplyr::across(dplyr::all_of(grp_cols))) |>
+  dplyr::filter(sum(.pos) >= dplyr::n() / 2, .pos) |>
   dplyr::summarise(
     .gm  = exp(mean(log(.conc))),
     .gcv = sqrt(exp(stats::var(log(.conc))) - 1) * 100,

@@ -45,6 +45,9 @@ adnca_read <- function(path, read_args = list(), ext = tools::file_ext(path)) {
                          sep = if (is.null(read_args$sep)) "," else read_args$sep,
                          dec = if (is.null(read_args$dec)) "." else read_args$dec)
   }
+  # A UTF-8 byte-order mark (Excel's "CSV UTF-8") is not part of the first name
+  if (!tolower(ext) %in% c("xlsx", "xls") && identical(readBin(path, "raw", 3L), as.raw(c(0xEF, 0xBB, 0xBF))))
+    names(d)[1] <- sub("^(\ufeff|\u00ef\u00bb\u00bf|X\\.\\.\\.)", "", names(d)[1])
   names(d) <- toupper(names(d))
   d
 }
@@ -200,7 +203,8 @@ adnca_convert <- function(d, time, paramcd = NULL, pcspec = NULL, zero_predose =
   prof <- paste(d$USUBJID, if (!is.null(trt_var)) d[[trt_var]], if (!is.null(per_var)) d[[per_var]], sep = "||")
 
   starts <- tapply(t, prof, min); spans <- tapply(t, prof, function(x) diff(range(x)))
-  late <- which(starts > 0 & starts > 0.2 * spans)
+  # The same rule as a flat upload (interlock_profile_start): after half the sampled span
+  late <- which(starts > 0 & starts > 0.5 * spans)
   if (length(late) > 0)
     refuse(length(late), " profile(s) do not start near time zero (e.g. first time ",
            signif(as.vector(starts[late])[1], 6), "). ", time, " may hold time since the first dose; NCA ",
@@ -251,7 +255,8 @@ adnca_convert <- function(d, time, paramcd = NULL, pcspec = NULL, zero_predose =
   if (!is.null(per_var))  flat$Period    <- d[[per_var]]
   if (!is.null(seq_var))  flat$Sequence  <- d[[seq_var]]
   if (!is.null(dose_var)) flat$Dose      <- d[[dose_var]]
-  flat <- flat[order(flat$Subject, if (!is.null(per_var)) flat$Period else 0, flat$Time), , drop = FALSE]
+  # Without APERIOD (a single-period study) there is no period to sort on
+  flat <- flat[order(flat$Subject, if (!is.null(per_var)) flat$Period else rep(0, nrow(flat)), flat$Time), , drop = FALSE]
   rownames(flat) <- NULL
 
   col_map <- list(subject = "Subject", time = "Time", conc = "Conc")

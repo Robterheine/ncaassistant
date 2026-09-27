@@ -37,7 +37,8 @@ run_interlocks <- function(data, col_map, scope = "all") {
                        interlock_profile_start(data, col_map),
                        interlock_stacked_profiles(data, col_map),
                        interlock_second_dose(data, col_map),
-                       interlock_unmapped_period(data, col_map)))
+                       interlock_unmapped_period(data, col_map),
+                       interlock_mixed_analytes(data, col_map)))
   }
   do.call(rbind, c(list(.no_findings()), out))
 }
@@ -260,4 +261,29 @@ interlock_unmapped_period <- function(data, col_map) {
     if (length(multi) > 1) paste0("Also: ", paste(multi[-1], collapse = ", ")) else "",
     paste0("If it marks periods or dosing occasions, map it as Period; otherwise the profiles of different ",
            "periods are merged into one."))
+}
+
+#' Refuse several analytes or matrices in one file
+#'
+#' Parent and metabolite (or plasma and urine) stacked in one concentration
+#' column are caught as duplicate times only when they share their sampling
+#' times. Sampled at other times, they merge into one zig-zag profile without
+#' any other signal, so a column that names the analyte or matrix and changes
+#' within a subject stops the analysis.
+interlock_mixed_analytes <- function(data, col_map) {
+  sc <- col_map$subject
+  if (is.null(sc) || !sc %in% names(data)) return(.no_findings())
+  cand <- setdiff(names(data)[grepl("^(analyte|analyt|paramcd|param|pctestcd|pctest|compound|matrix|pcspec|specimen)$",
+                                    names(data), ignore.case = TRUE)], unlist(col_map))
+  multi <- cand[vapply(cand, function(cc) {
+    n <- tapply(as.character(data[[cc]]), as.character(data[[sc]]), function(v) length(unique(v[!is.na(v) & v != ""])))
+    any(n > 1)
+  }, logical(1))]
+  if (length(multi) == 0) return(.no_findings())
+  .finding("ERROR", "Structure",
+    paste0("Column '", multi[1], "' holds more than one value per subject (",
+           paste(head(unique(as.character(data[[multi[1]]])), 5), collapse = ", "), ")"),
+    if (length(multi) > 1) paste0("Also: ", paste(multi[-1], collapse = ", ")) else "",
+    paste0("Several analytes or matrices in one concentration column are analysed as one mixed profile. ",
+           "Filter the file to one analyte and one matrix, and analyse each separately."))
 }

@@ -46,6 +46,7 @@ read_pk_file <- function(path, read_args = list(), ext = tools::file_ext(path)) 
       raw[] <- lapply(raw, function(v) iconv(v, "latin1", "UTF-8"))
       names(raw) <- iconv(names(raw), "latin1", "UTF-8")
     }
+    names(raw) <- strip_bom_name(names(raw), path)
     as.data.frame(lapply(raw, function(v) {
       w <- trimws(v)
       if (any(grepl("^0[0-9]", w))) v else utils::type.convert(v, as.is = TRUE, dec = dec)
@@ -54,6 +55,17 @@ read_pk_file <- function(path, read_args = list(), ext = tools::file_ext(path)) 
 }
 
 EXCEL_MAX_ROWS <- 1048576
+
+#' Remove a UTF-8 byte-order mark from the first column name
+#'
+#' Excel's "CSV UTF-8" starts the file with one. In a UTF-8 session read.csv
+#' drops it; in a C locale it became part of the name ("X...Subject"), and
+#' the Subject column was then not recognised.
+strip_bom_name <- function(nms, path) {
+  if (length(nms) == 0 || !identical(readBin(path, "raw", 3L), as.raw(c(0xEF, 0xBB, 0xBF)))) return(nms)
+  nms[1] <- sub("^(\ufeff|\u00ef\u00bb\u00bf|X\\.\\.\\.)", "", nms[1])
+  nms
+}
 
 #' Read decimal-comma numbers stored as text when the file uses a decimal comma
 #'
@@ -80,8 +92,9 @@ normalise_decimal_comma <- function(x, dec) {
   x
 }
 
-#' A number with points as thousands separators and an optional decimal comma
-THOUSANDS_PATTERN <- "^-?\\d{1,3}(\\.\\d{3})+(,\\d+)?$"
+#' A number with points as thousands separators and an optional decimal comma.
+#' The first group has no leading zero: "0.250" is a decimal point, never 250
+THOUSANDS_PATTERN <- "^-?[1-9]\\d{0,2}(\\.\\d{3})+(,\\d+)?$"
 
 #' Values written with a decimal point in a file read with a decimal comma
 #' @return the distinct offending values (empty when there are none)
@@ -1244,28 +1257,26 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
   data_all <- data
   if (adm == "Bolus") data <- data[is.na(data[[col_map$time]]) | data[[col_map$time]] > 0, , drop = FALSE]
   
-  # Degenerate profile filter: remove profiles with < 2 non-zero, non-NA
-  # concentration values before passing to tblNCA. At least 2 positive
-  # values are needed to compute Cmax, Tmax, and AUClast. Profiles with
-  # exactly 2 positive values are valid sparse profiles — tblNCA handles
-  # them correctly, returning NA for lambda-z-dependent parameters (half-life,
-  # AUC∞, CL/F, Vz/F) which require ≥ 3 points for regression. Profiles with
-  # only 1 positive value produce no meaningful NCA output and are excluded.
-  # Excluded profiles are reported via warning so callers can surface them.
+  # Degenerate profile filter. A profile needs one measurable (positive)
+  # concentration and at least two samples: NonCompart then gives Cmax, Tmax
+  # and AUClast (half-life needs three points after Cmax and stays empty).
+  # A profile with a single measurable value is typically a poorly absorbed
+  # period; dropping it would take that subject out of a bioequivalence
+  # comparison. Profiles without any measurable value are excluded and
+  # reported via warning so callers can surface them.
   all_keys   <- unique(data[[nca_key]])
   good_keys  <- character(0)
   bad_keys   <- character(0)
   for (k in all_keys) {
-    k_conc <- data[[col_map$conc]][data[[nca_key]] == k]
-    k_conc_num <- suppressWarnings(as.numeric(k_conc))
+    k_conc_num <- suppressWarnings(as.numeric(data[[col_map$conc]][data[[nca_key]] == k]))
     n_valid <- sum(!is.na(k_conc_num) & k_conc_num > 0)
-    if (n_valid >= 2) good_keys <- c(good_keys, k)
-    else              bad_keys  <- c(bad_keys,  k)
+    if (n_valid >= 1 && sum(!is.na(k_conc_num)) >= 2) good_keys <- c(good_keys, k)
+    else bad_keys <- c(bad_keys, k)
   }
   
   if (length(bad_keys) > 0) {
-    warning(paste0("Excluded ", length(bad_keys), " profile(s) with fewer than 2 ",
-                   "positive concentration values (no meaningful NCA output possible): ",
+    warning(paste0("Excluded ", length(bad_keys), " profile(s) without a measurable concentration ",
+                   "(no meaningful NCA output possible): ",
                    paste(head(bad_keys, 5), collapse = ", "),
                    if (length(bad_keys) > 5) " ..." else ""))
     data <- data[data[[nca_key]] %in% good_keys, ]

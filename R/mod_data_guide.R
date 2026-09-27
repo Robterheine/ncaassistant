@@ -808,8 +808,8 @@ data_guide_ui <- function() {
                  "pre-dose sample. Check the raw data."),
           tags$p(tags$strong("Subjects with < 3 observations.")),
           tags$p(class = "text-muted",
-                 "The half-life needs at least 3 points after the peak. A profile with 2 positive concentrations ",
-                 "still gives Cmax, Tmax and AUClast; a profile with fewer than 2 is left out of the analysis."),
+                 "The half-life needs at least 3 points after the peak. A profile with even one measurable concentration ",
+                 "still gives Cmax, Tmax and AUClast; a profile without any is left out of the analysis."),
           tags$p(tags$strong("Unequal observations per subject.")),
           tags$p(class = "text-muted",
                  "For information only. Missing samples are common and the app handles them.")

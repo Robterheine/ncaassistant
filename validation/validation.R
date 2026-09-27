@@ -3303,7 +3303,7 @@ check("PAUC-20", "Bioequivalence reports how many profiles are missing for a met
     n_na <- sum(is.na(as.numeric(r$AUC_20_t)))
     nm <- names(rename_be_columns(late$row))
     n_na > 0 && late$row$Missing_Test + late$row$Missing_Ref == n_na &&
-      grepl("profiles missing|profile\\(s\\) have no value", late$row$Bioequivalent) &&
+      grepl("profiles missing|profile\\(s\\) have no value|reaches past the last measurable", late$row$Bioequivalent) &&
       early$row$Missing_Test == 0 && early$row$Missing_Ref == 0 &&
       all(c("Profiles missing (Test)", "Profiles missing (Reference)", "Zero values (Test)") %in% nm)
   }, error = function(e) FALSE),
@@ -4160,7 +4160,8 @@ check("REL-41", "R-29: Visualize describes the arithmetic mean as arithmetic and
     v <- paste(readLines("R/mod_path_viz.R", warn = FALSE), collapse = "\n")
     grepl("Error bars: arithmetic mean \\u00b1 SD, all observations included", v, fixed = TRUE) &&
       grepl('". Error bars represent \\u00b1 1 SD."', v, fixed = TRUE) &&
-      grepl('if (!identical(input$summary_stat %||% "geomean", "geomean")) return(NULL)', v, fixed = TRUE) &&
+      grepl('geo <- identical(input$summary_stat %||% "geomean", "geomean")', v, fixed = TRUE) &&
+      grepl("if (geo && n > 0)", v, fixed = TRUE) &&
       !grepl("1e-10", v, fixed = TRUE) && grepl("summ$.lo[low] <- summ$.center[low]", v, fixed = TRUE)
   }, error = function(e) FALSE),
   "URS-VIZ-03", critical = FALSE, method = "Visualize module text and summary code; checked in the running app with the arithmetic mean",
@@ -5803,6 +5804,167 @@ check("ADV-12", "Scaled-method planning gives the same sample size and power wha
   expected = "Identical results; all 9 simulation calls pass setseed = TRUE")
 
 end_section("ADV")
+
+# =============================================================================
+# SECTION DSR: Adversarial review of data processing and statistics
+# =============================================================================
+# One test per finding (D-1..D-8), each built from the failing case.
+start_section("DSR")
+
+dsr_st <- function(...) { s <- list(admin_route = "extravascular", dose = 100, dose_unit = "mg", time_unit = "h",
+  conc_unit = "ng/mL", trap_method = "log", r2adj_threshold = 0.7, infusion_duration = 0, mw = 0,
+  is_steady_state = FALSE, tau = NA, partial_aucs = NULL); m <- list(...); s[names(m)] <- m; s }
+dsr_quiet <- function(expr) { w <- character(0)
+  v <- withCallingHandlers(expr, warning = function(x) { w <<- c(w, conditionMessage(x)); invokeRestart("muffleWarning") })
+  list(value = v, warnings = w) }
+dsr_cm <- list(subject = "Subject", time = "Time", conc = "Concentration", treatment = "Treatment",
+               period = "Period", sequence = "Sequence")
+
+check("DSR-01", "D-1: in a decimal-comma file a point value with three decimals is refused, not read as thousands",
+  tryCatch({
+    x <- c("0.250", "0.000", "12.500", "1.234,5", "0,5")
+    f <- tempfile(fileext = ".csv")
+    writeLines(c("Subject;Time;Conc", "1;0.000;0.000", "1;0.500;3.100", "1;1.000;12.500", "1;2.000;8.250",
+                 "1;4.000;4.125", "1;8.000;1.010"), f)
+    qc <- run_data_quality_check(read_pk_file(f, list(sep = ";", dec = ",")),
+                                 list(subject = "Subject", time = "Time", conc = "Conc"), lloq = 0, dec = ",")
+    n <- normalise_decimal_comma(x, ",")
+    is.na(n[1]) && is.na(n[2]) && n[3] == "12500" && n[4] == "1234.5" && n[5] == "0.5" &&
+      !qc$pass && any(qc$findings$Category == "Decimal mark" & qc$findings$Severity == "ERROR")
+  }, error = function(e) FALSE),
+  "URS-DAT-01", critical = TRUE,
+  method = "normalise_decimal_comma() on 0.250, 0.000, 12.500, 1.234,5 and 0,5; a point-decimal file with three decimals read with a decimal comma",
+  expected = "0.250 and 0.000 refused (were 250 and 0); 12.500 = 12500 and 1.234,5 = 1234.5 as before; the file gets a decimal-mark ERROR (was read x1000 with no error)")
+
+check("DSR-02", "D-2: a period with one measurable concentration keeps its Cmax and AUC and stays in the bioequivalence comparison",
+  tryCatch({
+    xo <- read.csv("data/example_be_crossover.csv", stringsAsFactors = FALSE)
+    xo$Concentration <- as.character(xo$Concentration)
+    i <- xo$Subject == 1 & xo$Treatment == "Test"
+    cc <- rep("BLQ", sum(i)); cc[which(xo$Time[i] == sort(unique(xo$Time[i]))[3])] <- "2.0"
+    xo$Concentration[i] <- cc
+    d <- prepare_pk_dataset(xo, dsr_cm, list(lloq = 0.5, blq_rule = "rule1"))$data
+    r <- dsr_quiet(run_nca(d, dsr_cm, dsr_st()))$value
+    bd <- build_be_data(r, d, dsr_cm, reference = "Reference")
+    f <- fit_be_parameter(bd$data, "CMAX", "2x2x2", trt_col = "Treatment", subj_col = "Subject",
+                          per_col = "Period", seq_col = "Sequence")
+    none <- data.frame(Subject = 1, Time = c(0, 1, 2), Concentration = c(0, 0, 0))
+    nr <- dsr_quiet(run_nca(none, list(subject = "Subject", time = "Time", conc = "Concentration"), dsr_st()))
+    row <- r[r$Subject == "1" & r$Treatment == "Test", ]
+    nrow(r) == 12 && row$CMAX == 2 && is.finite(row$AUCLST) && is.na(row$LAMZHL) &&
+      f$row$N_Test == 6 && f$row$Bioequivalent == "NO" &&
+      is.null(nr$value) && any(grepl("without a measurable concentration", nr$warnings))
+  }, error = function(e) FALSE),
+  "URS-NCA-06, URS-BE-11", critical = TRUE,
+  method = "example_be_crossover.csv with subject 1's Test period BLQ except one sample of 2.0 (LLOQ 0.5, Rule 1); a profile of zeros",
+  expected = "12 NCA rows; that period has Cmax 2 and AUClast, no half-life; Cmax comparison with 6 subjects gives NO (was: period dropped, 5 subjects, YES); the all-zero profile is still excluded")
+
+check("DSR-03", "D-2: a partial AUC that is missing because the interval passes a profile's last measurable concentration gives no verdict",
+  tryCatch({
+    xo <- read.csv("data/example_be_crossover.csv", stringsAsFactors = FALSE)
+    xo$Concentration <- as.character(xo$Concentration)
+    i <- xo$Subject == 2 & xo$Treatment == "Test"
+    v <- as.numeric(xo$Concentration[i]) * 0.25; v[xo$Time[i] >= 6] <- NA
+    xo$Concentration[i] <- ifelse(is.na(v), "BLQ", format(v))
+    d <- prepare_pk_dataset(xo, dsr_cm, list(lloq = 0.5, blq_rule = "rule1"))$data
+    r <- dsr_quiet(run_nca(d, dsr_cm, dsr_st(partial_aucs = data.frame(start = 0, end = "8", cmax = TRUE, role = "pivotal"))))$value
+    bd <- build_be_data(r, d, dsr_cm, reference = "Reference")
+    fit <- function(p) fit_be_parameter(bd$data, p, "2x2x2", trt_col = "Treatment", subj_col = "Subject",
+                                        per_col = "Period", seq_col = "Sequence")
+    fa <- fit("AUC_0_8"); fc <- fit("CMAX_0_8"); fl <- fit("AUCLST")
+    is.null(fa$estimate) && grepl("reaches past the last measurable concentration", fa$row$Bioequivalent) &&
+      grepl("2 period 2", fa$row$Bioequivalent) && is.null(fc$estimate) && fl$row$Bioequivalent %in% c("YES", "NO")
+  }, error = function(e) FALSE),
+  "URS-BE-10", critical = TRUE,
+  method = "example_be_crossover.csv with subject 2's Test period at 25% and BLQ from 6 h; pivotal AUC 0-8 with Cmax; AUClast",
+  expected = "AUC 0-8 and Cmax 0-8: no estimate, the reason names the profile (was: subject dropped, YES); AUClast keeps its verdict")
+
+check("DSR-04", "D-3: negative (pre-dose) times stop the analysis, as in the ADNCA upload",
+  tryCatch({
+    d <- data.frame(Subject = 1, Time = c(-0.5, 0.5, 1, 2, 4, 8, 12), Conc = c(0, 5, 10, 8, 4, 2, 1))
+    qc <- run_data_quality_check(d, list(subject = "Subject", time = "Time", conc = "Conc"), lloq = 0)
+    !qc$pass && any(qc$findings$Severity == "ERROR" & grepl("negative time", qc$findings$Message))
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE,
+  method = "A profile with a pre-dose sample at -0.5 h",
+  expected = "ERROR, processing blocked (was a WARNING: AUClast +2.8% and a lag time of -0.5 h)")
+
+check("DSR-05", "D-4: several analytes in one concentration column are refused even when their sampling times differ",
+  tryCatch({
+    par <- data.frame(Subject = rep(1:3, each = 7), Analyte = "PARENT", Time = rep(c(0, 0.5, 1, 2, 4, 8, 12), 3),
+                      Conc = rep(c(0, 20, 40, 30, 15, 6, 2), 3))
+    met <- data.frame(Subject = rep(1:3, each = 6), Analyte = "METAB", Time = rep(c(0.75, 1.5, 3, 6, 10, 24), 3),
+                      Conc = rep(c(2, 5, 6, 4, 2, 0.5), 3))
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc")
+    qc <- run_data_quality_check(rbind(par, met), cm, lloq = 0)
+    ok <- run_data_quality_check(par, cm, lloq = 0)
+    !qc$pass && any(qc$findings$Severity == "ERROR" & grepl("Analyte", qc$findings$Message)) && ok$pass
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE,
+  method = "Parent and metabolite stacked, sampled at different times, with an unmapped Analyte column; the parent alone",
+  expected = "ERROR naming the Analyte column (was: no finding, one mixed profile with AUClast 117.5 instead of 158); the parent alone passes")
+
+check("DSR-06", "D-5: the mean profile leaves out time points that are mostly zero or BLQ, and says when times differ between profiles",
+  tryCatch({
+    d <- data.frame(.time = rep(c(1, 24), each = 12), .conc = c(rep(10, 12), rep(0, 10), 0.6, 0.8),
+                    .profile = factor(rep(1:12, 2)))
+    s <- viz_summary_stats(d, "geomean"); a <- viz_summary_stats(d, "arithmean")
+    jit <- data.frame(.time = c(1.02, 0.98, 1.05, 2.01, 1.97, 2.1), .conc = 1:6, .profile = factor(rep(1:3, 2)))
+    s$.hidden[s$.time == 24] && is.na(s$.center[s$.time == 24]) && !s$.hidden[s$.time == 1] &&
+      abs(a$.center[a$.time == 24] - 1.4 / 12) < 1e-12 &&
+      !is.null(viz_exact_time_note(jit)) && is.null(viz_exact_time_note(d)) &&
+      grepl("n() / 2", generate_viz_script(list(plot_type = "summary", summary_statistic = "geomean"),
+                                           list(subject = "S", time = "T", conc = "C")), fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-VIZ-05", critical = FALSE,
+  method = "12 profiles with 10 zeros and 0.6, 0.8 at 24 h; actual times that differ per profile; the Figure Record script",
+  expected = "24 h not plotted as a geometric mean (was 0.69 from 2 values); arithmetic mean includes the zeros; a note for differing times only; the script applies the same rule")
+
+check("DSR-07", "D-6: at steady state AUCtau, Cavg, Cmin and Ctau are dose-normalised, with labels",
+  tryCatch({
+    d <- data.frame(Subject = rep(c("A", "B"), each = 7), Time = rep(c(0, 1, 2, 4, 8, 12, 24), 2),
+                    Conc = c(3, 10, 12, 9, 6, 4, 3, 6, 20, 24, 18, 12, 8, 6), Dose = rep(c(50, 100), each = 7))
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc", dose = "Dose")
+    dv <- dose_by_profile(d, cm)
+    r <- add_dose_normalized(dsr_quiet(run_nca(d, cm, dsr_st(dose = dv, is_steady_state = TRUE, tau = 24)))$value, dv)
+    all(abs(r$AUCTAU_DN * dv[r$Subject] - r$AUCTAU) < 1e-9) && all(abs(r$CAVG_DN * dv[r$Subject] - r$CAVG) < 1e-9) &&
+      all(c("CMIN_SS_DN", "CTAU_SS_DN") %in% names(r)) &&
+      !any(friendly_name(c("AUCTAU_DN", "CAVG_DN", "CMIN_SS_DN", "CTAU_SS_DN")) == c("AUCTAU_DN", "CAVG_DN", "CMIN_SS_DN", "CTAU_SS_DN"))
+  }, error = function(e) FALSE),
+  "URS-NCA-08", critical = FALSE,
+  method = "Two steady-state profiles (tau 24 h) with doses 50 and 100 mg from the Dose column",
+  expected = "AUCTAU_DN and CAVG_DN = value / own dose, CMIN_SS_DN and CTAU_SS_DN present, all labelled (were missing)")
+
+check("DSR-08", "D-7: a byte-order mark does not become part of the first column name",
+  tryCatch({
+    f <- tempfile(fileext = ".csv")
+    writeBin(c(as.raw(c(0xEF, 0xBB, 0xBF)), charToRaw("Subject,Time,Conc\n1,0,0\n1,1,10\n1,2,8\n")), f)
+    g <- tempfile(fileext = ".csv"); writeLines(c("X...Subject,Time", "1,0"), g)
+    nm <- names(read_pk_file(f)); a <- auto_detect_columns(nm)
+    identical(nm, c("Subject", "Time", "Conc")) && identical(a$subject, "Subject") &&
+      identical(strip_bom_name(c("X...Subject", "Time"), f), c("Subject", "Time")) &&
+      identical(strip_bom_name(c("X...Subject", "Time"), g), c("X...Subject", "Time")) &&
+      names(adnca_read(f))[1] == "SUBJECT"
+  }, error = function(e) FALSE),
+  "URS-DAT-01, URS-DAT-02", critical = FALSE,
+  method = paste0("A CSV that starts with the UTF-8 byte-order mark (Excel's CSV UTF-8), read in this run's locale (",
+                  Sys.getlocale("LC_CTYPE"), "); strip_bom_name() on the C-locale form X...Subject, with and without a mark"),
+  expected = "First column Subject and recognised (was X...Subject in a C locale); a column really named X...Subject is kept")
+
+check("DSR-09", "D-8: the ADNCA import and a flat upload use the same rule for a profile that starts late",
+  tryCatch({
+    mk <- function(start) data.frame(USUBJID = "S1", AVAL = c(5, 8, 6, 3, 1), NRRLT = start + c(0, 1, 2, 4, 6))
+    conv <- function(d) tryCatch({ adnca_convert(d, time = "NRRLT"); "converted" }, error = function(e) "refused")
+    il <- function(start) nrow(interlock_profile_start(data.frame(S = "S1", T = start + c(0, 1, 2, 4, 6)),
+                                                       list(subject = "S", time = "T")))
+    conv(mk(2)) == "converted" && il(2) == 0 && conv(mk(4)) == "refused" && il(4) == 1 &&
+      nrow(adnca_convert(mk(0), time = "NRRLT")$flat) == 5
+  }, error = function(e) FALSE),
+  "URS-DAT-01, URS-DAT-03", critical = FALSE,
+  method = "A profile sampled over 6 h starting at 2 h (33% of the span) and at 4 h (67%), through adnca_convert() and the flat-file interlock; a dataset without APERIOD",
+  expected = "Start at 2 h accepted by both (ADNCA refused it at 20%); start at 4 h refused by both; a dataset without APERIOD converts (stopped with 'argument lengths differ')")
+
+end_section("DSR")
 
 # =============================================================================
 # Post-execution

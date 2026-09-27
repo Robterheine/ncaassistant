@@ -467,13 +467,21 @@ path_viz_server <- function(id, shared) {
     output$blq_note_geomean <- renderUI({
       req(shared$data_ready)
       if (!input$plot_type %in% c("summary", "both")) return(NULL)
+      geo <- identical(input$summary_stat %||% "geomean", "geomean")
+      d <- tryCatch(plot_data(), error = function(e) NULL)
+      summ <- if (is.null(d)) NULL else tryCatch(viz_summary_stats(d, if (geo) "geomean" else "arithmean"),
+                                                 error = function(e) NULL)
       n <- blq_n_summary()
-      if (n == 0) return(NULL)
-      # Only the geometric mean leaves them out; the arithmetic mean includes them
-      if (!identical(input$summary_stat %||% "geomean", "geomean")) return(NULL)
-      tags$div(class = "alert alert-info py-2 small mb-2",
-               icon("triangle-exclamation", class = "me-1"),
-               n, " observation(s) with concentration \u2264 0 excluded from the geometric mean.")
+      n_hidden <- if (is.null(summ) || !geo) 0 else sum(summ$.hidden)
+      time_note <- if (is.null(d)) NULL else viz_exact_time_note(d)
+      note <- function(...) tags$div(class = "alert alert-info py-2 small mb-2",
+                                     icon("triangle-exclamation", class = "me-1"), ...)
+      tagList(
+        # Only the geometric mean leaves them out; the arithmetic mean includes them
+        if (geo && n > 0) note(n, " observation(s) with concentration \u2264 0 excluded from the geometric mean."),
+        if (n_hidden > 0) note(n_hidden, " time point(s) not plotted: more than half of the concentrations there ",
+                               "are \u2264 0, so a geometric mean of the rest would overstate the typical value."),
+        if (!is.null(time_note)) note(time_note))
     })
 
     output$arithmean_warning <- renderUI({
@@ -531,7 +539,7 @@ path_viz_server <- function(id, shared) {
       else ""
 
       stat_desc <- if (stat == "geomean")
-        paste0("geometric mean \u00d7/\u00f7 geometric SD (n\u2009=\u2009", n_subj, " subjects; at each time point only positive concentrations are included)")
+        paste0("geometric mean \u00d7/\u00f7 geometric SD (n\u2009=\u2009", n_subj, " subjects; at each time point only positive concentrations are included, and a time point where more than half are \u2264 0 is not shown)")
       else
         paste0("arithmetic mean \u00b1 SD (n\u2009=\u2009", n_subj, ")")
 
@@ -597,51 +605,8 @@ path_viz_server <- function(id, shared) {
       )
     })
 
-    # ---- Summary computation -----------------------------------------------
-    compute_summary_df <- function(d, stat_type) {
-      has_treatment <- ".treatment" %in% names(d)
-      group_vars    <- if (has_treatment) c(".time", ".treatment") else ".time"
-      grp_combos    <- unique(d[, group_vars, drop = FALSE])
-      out_list      <- vector("list", nrow(grp_combos))
-
-      for (i in seq_len(nrow(grp_combos))) {
-        mask <- rep(TRUE, nrow(d))
-        for (gv in group_vars)
-          mask <- mask & (d[[gv]] == grp_combos[[gv]][i])
-        vals <- d$.conc[mask]
-
-        if (stat_type == "geomean") {
-          pos <- vals[!is.na(vals) & vals > 0]
-          if (length(pos) >= 2) {
-            log_v <- log(pos)
-            gm    <- exp(mean(log_v))
-            gsd   <- exp(sd(log_v))      # multiplicative geometric SD
-            lo    <- gm / gsd
-            hi    <- gm * gsd
-          } else if (length(pos) == 1) {
-            gm <- pos[1]; lo <- NA_real_; hi <- NA_real_
-          } else {
-            gm <- NA_real_; lo <- NA_real_; hi <- NA_real_
-          }
-          row <- data.frame(.time = grp_combos$.time[i],
-                            .center = gm, .lo = lo, .hi = hi,
-                            stringsAsFactors = FALSE)
-        } else {
-          pos <- vals[!is.na(vals)]
-          am  <- if (length(pos) > 0) mean(pos) else NA_real_
-          s   <- if (length(pos) > 1) sd(pos)   else NA_real_
-          lo_raw <- if (!is.na(am) && !is.na(s)) am - s else NA_real_
-          row <- data.frame(.time = grp_combos$.time[i],
-                            .center = am,
-                            .lo     = lo_raw,
-                            .hi     = if (!is.na(am) && !is.na(s)) am + s else NA_real_,
-                            stringsAsFactors = FALSE)
-        }
-        if (has_treatment) row$.treatment <- grp_combos$.treatment[i]
-        out_list[[i]] <- row
-      }
-      do.call(rbind, out_list)
-    }
+    # ---- Summary computation (viz_summary_stats() in R/utils.R) ------------
+    compute_summary_df <- function(d, stat_type) viz_summary_stats(d, stat_type)
 
     # ---- Build ggplot2: spaghetti ------------------------------------------
     build_spaghetti_gg <- reactive({

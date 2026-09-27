@@ -495,7 +495,7 @@ path_multi_nca_server <- function(id, shared) {
           paste(msgs[excluded], collapse = " | "),
           tags$br(),
           tags$span(class = "text-muted",
-                    "These profiles had fewer than 2 positive concentration values (no meaningful NCA output possible). ",
+                    "These profiles had no measurable concentration (no meaningful NCA output possible). ",
                     "Check the raw data for these subjects/treatments.")),
         if (any(!excluded)) tags$div(
           class = "alert alert-warning py-2 small mb-2",
@@ -653,7 +653,7 @@ path_multi_nca_server <- function(id, shared) {
       } else {
         key <- intersect(c("CMAX","TMAX","AUCLST","AUCIFO","LAMZHL","LAMZ","CLFO","VZFO","CLO","VZO"), names(r))
       }
-      key <- c(key, intersect(c("CMAX_DN", "AUCLST_DN", "AUCIFO_DN"), names(r)), partial_auc_cols(names(r)))
+      key <- c(key, intersect(c("CMAX_DN", "AUCLST_DN", "AUCIFO_DN", "AUCTAU_DN", "CAVG_DN"), names(r)), partial_auc_cols(names(r)))
       if (length(key) == 0) return(NULL)
       group <- if ("Treatment" %in% names(r)) "Treatment" else NULL
       summ <- summarize_pk_params(r, key, group_col = group)
