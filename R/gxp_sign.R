@@ -545,7 +545,7 @@ gxp_users_overview <- function(store, tr) {
   status <- vapply(cr$user, function(u) {
     e <- cr$expire[cr$user == u]
     if (length(e) == 1 && !is.na(e) && nzchar(e) && as.Date(e) < Sys.Date()) "deactivated"
-    else if (gxp_is_locked(u, store)) "locked" else "active"
+    else if (gxp_is_locked(u, store, tr)) "locked" else "active"
   }, "")
   when <- function(u, ev) { x <- tr$time_utc[tr$object %in% u & tr$event == ev]; if (length(x)) substr(x[length(x)], 1, 16) else "" }
   history <- vapply(cr$user, function(u) {

@@ -4870,14 +4870,15 @@ check("GXP-16", "New and reset accounts start with admin and must change it; a d
       tryCatch({
         ck <- shinymanager::check_credentials(file.path(gxp_mu_dir, "ctl", "users.sqlite"), passphrase = "validation-key")
         st <- gxp_env$gxp_store_read(file.path(gxp_mu_dir, "ctl", "users.sqlite"), "validation-key")
-        pm <- st$pwd_mngt
+        pm <- st$pwd_mngt; tr <- gxp_mu_trail()
         isTRUE(ck("ana", "admin")$result) && isTRUE(ck("rev", "admin")$result) &&
-          all(pm$must_change[pm$user %in% c("ana", "rev")] == "TRUE") &&
+          gxp_env$gxp_must_change("ana", st, tr) && gxp_env$gxp_must_change("rev", st, tr) &&
+          all(pm$must_change == "FALSE") &&
           isFALSE(ck("insp", "admin")$result) && isTRUE(ck("insp", "admin")$expired) &&
           all(st$credentials$is_hashed_password)
       }, error = function(e) FALSE),
       "URS-GXP-03,URS-GXP-04", method = "shinymanager::check_credentials() on the store built by the script (sign-in and signing use it)",
-      expected = "ana and rev accepted with must_change; insp refused as expired; passwords stored hashed")
+      expected = "ana and rev accepted, with a password change due (from the trail); shinymanager's own flag FALSE for all; insp refused as expired; passwords stored hashed")
 
 check("GXP-17", "archive: a read-only folder whose manifest checks out, verified in a fresh R session from the archived release",
       tryCatch({
@@ -4980,32 +4981,34 @@ check("GXP-22", "Roles are read from the signed-in user, per session",
       "URS-GXP-10,URS-GXP-17", method = "has_role() for analyst, analyst;reviewer, inspector and a session without a user",
       expected = "roles as held; no role without a user")
 
-check("GXP-23", "Sign-in attempts are logged (ok, failed, locked) and a lockout raises a security alert",
+check("GXP-23", "Sign-in attempts are logged (ok, failed, locked); the fifth failure locks the account from the trail, with an alert; shinymanager is never left to count",
       tryCatch({
         d <- gxp_ctl("login"); ck <- gxp_env$audited_check()
-        ok <- isTRUE(ck("u1", "Valid2026pass")$result); bad <- isFALSE(ck("u1", "Wrong2026pass")$result)
+        ok <- isTRUE(ck("u1", "Valid2026pass")$result)
+        fails <- lapply(1:5, function(k) ck("u1", paste0("Wrong2026pass", k)))
         ck("nobody", "Wrong2026pass")
-        gxp_env$gxp_store_update(function(st) { st$pwd_mngt$n_wrong_pwd[st$pwd_mngt$user == "u1"] <- 4; st })
-        ck("u1", "Wrong2026pass")                       # the fifth failure locks the account
-        gxp_env$gxp_store_update(function(st) { st$pwd_mngt$n_wrong_pwd[st$pwd_mngt$user == "u1"] <- 5; st })
-        ck("u1", "Valid2026pass")                       # right password, locked account
-        ck("u1", "Wrong2026pass")                       # wrong password, locked account
+        right_locked <- ck("u1", "Valid2026pass")            # right password, locked account
+        wrong_locked <- ck("u1", "Wrong2026pass")            # wrong password, locked account
+        pm <- gxp_env$gxp_store_read()$pwd_mngt
         tr <- gxp_env$audit_read(file.path(d, "audit.sqlite")); gxp_unset()
-        ev <- tr$event[-1]
-        ok && bad && identical(ev[1:3], c("login_ok", "login_failed", "login_failed")) &&
+        ev <- tr$event[-1]; al <- tr$details[tr$event == "security_alert"]
+        ok && identical(ev[1:6], c("login_ok", rep("login_failed", 5))) &&
           tr$role[tr$object %in% "nobody"][1] == "unknown user" &&
-          sum(ev == "login_locked") == 2 && sum(ev == "security_alert") == 3 &&
-          all(grepl("account_locked|login_locked", tr$details[tr$event == "security_alert"]))
+          all(vapply(fails, function(f) isFALSE(f$result) && is.null(f$user_info), logical(1))) &&
+          isFALSE(right_locked$result) && isFALSE(right_locked$authorized) && !is.null(right_locked$user_info) &&
+          isFALSE(wrong_locked$authorized) && sum(ev == "login_locked") == 2 &&
+          sum(grepl("account_locked", al)) == 1 && sum(grepl("login_locked", al)) == 2 &&
+          all(pm$n_wrong_pwd == 0)
       }, error = function(e) { gxp_unset(); FALSE }),
-      "URS-GXP-03,URS-GXP-05,URS-GXP-16", method = "audited_check() with a right, a wrong and an unknown login; at the fifth failure; on a locked account with the right and a wrong password",
-      expected = "login_ok, login_failed x2, login_locked x2; three security alerts")
+      "URS-GXP-03,URS-GXP-05,URS-GXP-16", method = "audited_check(): a right login, five wrong ones, an unknown ID, then the right and a wrong password on the locked account",
+      expected = "login_ok, login_failed x5, login_locked x2; an account_locked alert at the fifth failure and two login_locked alerts; failures returned without user_info and locked attempts as not authorized, so shinymanager writes no counter")
 
 skip_manual("MAN-GXP-02", "Nothing runs before sign-in",
-            "On the login page and on the forced password-change page, run Shiny.setInputValue('nav_path','be') in the browser console",
-            "The page does not change; the audit trail shows no analysis or navigation entries for that session", "URS-GXP-02")
+            "On the login page, and while the Choose your own password dialog of a first sign-in is open, run Shiny.setInputValue('nav_path','be') and Shiny.setInputValue('gxp_rec_approve', 1) in the browser console",
+            "Nothing changes behind the dialog; the audit trail shows no analysis, navigation or signing entries for that session", "URS-GXP-02")
 skip_manual("MAN-GXP-03", "First sign-in with the starting password",
-            "Create an account with manage_users.R add; sign in with admin; try admin and a short password as the new password; then a valid one; sign in again",
-            "The change screen states the 12-character rule; admin and the short password are refused; the valid one is accepted; the trail shows password_changed (first login or expiry)",
+            "Create an account with manage_users.R add; sign in with admin; in the dialog try admin and a short password as the new password; then a valid one. Repeat after manage_users.R reset",
+            "The Choose your own password dialog opens at once and cannot be closed (only Sign out); it states the 12-character rule; admin and the short password are refused; after the valid one the app opens; the trail shows password_changed (first sign-in, reset or expiry)",
             "URS-GXP-03")
 skip_manual("MAN-GXP-04", "Header, hub line and About page in controlled mode",
             "Sign in as an analyst and as a reviewer",
@@ -5111,6 +5114,9 @@ gxp_team <- function(name) {
         date_change = as.character(Sys.Date()), n_wrong_pwd = 0, stringsAsFactors = FALSE)[, names(st$pwd_mngt)])
       st }
     add(add(add(st, "ana", "analyst"), "rev", "analyst;reviewer"), "insp", "inspector") })
+  # Their own passwords are in place: no change is due (the app reads that from the trail)
+  for (u in c("ana", "rev", "insp")) gxp_env$audit_append("password_changed", object = u, user = u, role = "setup",
+                                                         details = list(via = "validation setup"))
   d
 }
 gxp_mock <- function(u, roles, tok) { s <- gxp_session(roles, u); s$token <- tok; s$userData$gxp$name <- toupper(u)
@@ -5329,15 +5335,27 @@ check("GXP-36", "Change password: refused without the right current password, wh
       "URS-GXP-03", method = "testServer around gxp_password_submit(): five refusals, then a valid change",
       expected = "each refusal with its message; afterwards the old password fails, the new works, the expiry is reset, password_changed (user menu)")
 
-check("GXP-37", "The forced change at first login is logged at the next login",
+check("GXP-37", "A required password change is made in the app's own dialog, under the store lock, and logged; afterwards no change is due",
       tryCatch({
-        gxp_team("forced"); s <- gxp_mock("ana", "analyst", "ffffffff01")
-        gxp_env$audit_append("user_added", object = "ana", details = list(), user = "own", role = "system owner")
-        gxp_env$gxp_detect_forced_change(s); tr <- gxp_env$audit_read(); gxp_unset()
-        any(tr$event == "password_changed" & grepl("first login or expiry", tr$details))
+        gxp_team("forced")
+        gxp_env$audit_append("password_reset", object = "ana", details = list(), user = "own", role = "system owner")
+        due_before <- gxp_env$gxp_must_change("ana"); started <- FALSE
+        srv <- function(input, output, session) {
+          session$userData$gxp <- list(user = "ana", name = "ANA", roles = "analyst"); session$userData$gxp_failures <- 0L
+          session$userData$gxp_forced <- TRUE
+          session$userData$gxp_start_app <- function() started <<- TRUE
+          observeEvent(input$go, gxp_env$gxp_password_submit(input, session)) }
+        testServer(srv, session$setInputs(gxp_pwd_current = "Valid2026pass", gxp_pwd_new = "Better2026pass",
+                                          gxp_pwd_repeat = "Better2026pass", go = 1))
+        tr <- gxp_env$audit_read(); due_after <- gxp_env$gxp_must_change("ana")
+        ck <- shinymanager::check_credentials(gxp_env$gxp_config()$users, passphrase = "validation-key"); gxp_unset()
+        src <- paste(deparse(body(gxp_env$gxp_server)), collapse = " ")
+        due_before && !due_after && started && isTRUE(ck("ana", "Better2026pass")$result) &&
+          any(tr$event == "password_changed" & grepl("first sign-in, reset or expiry", tr$details)) &&
+          regexpr("gxp_must_change(auth$user)", src, fixed = TRUE) < regexpr("start_app()", src, fixed = TRUE)
       }, error = function(e) { gxp_unset(); FALSE }),
-      "URS-GXP-03", method = "user_added in the trail, have_changed = TRUE in the store; gxp_detect_forced_change()",
-      expected = "password_changed (first login or expiry)")
+      "URS-GXP-03", method = "password_reset in the trail; gxp_password_submit() in a session marked for a required change; gxp_server checks gxp_must_change() before starting the app",
+      expected = "a change is due before and not after; the new password works; password_changed (first sign-in, reset or expiry); the app then starts in the same session")
 
 skip_manual("MAN-GXP-11", "Records page and signing dialog",
             "As a reviewer: open Records; select a record awaiting review; check the details and the data history; Approve with a wrong, then the right password; Reject another without and with a reason",
@@ -5395,39 +5413,44 @@ check("GXP-40", "The record's data_integrity.txt says which mode it was made in;
       "URS-GXP-09,URS-EXP-06", method = "write_integrity_manifest() in open and in controlled mode",
       expected = "open: the existing sentence; controlled: stored on the server, audit trail of the organisation")
 
-check("GXP-41", "The app starts only after the required password change, checked on the server and not taken from the browser",
+check("GXP-41", "Whether a password change is due comes from the trail: new account, reset, expiry, a change that was not saved",
       tryCatch({
-        gxp_team("gate")
-        setpm <- function(mc, days) gxp_env$gxp_store_update(function(st) { i <- st$pwd_mngt$user == "ana"
-          st$pwd_mngt$must_change[i] <- mc; st$pwd_mngt$date_change[i] <- as.character(Sys.Date() - days); st })
-        setpm("TRUE", 0); a_new <- gxp_env$gxp_app_allowed("ana")
-        setpm("FALSE", 91); a_old <- gxp_env$gxp_app_allowed("ana")
-        setpm("FALSE", 89); a_ok <- gxp_env$gxp_app_allowed("ana")
-        a_unknown <- gxp_env$gxp_app_allowed("nobody")
-        tr <- gxp_env$audit_read(); al <- tr[tr$event == "security_alert", ]
-        src <- paste(deparse(body(gxp_env$gxp_server)), collapse = " "); gxp_unset()
-        !a_new && !a_old && a_ok && !a_unknown && sum(grepl("forced_change_skipped", al$details)) == 3 &&
-          regexpr("gxp_app_allowed", src) < regexpr("started <<- TRUE", src, fixed = TRUE)
-      }, error = function(e) { gxp_unset(); FALSE }),
-      "URS-GXP-02,URS-GXP-03,URS-GXP-16", method = "gxp_app_allowed() with a password change pending, a 91-day-old password, an 89-day-old one and an unknown user; gxp_server calls it before starting the app",
-      expected = "only the 89-day-old password starts the app; three security alerts; the check comes before the start")
+        gxp_team("gate"); real <- gxp_env$gxp_utc_now
+        a <- function(ev, days = 0, details = list()) {
+          assign("gxp_utc_now", function() format(Sys.time() - days * 86400, "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC"), envir = gxp_env)
+          gxp_env$audit_append(ev, object = "ana", details = details, user = "ana", role = "analyst")
+          assign("gxp_utc_now", real, envir = gxp_env) }
+        due <- function() gxp_env$gxp_must_change("ana")
+        r <- c(ok_setup = !due())
+        a("password_reset");                   r["reset"] <- due()
+        a("password_changed", days = 91);      r["old"] <- due()
+        a("password_changed", days = 89);      r["recent"] <- !due()
+        a("password_changed"); a("password_change_failed", details = list(why = "not saved; the password is unchanged"))
+        r["unsaved"] <- !due()                 # the earlier (89-day) change still counts
+        a("password_reset"); a("password_changed"); a("password_change_failed", details = list(why = "not saved; the password is unchanged"))
+        r["unsaved_after_reset"] <- due()
+        r["unknown"] <- gxp_env$gxp_must_change("nobody")
+        gxp_unset(); all(r)
+      }, error = function(e) { assign("gxp_utc_now", real, envir = gxp_env); gxp_unset(); FALSE }),
+      "URS-GXP-02,URS-GXP-03", method = "trail entries for ana: reset, a 91-day-old and an 89-day-old change, a change logged but not saved (with and without a reset before it), and an unknown user",
+      expected = "due after the reset and the 91-day-old change; not due after the 89-day-old one; an unsaved change does not count; due for an unknown user")
 
 check("GXP-42", "Signing is refused while a password change is due and once the reviewer role has been removed",
       tryCatch({
         gxp_team("sign9"); sha <- gxp_rec("ana", "analyst", "aaaaaaaa41", "rec_ana41"); m <- list()
-        upd <- function(f) gxp_env$gxp_store_update(f)
         testServer(gxp_as("rev", "analyst;reviewer"), {
           gxp_pick(session, sha); session$setInputs(gxp_rec_approve = 1)
-          upd(function(st) { st$pwd_mngt$must_change[st$pwd_mngt$user == "rev"] <- "TRUE"; st })
+          gxp_env$audit_append("password_reset", object = "rev", details = list(), user = "own", role = "system owner")
           session$setInputs(gxp_sign_user = "rev", gxp_sign_pwd = "Valid2026pass", gxp_sign_submit = 1); m$change <<- gxp_msg(output)
-          upd(function(st) { st$pwd_mngt$must_change[st$pwd_mngt$user == "rev"] <- "FALSE"; st$credentials$roles[st$credentials$user == "rev"] <- "analyst"; st })
+          gxp_env$audit_append("password_changed", object = "rev", details = list(via = "test"), user = "rev", role = "analyst;reviewer")
+          gxp_env$gxp_store_update(function(st) { st$credentials$roles[st$credentials$user == "rev"] <- "analyst"; st })
           session$setInputs(gxp_sign_submit = 2); m$role <<- gxp_msg(output)
           session$setInputs(gxp_rev_user = "rev", gxp_rev_pwd = "Valid2026pass", gxp_rev_submit = 1); m$trail <<- gxp_msg(output, "gxp_rev_msg") })
         tr <- gxp_env$audit_read(); gxp_unset()
         grepl("Change your password", m$change) && grepl("reviewer role has been removed", m$role) &&
           grepl("reviewer role has been removed", m$trail) && !any(tr$event %in% c("record_signed", "trail_reviewed"))
       }, error = function(e) { gxp_unset(); FALSE }),
-      "URS-GXP-03,URS-GXP-10", method = "testServer(gxp_sign_server) as rev; set must_change, then take the reviewer role away in the store during the session",
+      "URS-GXP-03,URS-GXP-10", method = "testServer(gxp_sign_server) as rev; a password reset in the trail, then a change and the reviewer role taken away in the store during the session",
       expected = "both refused with their messages; no record_signed or trail_reviewed")
 
 check("GXP-43", "A signature binds to the record shown in the dialog, not to a selection changed afterwards",

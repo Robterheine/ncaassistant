@@ -403,20 +403,42 @@ gxp_store_update <- function(fun, path = gxp_config()$users, key = gxp_config()$
   invisible(store)
 }
 
-#' Is the account locked (failed sign-ins at or above the limit)?
-gxp_is_locked <- function(user, store = gxp_store_read()) {
-  pm <- store$pwd_mngt
-  n <- suppressWarnings(as.numeric(pm$n_wrong_pwd[pm$user == user]))
-  length(n) == 1 && !is.na(n) && n >= GXP_PWD_FAILURE_LIMIT
+# Account state is read from the audit trail, which only the app writes, under
+# its lock. shinymanager is never asked to count failures or force a password
+# change: it would rewrite the user store without that lock.
+
+#' Failed sign-ins since the user's last good sign-in, password change, reset or creation
+gxp_failed_since <- function(user, tr) {
+  mine <- tr$event[tr$object %in% user & tr$event %in%
+                     c("login_ok", "login_failed", "password_changed", "password_reset", "user_added")]
+  last_good <- max(c(0L, which(mine != "login_failed")))
+  sum(mine[seq_along(mine) > last_good] == "login_failed")
 }
 
-#' Must the user still change the password (starting password, reset or
-#' expiry)? Read from the store on the server, never from the browser
-gxp_must_change <- function(user, store = gxp_store_read()) {
-  pm <- store$pwd_mngt[store$pwd_mngt$user == user, ]
-  if (nrow(pm) != 1) return(TRUE)
-  if (!identical(pm$must_change, "FALSE")) return(TRUE)
-  d <- tryCatch(as.Date(pm$date_change), error = function(e) NA)
+#' Is the account locked (failed sign-ins at or above the limit)?
+gxp_is_locked <- function(user, store = gxp_store_read(), tr = tryCatch(audit_read(), error = function(e) NULL)) {
+  pm <- store$pwd_mngt
+  n <- suppressWarnings(as.numeric(pm$n_wrong_pwd[pm$user == user]))
+  (length(n) == 1 && !is.na(n) && n >= GXP_PWD_FAILURE_LIMIT) ||
+    (!is.null(tr) && gxp_failed_since(user, tr) >= GXP_PWD_FAILURE_LIMIT)
+}
+
+#' Must the user change the password before anything else: a new account, a
+#' reset, or a password older than the validity? Unknown means yes.
+gxp_must_change <- function(user, store = gxp_store_read(), tr = tryCatch(audit_read(), error = function(e) NULL)) {
+  if (is.null(tr) || is.null(store) || !user %in% store$credentials$user) return(TRUE)
+  ev <- tr[tr$object %in% user & (tr$event %in% c("user_added", "password_reset", "password_changed") |
+                                  (tr$event == "password_change_failed" & grepl("not saved", tr$details))), ]
+  # A change logged but not saved does not count
+  keep <- rep(TRUE, nrow(ev))
+  for (i in which(ev$event == "password_change_failed")) {
+    keep[i] <- FALSE
+    j <- max(c(0L, which(keep[seq_len(i - 1)] & ev$event[seq_len(i - 1)] == "password_changed")))
+    if (j > 0) keep[j] <- FALSE
+  }
+  ev <- ev[keep, ]
+  if (nrow(ev) == 0 || ev$event[nrow(ev)] != "password_changed") return(TRUE)
+  d <- as.Date(substr(ev$time_utc[nrow(ev)], 1, 10))
   is.na(d) || as.numeric(Sys.Date() - d) > GXP_PWD_VALIDITY_DAYS
 }
 

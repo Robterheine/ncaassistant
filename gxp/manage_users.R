@@ -67,7 +67,9 @@ starting_password <- function(store, id) {
   store$credentials$password[store$credentials$user == id] <- "admin"
   store$credentials$is_hashed_password[store$credentials$user == id] <- FALSE
   j <- store$pwd_mngt$user == id
-  store$pwd_mngt$must_change[j] <- "TRUE"; store$pwd_mngt$have_changed[j] <- "FALSE"
+  # The app asks for the new password itself (the password_reset entry makes it due);
+  # shinymanager's own flag stays FALSE, so that it never rewrites the store
+  store$pwd_mngt$must_change[j] <- "FALSE"; store$pwd_mngt$have_changed[j] <- "FALSE"
   store$pwd_mngt$date_change[j] <- as.character(Sys.Date()); store$pwd_mngt$n_wrong_pwd[j] <- 0
   store
 }
@@ -104,7 +106,7 @@ add = {
       admin = "FALSE", name = name, roles = roles, is_hashed_password = FALSE,
       stringsAsFactors = FALSE)[, names(store$credentials)])
     store$pwd_mngt <- rbind(store$pwd_mngt, data.frame(
-      user = id, must_change = "TRUE", have_changed = "FALSE", date_change = as.character(Sys.Date()),
+      user = id, must_change = "FALSE", have_changed = "FALSE", date_change = as.character(Sys.Date()),
       n_wrong_pwd = 0, stringsAsFactors = FALSE)[, names(store$pwd_mngt)])
     store
   })
@@ -158,8 +160,8 @@ list = {
   if (nrow(cr) == 0) { say("No accounts."); quit(status = 0) }
   for (i in seq_len(nrow(cr))) {
     id <- cr$user[i]
-    status <- if (is_deactivated(store, id)) "deactivated" else if (gxp_is_locked(id, store)) "locked" else
-      if (identical(store$pwd_mngt$must_change[store$pwd_mngt$user == id], "TRUE")) "active (starting password)" else "active"
+    status <- if (is_deactivated(store, id)) "deactivated" else if (gxp_is_locked(id, store, tr)) "locked" else
+      if (gxp_must_change(id, store, tr)) "active (password change due)" else "active"
     hist <- tr[tr$object %in% id & tr$event %in% c("user_added", "role_changed", "user_deactivated", "password_reset"), ]
     say(sprintf("%-16s %-24s %-18s %s", id, cr$name[i], cr$roles[i], status))
     for (k in seq_len(nrow(hist)))

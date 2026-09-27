@@ -27,10 +27,11 @@ has_role <- function(session, role) any(role %in% gxp_roles(session))
 #' The login page, around the app UI
 gxp_secure_ui <- function(ui) {
   cfg <- gxp_config()
-  options(shinymanager.pwd_validity = GXP_PWD_VALIDITY_DAYS,
-          shinymanager.pwd_failure_limit = GXP_PWD_FAILURE_LIMIT)
-  do.call(shinymanager::set_labels, c(list(language = "en"), stats::setNames(list(GXP_PWD_RULE),
-    "Password must contain at least one number, one lowercase, one uppercase and must be at least length 6.")))
+  # No shinymanager.pwd_validity or pwd_failure_limit: expiry, forced changes and
+  # lockout are the app's own (gxp_must_change, gxp_is_locked), from the trail
+  do.call(shinymanager::set_labels, c(list(language = "en"), stats::setNames(
+    list("Your account is locked. Ask the system owner to reset it."),
+    "You are not authorized for this application")))
   shinymanager::secure_app(
     ui, enable_admin = FALSE, fab_position = "none",
     tags_top = tags$div(
@@ -51,24 +52,27 @@ audited_check <- function() {
     # The typed ID goes into the trail and the system log: bounded, no control characters
     user <- substr(gsub("[[:cntrl:]]", " ", .or(user, "")), 1, 64)
     store <- tryCatch(gxp_store_read(), error = function(e) NULL)
-    locked <- !is.null(store) && gxp_is_locked(user, store)
     known <- !is.null(store) && user %in% store$credentials$user
+    locked <- known && gxp_is_locked(user, store)
     # Any attempt on a locked account, with the right password or not, is its own event (and an alert)
     event <- if (locked) "login_locked" else if (isTRUE(res$result)) "login_ok" else "login_failed"
     role <- if (known) store$credentials$roles[store$credentials$user == user] else "unknown user"
     tryCatch(audit_append(event, object = user, user = user, role = role,
                           details = list(expired = isTRUE(res$expired), known_user = known)),
              error = function(e) NULL)
-    if (event == "login_locked") gxp_alert("login_locked", user, session = NULL)
-    if (event == "login_failed" && known) {
-      pm <- store$pwd_mngt
-      n <- suppressWarnings(as.numeric(pm$n_wrong_pwd[pm$user == user]))
-      # shinymanager counts this failure after we return: this one locks the account
-      if (length(n) == 1 && !is.na(n) && n + 1 == GXP_PWD_FAILURE_LIMIT)
-        gxp_alert("account_locked", user, sprintf("after %d failed sign-ins", GXP_PWD_FAILURE_LIMIT), session = NULL)
+    if (event == "login_locked") {
+      gxp_alert("login_locked", user, session = NULL)
+      # shinymanager shows its "not authorized" message (relabelled: locked) and counts nothing
+      return(list(result = FALSE, expired = FALSE, authorized = FALSE, user_info = .or(res$user_info, list(user = user))))
     }
     if (event == "login_failed") {
       tr <- tryCatch(audit_read(), error = function(e) NULL)
+      # The trail holds the count: this failure may be the one that locks the account
+      if (known && !is.null(tr) && gxp_failed_since(user, tr) == GXP_PWD_FAILURE_LIMIT)
+        gxp_alert("account_locked", user, sprintf("after %d failed sign-ins", GXP_PWD_FAILURE_LIMIT), session = NULL)
+      # Without user_info shinymanager treats the attempt as an unknown user: it then
+      # writes only its own log, not a failure counter in the user store
+      if (!isTRUE(res$expired)) res$user_info <- NULL
       if (!is.null(tr)) {
         since <- format(Sys.time() - 3600, "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC")
         n_hour <- sum(tr$event == "login_failed" & tr$object %in% user & tr$time_utc >= since)
@@ -77,34 +81,6 @@ audited_check <- function() {
     }
     res
   }
-}
-
-#' Log a password change made on shinymanager's own screen (first login or
-#' expiry), which has no hook of its own
-gxp_detect_forced_change <- function(session) {
-  u <- gxp_user(session)$user
-  store <- tryCatch(gxp_store_read(), error = function(e) NULL)
-  tr <- tryCatch(audit_read(), error = function(e) NULL)
-  if (is.null(store) || is.null(tr)) return(invisible())
-  pm <- store$pwd_mngt[store$pwd_mngt$user == u, ]
-  if (nrow(pm) != 1 || !identical(pm$have_changed, "TRUE")) return(invisible())
-  pw <- tr[tr$object %in% u & tr$event %in% c("user_added", "password_reset", "password_changed"), ]
-  if (nrow(pw) == 0) return(invisible())
-  last <- pw[nrow(pw), ]
-  changed <- last$event %in% c("user_added", "password_reset") ||
-    as.Date(pm$date_change) > as.Date(substr(last$time_utc, 1, 10))
-  if (changed)
-    gxp_guard("password_changed", object = u, details = list(via = "first login or expiry"), session = session)
-  invisible()
-}
-
-#' May the app start for this user? shinymanager_where comes from the browser,
-#' so check on the server that the required password change has been done
-gxp_app_allowed <- function(user) {
-  st <- tryCatch(gxp_store_read(), error = function(e) NULL)
-  if (!is.null(st) && !gxp_must_change(user, st)) return(TRUE)
-  gxp_alert("forced_change_skipped", user, "app requested before the required password change", session = NULL)
-  FALSE
 }
 
 #' The server: shinymanager first, the real app once the user is in
@@ -118,11 +94,9 @@ gxp_server <- function(server) {
     signing_out <- FALSE
     observe({
       req(!started, auth$user, identical(input$shinymanager_where, "application"))
-      if (!gxp_app_allowed(auth$user)) return()
       started <<- TRUE
       session$userData$gxp <- list(user = auth$user, name = auth$name, roles = auth$roles)
       session$userData$gxp_failures <- 0L
-      gxp_detect_forced_change(session)
       who <- isolate(list(user = auth$user, roles = auth$roles))
       session$onSessionEnded(function() {
         tryCatch(audit_append("session_end", object = who$user, user = who$user, role = who$roles,
@@ -139,13 +113,24 @@ gxp_server <- function(server) {
         session$sendCustomMessage("gxp_logout", TRUE)
         later::later(function() if (!session$isClosed()) session$close(), 5)
       })
-      observeEvent(input$gxp_change_password, gxp_password_dialog(session))
       observeEvent(input$gxp_pwd_submit, gxp_password_submit(input, session))
-      output$gxp_header <- renderUI(gxp_header_ui(session))
-      isolate({
-        gxp_sign_server(input, output, session)
-        server(input, output, session)
-      })
+      start_app <- function() {
+        observeEvent(input$gxp_change_password, gxp_password_dialog(session))
+        output$gxp_header <- renderUI(gxp_header_ui(session))
+        isolate({
+          gxp_sign_server(input, output, session)
+          server(input, output, session)
+        })
+      }
+      # A new account, a reset or an expired password: the password change first,
+      # and nothing of the app until it is done (checked on the server, from the trail)
+      if (gxp_must_change(auth$user)) {
+        session$userData$gxp_forced <- TRUE
+        session$userData$gxp_start_app <- start_app
+        gxp_password_dialog(session, forced = TRUE)
+        return()
+      }
+      start_app()
     })
   }
 }
@@ -192,16 +177,21 @@ gxp_password_field <- function(id, label) {
            tags$input(id = id, type = "password", class = "form-control", autocomplete = "new-password"))
 }
 
-gxp_password_dialog <- function(session) {
+gxp_password_dialog <- function(session, forced = FALSE) {
   shiny::showModal(shiny::modalDialog(
-    title = "Change password",
+    title = if (forced) "Choose your own password" else "Change password",
+    if (forced) tags$p("Before you continue, replace your starting, reset or expired password."),
     gxp_password_field("gxp_pwd_current", "Current password"),
     gxp_password_field("gxp_pwd_new", "New password"),
     gxp_password_field("gxp_pwd_repeat", "Repeat the new password"),
     tags$p(class = "text-muted small", GXP_PWD_RULE),
     uiOutput("gxp_pwd_msg"),
-    footer = tagList(shiny::modalButton("Cancel"),
-                     shiny::actionButton("gxp_pwd_submit", "Change password", class = "btn-primary"))),
+    footer = tagList(
+      if (forced) tags$button(type = "button", class = "btn btn-outline-secondary",
+                              onclick = "Shiny.setInputValue('gxp_sign_out', Date.now(), {priority: 'event'});", "Sign out")
+      else shiny::modalButton("Cancel"),
+      shiny::actionButton("gxp_pwd_submit", "Change password", class = "btn-primary")),
+    easyClose = FALSE),
     session = session)
   session$output$gxp_pwd_msg <- renderUI(NULL)
 }
@@ -234,7 +224,9 @@ gxp_password_submit <- function(input, session) {
   if (!identical(input$gxp_pwd_new, input$gxp_pwd_repeat)) return(msg("The two new passwords are different."))
   if (identical(input$gxp_pwd_new, input$gxp_pwd_current)) return(msg("The new password must be different from the current one."))
   if (!gxp_validate_pwd(input$gxp_pwd_new)) return(msg(GXP_PWD_RULE))
-  if (!gxp_guard("password_changed", object = u, details = list(via = "user menu"), session = session)) return()
+  forced <- isTRUE(session$userData$gxp_forced)
+  if (!gxp_guard("password_changed", object = u, details = list(via = if (forced) "first sign-in, reset or expiry" else "user menu"),
+                 session = session)) return()
   done <- tryCatch({
     gxp_store_update(function(store) {
       i <- store$credentials$user == u
@@ -256,4 +248,10 @@ gxp_password_submit <- function(input, session) {
   }
   shiny::removeModal(session)
   shiny::showNotification("Your password has been changed.", type = "message", session = session)
+  # After a required change the app starts, in this session
+  if (forced && !gxp_must_change(u)) {
+    session$userData$gxp_forced <- FALSE
+    start <- session$userData$gxp_start_app; session$userData$gxp_start_app <- NULL
+    if (is.function(start)) start()
+  }
 }
