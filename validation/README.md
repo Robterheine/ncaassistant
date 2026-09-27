@@ -39,7 +39,7 @@ source("validation/validation.R")
 
 **R.** Version 4.1.0 or newer (checked by IQ-01).
 
-**R packages.** The script installs any that are missing:
+**R packages.** The script installs nothing: when one of these is missing it stops. Install the validated versions first, from the project root, with `renv::restore(lockfile = "validation/renv.lock")` in R or `Rscript install_and_run.R --validated`.
 
 | Package | Used for |
 |---|---|
@@ -72,7 +72,7 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **482 automated tests** in twenty-one sections, each mapped to a URS requirement:
+The script runs **494 automated tests** in twenty-two sections, each mapped to a URS requirement:
 
 | Section | Code | Tests | Tests cover |
 |---------|------|------:|-------------|
@@ -97,6 +97,7 @@ The script runs **482 automated tests** in twenty-one sections, each mapped to a
 | Release review v1.5.0 | REL | 58 | One or more regression tests per finding of the five-reviewer review of v1.5.0 (R-01 to R-50), each built from the failing case: log-down AUC with an embedded zero, IV bolus with a time-0 sample, thousands separators in decimal-comma files, subject IDs per sequence, crossover without Period, settings kept across pages, results cleared on changed settings, widened limits for Cmax only, BLQ values kept out of the half-life, ICH M13A checks, units from the data, reproduction verdict with file integrity, Method B against `replicateBE`, an independent AUC calculation, colour contrast and keyboard access, locale-safe labels, Rule 4 Tlast, and more |
 | Manual review 1.7 | MRV | 10 | App fixes from the review of user manual 1.7, each built from its case: a period without measurable concentrations counted as missing, BLQ-rule values and the lag time, Rule 6 on an all-BLQ profile, the M13A verdict notes and the batch pre-dose check, checks and data-copy notes in the Analysis Record, widened limits for Cmax and partial AUCs, wording, Ctau and steady-state blanks, labels and units of every column, the BLQ example file and the validated installation |
 | Controlled mode | GXP | 47 | The audit trail (hash chain, triggers, tampering, truncation against an anchor and against a filed head in manage_users.R verify, three writers at once, fail-closed, clock warnings), manage_users.R (every command, refusals, archive and verification of an archived copy in a fresh R session, concurrent changes), login and roles (password rule, attempts logged, lockout alert, lockout and required password changes read from the audit trail, the required change made in the app's own dialog before the app starts), the audit hooks in every path, record storage with the data each record was made from, review signatures (every refusal, binding to the SHA-256 of the record shown in the dialog, a password change due or a reviewer role removed during the session, three failures end the session, a password changed during the session), signature sheet, signed bundle and validity, Verify a record file, the Exceptions queries, the users overview and manage_users.R list, the alerts for repeated failures, the signed trail review, role visibility, the password change, and the texts that depend on the mode |
+| Adversarial audit v1.8.0 | ADV | 12 | One or more regression tests per finding of the external adversarial audit that held up on verification, each built from the failing case: names from the data file escaped in record summaries, values set by a BLQ rule kept out of a manual half-life fit, different '<x' limits listed instead of the lowest suggested, record folders removed after an error, a profile without a dose, steady-state fluctuation and swing within 0–τ, password expiry in UTC, a validation run that installs nothing, removal of the sign-in token at sign-out, R and package versions in the reproduction scripts, fonts served by the app, and fixed seeds for scaled-method planning |
 
 In addition, **62 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload (flat and CDISC ADNCA), column mapping, interlock messages, the half-life review and minimum-R² note, choosing the Reference treatment, the replicate variability table, planning with both CVs, CDISC parameter codes, partial AUC intervals in the batch and bioequivalence paths (including an invalid interval, a suppressed metric and the shaded figure), the Complete Analysis Record download and its reproduction check, and the Visualize Figure Record. They are included in the script for traceability but are marked SKIP in automated runs. The 13 MAN-GXP tests cover controlled mode: nothing runs before sign-in, the first sign-in, the header, the inactivity warning, the password change, sign-out, open mode unchanged, every path's audit entries, fail-closed behaviour, the Records page and signing dialog, the inspector account, the Audit trail page and restoring an archive on a clean machine. They need a test server set up as described in the user manual's appendix on controlled installations, not a laptop.
 
@@ -120,8 +121,8 @@ Visualisation tests (URS-VIZ) are classified SUPPORTIVE because graphical output
 A passing run produces:
 
 ```
-Total: 544 (auto: 482, manual: 62)
-  PASS: 482 | FAIL: 0 | ERROR: 0 | SKIP: 62
+Total: 556 (auto: 494, manual: 62)
+  PASS: 494 | FAIL: 0 | ERROR: 0 | SKIP: 62
 
 ALL CRITICAL TESTS PASSED
 
@@ -130,9 +131,9 @@ URS: 89/89 covered (86 by automated tests; manual tests only: URS-BE-06, URS-BE-
 Results: validation/validation_results.csv
 ```
 
-Of the 482 automated tests, 353 are CRITICAL and 129 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
+Of the 494 automated tests, 361 are CRITICAL and 133 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
 
-IQ-REL-01 and IQ-REL-02 pass only on an unchanged release: after any edit to a file listed in the manifest, IQ-REL-01 fails until `make_release_files.R` is run again for a new release.
+IQ-REL-01 and IQ-REL-02 pass only on an unchanged release: after any edit to a file listed in the manifest, IQ-REL-01 fails until `make_release_files.R` is run again for a new release. When IQ-REL-02 fails, its Detail column names each package whose version differs from `renv.lock`.
 
 If any critical test fails, the script lists the affected test IDs under `CRITICAL FAILURES` and prints `STATUS: FAILED`. Supportive failures are counted separately and require a written risk assessment before the system can be signed off.
 

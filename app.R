@@ -830,13 +830,16 @@ server <- function(input, output, session) {
             tags$h6(class = "fw-bold mb-1", "v1.8.0",
                     tags$span(class = "badge bg-primary ms-2", "current")),
             tags$p(class = "text-muted mb-1", "September 2026"),
-            tags$p(class = "mb-1", tags$strong("Results are the same as in v1.7.0."),
-                   " The release adds an optional controlled mode for installations under GxP. Without it, the app works as before."),
+            tags$p(class = "mb-1", tags$strong("Results can differ from v1.7.0"),
+                   " in two cases: fluctuation and swing at steady state when the highest concentration lies after \u03C4, and a manual half-life fit that included values set by a BLQ rule. The release adds an optional controlled mode for installations under GxP. Without it, the app works as before."),
             tags$ul(class = "mb-0",
               tags$li(tags$strong("New: "), "controlled mode on a server: sign-in with personal accounts and roles (analyst, reviewer, inspector), a tamper-evident audit trail of every data load, analysis, download and record, and review signatures on stored records"),
               tags$li(tags$strong("New: "), "Records page with the data history of each record, approval or rejection with user ID and password, signature sheets and a check for copies of a record"),
               tags$li(tags$strong("New: "), "Audit trail page with exceptions, filters, chain verification, export, a users overview and a signed review; gxp/manage_users.R for accounts and archives"),
-              tags$li("Validation: 482 automated and 62 manual tests (was 431 and 49), with a section for controlled mode")
+              tags$li(tags$strong("Correctness fix: "), "at steady state, fluctuation and swing use the highest concentration within 0\u2013\u03C4, with a note when the highest value lies after \u03C4; the half-life review no longer offers or fits values set by a BLQ rule; a profile without a dose stops the analysis"),
+              tags$li(tags$strong("Changed: "), "'<x' entries with different limits are listed instead of the lowest being suggested as the LLOQ; reproduction scripts say whether R and the packages match the record; names from the data file are escaped in record summaries; the fonts are served by the app itself"),
+              tags$li("These fixes come from an external adversarial audit of this release"),
+              tags$li("Validation: 494 automated and 62 manual tests (was 431 and 49), with sections for controlled mode and for the audit findings")
             )
           ),
 
