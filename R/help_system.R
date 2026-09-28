@@ -381,9 +381,9 @@ help_mixed_effects <- info_btn("help_mixed_effects", "Fixed vs. Mixed effects?",
   "<b>Fixed effects</b>: Treats Subject as a fixed factor. Standard for balanced 
   crossover studies. Simpler.
   <br><br>
-  <b>Mixed effects</b>: Treats Subject as a <b>random</b> effect. Uses subjects 
-  with only one treatment as well, which can help when there are dropouts 
-  or unbalanced data.
+  <b>Mixed effects</b>: Treats Subject as a <b>random</b> effect. In a replicate
+  design it also uses subjects who received only one of the treatments. In a 2×2
+  crossover such subjects are left out of both models, as the EMA guideline asks.
   <br><br>
   For a balanced 2×2 crossover with no dropouts, both give the same result.
   <br><br>

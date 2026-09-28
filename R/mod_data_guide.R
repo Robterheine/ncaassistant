@@ -409,7 +409,7 @@ data_guide_ui <- function() {
         do_dont(
           do_items = c(
             "Start time at 0 in each period",
-            "Keep subjects who dropped out after period 1; the mixed model can use their data",
+            "Keep subjects who dropped out after period 1 in the file: the app counts them, and a replicate design can use their data",
             "Use (approximately) the same sampling times in both periods",
             "Choose the Reference treatment in the app before running"
           ),
