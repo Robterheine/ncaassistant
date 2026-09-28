@@ -111,6 +111,15 @@ data_upload_ui <- function(id) {
               selectInput(ns("col_period"), "Period", choices = NULL),
               selectInput(ns("col_sequence"), "Sequence", choices = NULL),
               selectInput(ns("col_dose"), "Dose", choices = NULL)
+            ),
+            # A Dose column per kg is multiplied by body weight in
+            # prepare_pk_dataset(); never guessed, the analyst chooses it
+            layout_columns(
+              col_widths = c(6, 6),
+              selectInput(ns("col_dose_weight"), "Dose per kg: weight column", choices = NULL),
+              tags$p(class = "small text-muted mt-md-4",
+                     "Choose the body-weight column (kg) only when the Dose column holds a dose per kg. ",
+                     "The app then uses dose \u00D7 weight as the amount each subject received.")
             )
           ),
           
@@ -296,7 +305,7 @@ data_upload_server <- function(id, shared) {
       req(src(), input$data_type == "adnca", !identical(tolower(file_ext()), "xpt"))
       tryCatch(adnca_read(src()$datapath, read_args(), ext = file_ext()),
                error = function(e) {
-                 showNotification(friendly_read_error(conditionMessage(e)), type = "error", duration = 8)
+                 showNotification(friendly_read_error(conditionMessage(e)), type = "error", duration = NULL)
                  NULL
                })
     })
@@ -429,7 +438,7 @@ data_upload_server <- function(id, shared) {
         read_pk_file(path, read_args(), ext = ext)
       }, error = function(e) {
         showNotification(friendly_read_error(conditionMessage(e)),
-                         type = "error", duration = 8)
+                         type = "error", duration = NULL)
         NULL
       })
     })
@@ -489,6 +498,8 @@ data_upload_server <- function(id, shared) {
                         choices = c(none_choice, cols), selected = guess$sequence)
       updateSelectInput(session, "col_dose",
                         choices = c(none_choice, cols), selected = guess$dose)
+      updateSelectInput(session, "col_dose_weight",
+                        choices = c("(no: the Dose column is the amount per subject)" = "", cols), selected = "")
 
       # Required columns that matched no known name were filled in by position
       unmatched <- attr(guess, "unmatched")
@@ -534,17 +545,24 @@ data_upload_server <- function(id, shared) {
       if (in_file(input$col_period))    col_map$period    <- input$col_period
       if (in_file(input$col_sequence))  col_map$sequence  <- input$col_sequence
       if (in_file(input$col_dose))      col_map$dose      <- input$col_dose
+      if (in_file(input$col_dose_weight)) {
+        if (is.null(col_map$dose)) {
+          notify_error("A weight column for doses per kg needs a Dose column. Map the Dose column, or set the weight column to (no).")
+          return()
+        }
+        col_map$dose_weight <- input$col_dose_weight
+      }
       
       # Validate
       val <- validate_mapping(col_map)
       if (!val$valid) {
-        showNotification(val$message, type = "error", duration = 5)
+        showNotification(val$message, type = "error", duration = NULL)
         return()
       }
       
       if (is.null(input$lloq) || is.na(input$lloq) || input$lloq < 0) {
         showNotification("Enter an LLOQ value (0 if no BLQ handling is needed), then click Process Data again.",
-                         type = "error", duration = 8)
+                         type = "error", duration = NULL)
         return()
       }
 
@@ -575,7 +593,7 @@ data_upload_server <- function(id, shared) {
                           "). Check the assay report, set the LLOQ and click Process Data again.")
                  else
                    "Set an LLOQ value above 0 and click Process Data again."),
-          type = "error", duration = 12)
+          type = "error", duration = NULL)
         return()
       }
       lloq_suggestion(NULL)  # clear suggestion once LLOQ is properly set
@@ -583,7 +601,7 @@ data_upload_server <- function(id, shared) {
       if (!qc$pass) {
         showNotification(
           paste0(qc$n_errors, " error(s) found. Fix them before proceeding."),
-          type = "error", duration = 8)
+          type = "error", duration = NULL)
         return()
       }
       

@@ -151,7 +151,7 @@ blq_text_summary <- function(conc_raw) {
 
 EXCLUSION_COLUMNS <- c("id", "level", "subject", "treatment", "period", "time", "category", "detail",
                        "protocol_section", "after_be", "created_utc", "created_by", "restored_utc",
-                       "restore_reason")
+                       "restore_reason", "imported_utc")
 
 #' The exclusion register in one shape
 #' @param x NULL, a data.frame, or a list of records as read back from
@@ -250,7 +250,24 @@ prepare_pk_dataset <- function(raw, col_map, opts = list()) {
   data[[col_map$conc]] <- normalise_decimal_comma(data[[col_map$conc]], dec)
   if (!is.null(col_map$dose) && col_map$dose %in% names(data))
     data[[col_map$dose]] <- normalise_decimal_comma(data[[col_map$dose]], dec)
+  # A Dose column per kg body weight (col_map$dose_weight names the weight
+  # column, in kg) becomes the amount each subject received, so CL/F, Vz/F and
+  # the dose-normalised parameters use the amount. The uploaded value is kept.
+  if (!is.null(col_map$dose_weight) && !is.null(col_map$dose) &&
+      all(c(col_map$dose, col_map$dose_weight) %in% names(data))) {
+    w <- suppressWarnings(as.numeric(normalise_decimal_comma(data[[col_map$dose_weight]], dec)))
+    data[[DOSE_PER_KG_COLUMN]] <- suppressWarnings(as.numeric(data[[col_map$dose]]))
+    data[[col_map$dose]] <- data[[DOSE_PER_KG_COLUMN]] * w
+  }
   data[[col_map$time]] <- suppressWarnings(as.numeric(data[[col_map$time]]))
+  # A single pre-dose sample at a small negative actual time (-0.25 h) is
+  # analysed at time 0, as ADNCA's MRRLT does; the uploaded time is kept.
+  # Any other negative time is refused by the data quality check.
+  shift <- predose_to_zero(data[[col_map$time]], profile_key(data, col_map)$key)
+  if (any(shift)) {
+    data[[PREDOSE_TIME_COLUMN]] <- ifelse(shift, data[[col_map$time]], NA_real_)
+    data[[col_map$time]][shift] <- 0
+  }
 
   # Pre-process BLQ text entries before numeric conversion. Text such as
   # "<0,195", "<0.1", "BLQ" or "ND" becomes NA under as.numeric(), so
@@ -305,6 +322,8 @@ prepare_pk_dataset <- function(raw, col_map, opts = list()) {
     provenance = list(door = if (is.null(opts$door)) "flat" else opts$door,
                       file_name = opts$file_name, file_path = opts$file_path,
                       sha256 = sha, read_args = opts$read_args,
+                      dose_basis = if (is.null(col_map$dose_weight)) "amount" else "per_kg",
+                      predose_times_set_to_0 = sum(shift),
                       pipeline_sha256 = opts$pipeline_sha256),
     analyte    = list(name = NA_character_, paramcd = NA_character_,
                       pctestcd = NA_character_, matrix = NA_character_),
@@ -325,6 +344,47 @@ prepare_pk_dataset <- function(raw, col_map, opts = list()) {
                             Action = character(0), stringsAsFactors = FALSE),
     qc         = opts$qc
   )
+}
+
+#' Name of the column that keeps the uploaded time of a pre-dose sample
+#' analysed at time 0 (prepare_pk_dataset)
+PREDOSE_TIME_COLUMN <- "Pre-dose time as uploaded"
+
+#' Pre-dose samples at a negative time that are analysed at time 0
+#'
+#' Only when the sample is the one sample at or before time 0 in its profile,
+#' and no earlier than 10% of the profile's last time before the dose (e.g.
+#' -2.4 h for a 24 h profile). Scale-free, so it works in any time unit.
+#' @param t numeric times; @param key profile key per row
+#' @return logical per row
+predose_to_zero <- function(t, key) {
+  out <- rep(FALSE, length(t))
+  for (k in unique(key[!is.na(t) & t < 0])) {
+    i <- which(key == k & !is.na(t))
+    neg <- i[t[i] < 0]
+    if (length(neg) == 1 && sum(t[i] <= 0) == 1 && max(t[i]) > 0 && -t[neg] <= 0.1 * max(t[i]))
+      out[neg] <- TRUE
+  }
+  out
+}
+
+#' Name of the column that keeps an uploaded dose per kg (prepare_pk_dataset)
+DOSE_PER_KG_COLUMN <- "Dose per kg (as uploaded)"
+
+#' A column that looks like body weight, or NULL
+weight_column <- function(cols) {
+  hit <- cols[grepl("^(wt|weight|bw|body[._ ]?weight|weight[._ ]?kg|wt[._ ]?kg|bwt)$", cols, ignore.case = TRUE)]
+  if (length(hit) == 0) NULL else hit[1]
+}
+
+#' Does an amount-per-subject Dose column look like a dose per kg?
+#'
+#' A warning only: the file has a body-weight column and every dose is below
+#' 20, as with theophylline's 3.1 to 5.9 mg/kg. The analyst decides.
+dose_looks_per_kg <- function(data, col_map) {
+  if (is.null(col_map$dose) || !is.null(col_map$dose_weight) || !col_map$dose %in% names(data)) return(FALSE)
+  d <- suppressWarnings(as.numeric(data[[col_map$dose]])); d <- d[!is.na(d) & d > 0]
+  length(d) > 0 && !is.null(weight_column(names(data))) && max(d) < 20
 }
 
 #' One dose per profile: the maximum of the Dose column within each profile
@@ -736,7 +796,8 @@ lz_rules <- function(settings) {
 #' LZSPAN = (LAMZUL - LAMZLL) / half-life: how many half-lives the fitted points
 #' cover. FLAG_SPAN: span below span_min (every fit, manual ones included; at
 #' steady state informational). FLAG_AUCPE: % of AUC to infinity extrapolated
-#' above aucpext_max (single dose only). FLAG_AUCPBE: IV bolus, % of AUC
+#' above aucpext_max; at steady state % of AUCtau extrapolated past the last
+#' sample (AUCTAU_PCTEXT). FLAG_AUCPBE: IV bolus, % of AUC
 #' back-extrapolated to time 0 above aucpbe_max. Numeric 0/1, missing when the
 #' rule is off or does not apply, so the reproduction check compares them.
 #' @param r NCA result: named vector (one profile) or data frame
@@ -747,10 +808,12 @@ lambda_z_flags <- function(r, rules, ss = FALSE, adm = "Extravascular") {
   flag <- function(x, on) if (is.na(on)) rep(NA_real_, length(x)) else ifelse(is.na(x), NA_real_, as.numeric(x))
   span <- (get("LAMZUL") - get("LAMZLL")) / get("LAMZHL")
   span[!is.finite(span)] <- NA_real_
-  pe <- get("AUCPEO"); pbe <- get("AUCPBEO")
+  # At steady state the extrapolation rule applies to AUCtau (the part past
+  # the last sample), not to AUC to infinity, which is left empty there
+  pe <- if (isTRUE(ss)) get("AUCTAU_PCTEXT") else get("AUCPEO"); pbe <- get("AUCPBEO")
   out <- list(LZSPAN = span,
               FLAG_SPAN = flag(span < rules$span_min, rules$span_min),
-              FLAG_AUCPE = if (isTRUE(ss)) rep(NA_real_, length(span)) else flag(pe > rules$aucpext_max, rules$aucpext_max),
+              FLAG_AUCPE = flag(pe > rules$aucpext_max, rules$aucpext_max),
               FLAG_AUCPBE = if (toupper(adm) != "BOLUS") rep(NA_real_, length(span)) else flag(pbe > rules$aucpbe_max, rules$aucpbe_max))
   for (n in names(out)) r[[n]] <- out[[n]]
   r
@@ -968,7 +1031,9 @@ run_single_nca <- function(time, conc, settings, time_used = NULL, is_blq = NULL
   low <- is.null(use) && (no_fit || below_r2_threshold(r["R2ADJ"], settings$r2adj_threshold))
   if (low) r[lamz_dependent_cols(names(r), settings$is_steady_state)] <- NA
   if (ss) {
-    r <- steady_state_parameters(r, t_all, c_all, tau, lamz_rejected = low)
+    r <- steady_state_parameters(r, t_all, c_all, tau, lamz_rejected = low, window = ctau_window(settings, tau))
+    for (msg in steady_state_tau_notes(r[["CTAU_SS"]], r[["CTAU_TIME"]], r[["AUCTAU_PCTEXT"]], "this profile",
+                                       tau, ctau_window(settings, tau))) warning(msg)
     note <- steady_state_predose_note(list(t_all), list(c_all), "this profile", adm)
     if (!is.null(note)) warning(note)
     note <- steady_state_peak_note(list(t_all), list(c_all), "this profile", tau)
@@ -1019,10 +1084,45 @@ steady_state_peak_note <- function(times, concs, labels, tau) {
          "is the highest of the whole profile. Check the dosing times: a sample after \u03C4 may follow the next dose.")
 }
 
+#' Steady-state notes on C(tau) and AUCtau, from the computed parameters
+#' @param ctau,ctau_t,pctext per profile; @param labels profile labels
+#' @return character vector of messages (possibly empty)
+steady_state_tau_notes <- function(ctau, ctau_t, pctext, labels, tau, window) {
+  out <- character(0)
+  lst <- function(x) paste0(paste(head(x, 5), collapse = ", "), if (length(x) > 5) ", ..." else "")
+  miss <- labels[is.na(ctau)]
+  if (length(miss) > 0)
+    out <- c(out, paste0("Steady state: ", length(miss), " profile(s) have no sample within \u00B1", format(window),
+                         " of \u03C4 = ", format(tau), " (", lst(miss), "), so C\u03C4 is empty. It is never interpolated; ",
+                         "widen the trough window only if the protocol allows it."))
+  off <- !is.na(ctau_t) & abs(ctau_t - tau) > 1e-9 * max(1, tau)
+  if (any(off))
+    out <- c(out, paste0("Steady state: for ", sum(off), " profile(s) C\u03C4 is the sample nearest to \u03C4 (",
+                         lst(paste0(labels[off], " at ", format(ctau_t[off]))), "); its time is in the column Time of Ctau."))
+  ext <- !is.na(pctext) & pctext > 0
+  if (any(ext))
+    out <- c(out, paste0("Steady state: the last sample lies before \u03C4 in ", sum(ext), " profile(s) (",
+                         lst(paste0(labels[ext], " ", trimws(formatC(pctext[ext], digits = 3, format = "g")), "%")),
+                         "). That part of AUC\u03C4, and so Cavg and the fluctuation, is extrapolated with \u03BBz; ",
+                         "see AUC\u03C4 % Extrapolated."))
+  out
+}
+
 #' The dosing interval entered for a steady-state analysis, or NA
 steady_state_tau <- function(settings) {
   tau <- suppressWarnings(as.numeric(settings$tau))
   if (length(tau) != 1 || is.na(tau) || tau <= 0) NA_real_ else tau
+}
+
+#' The window around tau in which a sample counts as the trough C(tau)
+#'
+#' Sampling times are rarely exactly tau (a trough drawn 15 minutes late).
+#' settings$ctau_window is the half-width in time units; when it is not set,
+#' 10% of tau, at most 1 time unit. 0 asks for a sample at exactly tau.
+ctau_window <- function(settings, tau) {
+  w <- suppressWarnings(as.numeric(settings$ctau_window))
+  if (length(w) == 1 && !is.na(w) && w >= 0) return(w)
+  if (is.na(tau)) NA_real_ else min(0.1 * tau, 1)
 }
 
 #' Steady-state parameters for one profile, from the entered dosing interval
@@ -1036,8 +1136,11 @@ steady_state_tau <- function(settings) {
 #' tau belongs to the next interval).
 #' NonCompart computes CL/F and Vz/F at steady state from AUClast; they are
 #' rescaled to AUCTAU, so they stay correct when sampling does not end at tau.
+#' CTAU_SS is the observed sample nearest to tau within +/- window (never
+#' interpolated), with its time in CTAU_TIME. AUCTAU_PCTEXT is the part of
+#' AUCTAU extrapolated with lambda-z past the last sample, in %.
 #' @param r Named NCA result (sNCA output, or one row of tblNCA as a list)
-steady_state_parameters <- function(r, time, conc, tau, lamz_rejected = FALSE) {
+steady_state_parameters <- function(r, time, conc, tau, lamz_rejected = FALSE, window = 0) {
   get <- function(n) if (n %in% names(r)) suppressWarnings(as.numeric(r[[n]])) else NA_real_
   auctau <- get("AUCTAU"); auclst <- get("AUCLST"); tlst <- get("TLST")
   if (isTRUE(lamz_rejected) && !is.na(tlst) && tau > tlst + 1e-9) auctau <- NA_real_
@@ -1045,10 +1148,17 @@ steady_state_parameters <- function(r, time, conc, tau, lamz_rejected = FALSE) {
   cmin  <- if (any(ok)) min(conc[ok]) else NA_real_
   cmax  <- if (any(ok)) max(conc[ok]) else NA_real_
   # C(tau): the observed concentration at the end of the interval. Not the
-  # same as Cmin when the minimum falls after the dose (a lag); empty when
-  # no sample was taken at tau
-  at_tau <- !is.na(time) & !is.na(conc) & abs(time - tau) < 1e-9
-  ctau  <- if (any(at_tau)) conc[max(which(at_tau))] else NA_real_
+  # same as Cmin when the minimum falls after the dose (a lag). The sample
+  # nearest to tau within the window counts; empty when there is none
+  w <- if (is.na(window)) 0 else window
+  dist <- abs(time - tau)
+  near <- !is.na(time) & !is.na(conc) & dist <= w + 1e-9 * max(1, tau)
+  j <- if (any(near)) which(near)[which.min(dist[near])] else integer(0)
+  ctau  <- if (length(j)) conc[j] else NA_real_
+  ctau_t <- if (length(j)) time[j] else NA_real_
+  # Share of AUCtau extrapolated with lambda-z past the last sample
+  pctext <- if (is.na(auctau) || auctau <= 0 || is.na(tlst)) NA_real_ else
+    if (tlst >= tau - 1e-9) 0 else if (is.na(auclst)) NA_real_ else 100 * (auctau - auclst) / auctau
   cavg  <- if (!is.na(auctau)) auctau / tau else NA_real_
   fluct <- if (!is.na(cavg) && cavg > 0 && !is.na(cmin)) (cmax - cmin) / cavg * 100 else NA_real_
   swing <- if (!is.na(cmin) && cmin > 0) (cmax - cmin) / cmin else NA_real_
@@ -1068,6 +1178,8 @@ steady_state_parameters <- function(r, time, conc, tau, lamz_rejected = FALSE) {
   r[["CAVG"]] <- cavg
   r[["CMIN_SS"]] <- cmin
   r[["CTAU_SS"]] <- ctau
+  r[["CTAU_TIME"]] <- ctau_t
+  r[["AUCTAU_PCTEXT"]] <- pctext
   r[["FLUCTP"]] <- fluct
   r[["SWING"]] <- swing
   r
@@ -1548,14 +1660,17 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
       note <- steady_state_peak_note(t_ss, c_ss, lab_ss, tau)
       if (!is.null(note)) warning(note)
       # Steady-state parameters per profile, before any rows are blanked
-      for (n in c("TAU", "CAVG", "CMIN_SS", "CTAU_SS", "FLUCTP", "SWING")) if (!n %in% names(result)) result[[n]] <- NA_real_
+      for (n in c("TAU", "CAVG", "CMIN_SS", "CTAU_SS", "CTAU_TIME", "AUCTAU_PCTEXT", "FLUCTP", "SWING"))
+        if (!n %in% names(result)) result[[n]] <- NA_real_
       for (i in seq_len(nrow(result))) {
         rows <- data_all[[nca_key]] == result[[1]][i]
         rr <- steady_state_parameters(as.list(result[i, , drop = FALSE]),
                                       data_all[[col_map$time]][rows], data_all[[col_map$conc]][rows], tau,
-                                      lamz_rejected = low[i])
+                                      lamz_rejected = low[i], window = ctau_window(settings, tau))
         for (n in names(rr)) result[[n]][i] <- rr[[n]]
       }
+      for (msg in steady_state_tau_notes(result$CTAU_SS, result$CTAU_TIME, result$AUCTAU_PCTEXT, lab_ss,
+                                         tau, ctau_window(settings, tau))) warning(msg)
     }
     if (any(low)) {
       for (cc in lamz_dependent_cols(names(result), settings$is_steady_state)) result[[cc]][low] <- NA
@@ -1770,7 +1885,7 @@ record_nca_settings <- function(rec, data, col_map) {
           if (identical(rec$dose_source, "per_subject")) dose_by_subject(data, col_map) else rec$dose
   list(admin_route = rec$admin_route, dose = dose,
        infusion_duration = if (is.null(rec$infusion_dur)) 0 else rec$infusion_dur,
-       is_steady_state = isTRUE(rec$steady_state), tau = rec$tau,
+       is_steady_state = isTRUE(rec$steady_state), tau = rec$tau, ctau_window = rec$ctau_window,
        dose_unit = rec$dose_unit, time_unit = rec$time_unit, conc_unit = rec$conc_unit,
        trap_method = rec$trap_method, r2adj_threshold = rec$r2adj_threshold,
        mw = if (is.null(rec$mw)) 0 else rec$mw, partial_aucs = partial_auc_spec(rec$partial_aucs),

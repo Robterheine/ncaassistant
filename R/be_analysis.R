@@ -199,7 +199,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   # sees how much of the design is left (a subject missing one period drops out)
   n_zero_t <- NA_integer_; n_zero_r <- NA_integer_
   n_miss_t <- NA_integer_; n_miss_r <- NA_integer_
-  n_excl_t <- 0L; n_excl_r <- 0L; n_flag_t <- 0L; n_flag_r <- 0L
+  n_excl_t <- 0L; n_excl_r <- 0L; n_flag_t <- 0L; n_flag_r <- 0L; n_incomplete <- 0L
   make_row <- function(pe = NA, lo = NA, hi = NA, n_t = NA, n_r = NA, o_t = NA, o_r = NA,
                        pe_status = NA, verdict = NA, mse = NA, dfe = NA) {
     data.frame(
@@ -213,7 +213,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
       Missing_Test = n_miss_t, Missing_Ref = n_miss_r,
       Zeros_Test = n_zero_t, Zeros_Ref = n_zero_r,
       Excluded_Test = n_excl_t, Excluded_Ref = n_excl_r,
-      Flagged_Test = n_flag_t, Flagged_Ref = n_flag_r,
+      Flagged_Test = n_flag_t, Flagged_Ref = n_flag_r, Incomplete_Subjects = n_incomplete,
       MSE = mse, DF = dfe, Model = model_label, stringsAsFactors = FALSE)
   }
 
@@ -305,6 +305,23 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
     return(out)
   }
   be_data$.response <- vals
+
+  # In a two-period crossover (and the paired comparison) a subject without a
+  # value under both treatments adds nothing to the within-subject contrast,
+  # and the EMA guideline leaves such subjects out. The fixed-effects model
+  # ignores them anyway (the subject term absorbs a single value); the mixed
+  # model would use their one value through the random effect, so they are
+  # removed before either model is fitted. Replicate designs keep them: a
+  # subject's repeated administrations of one treatment still inform the
+  # within-subject variance.
+  if (design %in% c("2x2x2", "paired")) {
+    ok <- !is.na(be_data$.response)
+    s_ref <- unique(as.character(be_data[[subj_col]][ok & trt == trt_levels[1]]))
+    s_tst <- unique(as.character(be_data[[subj_col]][ok & trt == trt_levels[2]]))
+    orphan <- ok & !as.character(be_data[[subj_col]]) %in% intersect(s_ref, s_tst)
+    n_incomplete <- length(unique(as.character(be_data[[subj_col]][orphan])))
+    be_data$.response[orphan] <- NA
+  }
 
   # Guard: if Sequence has only 1 level, drop it (prevents lm() crash)
   if (!is.null(seq_col) && length(unique(be_data[[seq_col]])) < 2) {

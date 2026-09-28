@@ -165,6 +165,22 @@ ui <- page_fluid(
   
   # Popover initialization
   help_init_js(),
+  # Shiny's notification panel is not a live region (and is removed when
+  # empty), so each notification's text is copied into these two: screen
+  # readers announce errors at once and other notifications politely
+  tags$div(id = "nca-live-polite", class = "visually-hidden", role = "status", `aria-live` = "polite"),
+  tags$div(id = "nca-live-assertive", class = "visually-hidden", role = "alert", `aria-live` = "assertive"),
+  tags$script(HTML("
+    new MutationObserver(function(ms) { ms.forEach(function(m) { m.addedNodes.forEach(function(n) {
+      if (n.nodeType !== 1 || !n.classList.contains('shiny-notification')) return;
+      setTimeout(function() {
+        var t = n.querySelector('.shiny-notification-content');
+        var l = document.getElementById(n.classList.contains('shiny-notification-error') ? 'nca-live-assertive' : 'nca-live-polite');
+        if (!t || !l) return;
+        l.textContent = '';
+        setTimeout(function() { l.textContent = t.textContent.trim(); }, 50);
+      }, 50);
+    }); }); }).observe(document.body, { childList: true, subtree: true });")),
   
   # Main content area. Every path is built once and shown or hidden, so the
   # inputs of a path keep their values when the user leaves it and comes

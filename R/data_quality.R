@@ -153,7 +153,17 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
   
   # Negative times
   time_valid <- time_num[!is.na(time_num)]
-  n_neg_time <- sum(time_valid < 0)
+  # One pre-dose sample per profile at a small negative time is analysed at
+  # time 0 (predose_to_zero() in R/pipeline.R); only the others are refused
+  shifted <- tryCatch(predose_to_zero(time_num, profile_key(data, col_map)$key),
+                      error = function(e) rep(FALSE, length(time_num)))
+  if (any(shifted)) {
+    add("WARNING", "Time",
+        paste(sum(shifted), "pre-dose sample(s) at a negative time are analysed at time 0"),
+        paste("Uploaded times:", paste(head(sort(unique(time_num[shifted])), 5), collapse = ", ")),
+        "The uploaded time is kept in the column 'Pre-dose time as uploaded' and in the Analysis Record.")
+  }
+  n_neg_time <- sum(time_num < 0 & !shifted, na.rm = TRUE)
   if (n_neg_time > 0) {
     # NCA starts the curve at the first sample time: a pre-dose sample at a
     # negative time adds area before the dose and gives a negative lag time.
@@ -161,7 +171,9 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
     add("ERROR", "Time",
         paste(n_neg_time, "negative time values detected"),
         paste("Range:", min(time_valid), "to", max(time_valid)),
-        "Pre-dose samples? A negative time adds area before the dose to AUC and gives a negative lag time. Set pre-dose samples to time 0 (or remove them), then upload the file again.")
+        paste0("Only one pre-dose sample per profile, no earlier than 10% of the profile's duration before the dose, ",
+               "is analysed at time 0. Other negative times add area before the dose to AUC and give a negative lag ",
+               "time: check whether time counts from the dose of each period."))
   }
   
   if (length(time_valid) > 0 && all(!is.na(time_valid))) {

@@ -85,7 +85,7 @@ sections = [("DAT", "Data Handling (OQ)"), ("NCA", "NCA (OQ/PQ)"), ("BE", "Bioeq
             ("ADV", "Adversarial Audit v1.8.0 (OQ/PQ)"),
             ("DSR", "Data and Statistics Review (OQ/PQ)"),
             ("EXM", "Example Datasets (OQ)"), ("HLF", "Half-Life Quality Flags (OQ/PQ)"),
-            ("EXC", "Exclusions with a Reason (OQ/PQ)")]
+            ("EXC", "Exclusions with a Reason (OQ/PQ)"), ("ARV", "Adversarial Review of the App (OQ/PQ)")]
 known = {s for s, _ in sections} | {"IQ", "MAN"}
 assert {r["Section"] for r in rows} <= known, {r["Section"] for r in rows} - known
 

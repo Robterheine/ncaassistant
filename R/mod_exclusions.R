@@ -61,6 +61,35 @@ data_without_exclusions <- function(shared) {
   prepare_pk_dataset(shared$raw_data, o$col_map, o[setdiff(names(o), "col_map")])$data
 }
 
+#' Have bioequivalence results for these data been shown? In this session,
+#' or, in controlled mode, in any session (the audit trail holds every
+#' bioequivalence run with the SHA-256 of its data)
+be_results_seen <- function(shared) {
+  if (!is.null(shared$be_results)) return(TRUE)
+  if (!gxp_enabled()) return(FALSE)
+  sha <- gxp_data_sha256(shared$study_info)
+  if (is.na(sha)) return(FALSE)
+  tr <- tryCatch(audit_read(), error = function(e) NULL)
+  !is.null(tr) && any(tr$event == "analysis_run" & grepl("^bioequivalence", tr$object) & tr$sha256 %in% sha)
+}
+
+#' Read an exclusion register from exclusions.csv (as downloaded from the app)
+#' or from an Analysis Record's analysis_settings.json
+#' @return data.frame (as_exclusions), or NULL when the file holds none
+read_exclusion_file <- function(path, name = path) {
+  x <- tryCatch({
+    if (grepl("\\.json$", name, ignore.case = TRUE)) {
+      j <- jsonlite::fromJSON(path, simplifyVector = FALSE)
+      if (!is.null(j$exclusions)) j$exclusions else if (!is.null(j$settings$exclusions)) j$settings$exclusions else j
+    } else utils::read.csv(path, stringsAsFactors = FALSE, colClasses = "character")
+  }, error = function(e) NULL)
+  if (is.null(x) || length(x) == 0) return(NULL)
+  if (is.data.frame(x) && !all(c("id", "level", "subject", "category") %in% names(x))) return(NULL)
+  ex <- tryCatch(as_exclusions(x), error = function(e) NULL)
+  if (is.null(ex) || nrow(ex) == 0 || any(is.na(ex$id) | is.na(ex$level) | is.na(ex$category))) return(NULL)
+  ex
+}
+
 exclusions_ui <- function(id) {
   ns <- NS(id)
   card(
@@ -70,7 +99,16 @@ exclusions_ui <- function(id) {
       uiOutput(ns("register")),
       tags$div(class = "d-flex gap-2 flex-wrap mt-2",
         actionButton(ns("add"), "Add an exclusion", class = "btn-outline-primary btn-sm", icon = icon("plus")),
-        checkboxInput(ns("show_restored"), "Show restored exclusions", FALSE))))
+        downloadButton(ns("download"), "Download exclusions", class = "btn-outline-secondary btn-sm"),
+        checkboxInput(ns("show_restored"), "Show restored exclusions", FALSE)),
+      fileInput(ns("import"), "Load exclusions from a file (exclusions.csv, or analysis_settings.json of a record)",
+                accept = c(".csv", ".json"), width = "100%"),
+      # The register lives in this browser session only: warn before the page
+      # is closed or reloaded while it holds changes not yet downloaded
+      singleton(tags$script(HTML(
+        "Shiny.addCustomMessageHandler('excl_unsaved', function(on) {
+           window.onbeforeunload = on ? function(e) { e.preventDefault(); e.returnValue = ''; return ''; } : null;
+         });")))))
 }
 
 #' Summary line above results: what is left out, by the analyst and by the app
@@ -108,13 +146,13 @@ exclusions_server <- function(id, shared) {
       tbl <- exclusion_sheet(ex)
       tags$div(class = "table-responsive",
         tags$table(class = "table table-sm small mb-1",
-          tags$thead(tags$tr(lapply(c("Excluded", names(tbl)[c(6, 7, 8, 9, 10, 11, 12)]), tags$th))),
+          tags$thead(tags$tr(lapply(c("Excluded", names(tbl)[c(6, 7, 8, 9, 10, 11, 12, 13)]), tags$th))),
           tags$tbody(lapply(seq_len(nrow(tbl)), function(i) {
             restored <- tbl$Status[i] != "in force"
             tags$tr(class = if (restored) "text-muted",
                     style = if (restored) "text-decoration: line-through;",
                     tags$td(exclusion_labels(ex[i, , drop = FALSE])),
-                    lapply(tbl[i, c(6, 7, 8, 9, 10, 11, 12)], function(v) tags$td(ifelse(is.na(v), "", as.character(v)))))
+                    lapply(tbl[i, c(6, 7, 8, 9, 10, 11, 12, 13)], function(v) tags$td(ifelse(is.na(v), "", as.character(v)))))
           }))))
     }
     output$register <- renderUI({
@@ -211,18 +249,67 @@ exclusions_server <- function(id, shared) {
     }
     who <- function() { u <- gxp_user(session); if (is.null(u)) "" else paste0(u$name, " (", u$user, ")") }
 
+    # ---- Download, load and the unsaved-changes guard ------------------------
+    unsaved <- reactiveVal(FALSE)
+    observeEvent(shared$exclusions, unsaved(nrow(as_exclusions(shared$exclusions)) > 0), ignoreNULL = FALSE)
+    observe(session$sendCustomMessage("excl_unsaved", isTRUE(unsaved())))
+    output$download <- downloadHandler(
+      filename = function() "exclusions.csv",
+      content = function(file) {
+        utils::write.csv(as_exclusions(shared$exclusions), file, row.names = FALSE, na = "")
+        unsaved(FALSE)
+      })
+    observeEvent(input$import, {
+      f <- input$import; req(f, shared$data_ready)
+      imp <- read_exclusion_file(f$datapath, f$name)
+      if (is.null(imp)) {
+        notify_error(paste0(f$name, " holds no exclusion register. Load exclusions.csv as the app downloads it, ",
+                            "or analysis_settings.json from an Analysis Record."))
+        return()
+      }
+      have <- as_exclusions(shared$exclusions)
+      imp <- imp[!imp$id %in% have$id, , drop = FALSE]
+      if (nrow(imp) == 0) {
+        showNotification("Every exclusion in this file is already in the register.", type = "message", duration = 6)
+        return()
+      }
+      res <- resolve_exclusions(all_data(), shared$col_map, imp)
+      if (length(res$unmatched) > 0) {
+        bad <- imp[imp$id %in% res$unmatched, , drop = FALSE]
+        notify_error(paste0("Nothing was loaded: ", nrow(bad), " exclusion(s) in ", f$name,
+                            " match no sample or profile of these data (",
+                            paste(utils::head(exclusion_labels(bad), 5), collapse = "; "), "). ",
+                            "Load the data the register was made for, with the same column mapping."))
+        return()
+      }
+      # An exclusion keeps its own record of when it was made and whether it
+      # followed bioequivalence results; it is also marked when results for
+      # these data were already shown (in this session, or in controlled mode
+      # in the audit trail), so re-entering one after a reload hides nothing
+      imp$after_be <- imp$after_be | be_results_seen(shared)
+      imp$imported_utc <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+      for (i in seq_len(nrow(imp)))
+        if (!gxp_guard("exclusion_imported", object = exclusion_labels(imp[i, , drop = FALSE]),
+                       details = c(as.list(imp[i, c("id", "level", "time", "category", "detail", "protocol_section",
+                                                    "after_be", "created_utc", "created_by", "restored_utc")]),
+                                   list(file = f$name)))) return()
+      shared$exclusions <- rbind(have, imp)
+      if (any(imp$level == "sample")) reprepare()
+      showNotification(paste0("Loaded ", nrow(imp), " exclusion(s) from ", f$name, "."), type = "message", duration = 8)
+    })
+
     observeEvent(input$dlg_save, {
       lvl <- input$dlg_level; cat <- input$dlg_category; det <- trimws(.nz(input$dlg_detail))
-      if (is.null(cat) || !nzchar(cat)) { showNotification("Choose a reason.", type = "error"); return() }
+      if (is.null(cat) || !nzchar(cat)) { showNotification("Choose a reason.", type = "error", duration = NULL); return() }
       if (cat %in% EXCLUSION_DETAIL_REQUIRED && !nzchar(det)) {
-        showNotification("Describe the reason in the detail field (for a protocol deviation, its ID).", type = "error")
+        showNotification("Describe the reason in the detail field (for a protocol deviation, its ID).", type = "error", duration = NULL)
         return()
       }
       pr <- profiles(); p <- pr[pr$label == input$dlg_profile, , drop = FALSE]; req(nrow(p) == 1)
       times <- if (lvl == "sample") suppressWarnings(as.numeric(input$dlg_times)) else NA_real_
-      if (lvl == "sample" && length(times) == 0) { showNotification("Choose the samples to leave out.", type = "error"); return() }
+      if (lvl == "sample" && length(times) == 0) { showNotification("Choose the samples to leave out.", type = "error", duration = NULL); return() }
       if (lvl == "sample" && any(times <= 0) && !isTRUE(input$dlg_confirm_predose)) {
-        showNotification("Confirm that the pre-dose sample is left out.", type = "error"); return()
+        showNotification("Confirm that the pre-dose sample is left out.", type = "error", duration = NULL); return()
       }
       now <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
       new <- as_exclusions(data.frame(
@@ -233,7 +320,7 @@ exclusions_server <- function(id, shared) {
         time = times, category = cat, detail = if (nzchar(det)) det else NA,
         protocol_section = if (identical(input$dlg_prespecified, "yes"))
           paste0("yes", if (nzchar(.nz(input$dlg_section))) paste0(", ", input$dlg_section)) else "no",
-        after_be = !is.null(shared$be_results), created_utc = now, created_by = who(),
+        after_be = be_results_seen(shared), created_utc = now, created_by = who(),
         restored_utc = NA, restore_reason = NA, stringsAsFactors = FALSE))
       for (i in seq_len(nrow(new)))
         if (!gxp_guard("exclusion_added", object = exclusion_labels(new[i, , drop = FALSE]),
@@ -249,7 +336,7 @@ exclusions_server <- function(id, shared) {
     observeEvent(input$restore, {
       ex <- as_exclusions(shared$exclusions); i <- which(ex$id == input$restore_id); req(length(i) == 1)
       why <- trimws(.nz(input$restore_reason))
-      if (gxp_enabled() && !nzchar(why)) { showNotification("Give a reason for restoring.", type = "error"); return() }
+      if (gxp_enabled() && !nzchar(why)) { showNotification("Give a reason for restoring.", type = "error", duration = NULL); return() }
       if (!gxp_guard("exclusion_restored", object = exclusion_labels(ex[i, , drop = FALSE]),
                      details = list(id = ex$id[i], reason = why))) return()
       ex$restored_utc[i] <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")

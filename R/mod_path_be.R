@@ -78,7 +78,8 @@ path_be_ui <- function(id) {
                             value = FALSE),
               conditionalPanel(
                 condition = sprintf("input['%s'] == true", ns("is_ss")),
-                numericInput(ns("tau"), "Dosing interval \u03C4 (same unit as Time)", value = NA, min = 0))
+                numericInput(ns("tau"), "Dosing interval \u03C4 (same unit as Time)", value = NA, min = 0),
+                numericInput(ns("ctau_window"), "Trough window \u00B1 for C\u03C4 (empty: 10% of \u03C4, at most 1)", value = NA, min = 0))
             )
           ),
           
@@ -347,16 +348,7 @@ path_be_server <- function(id, shared) {
                         " No Dose column mapped. Map it in Upload & Check Data, ",
                         "or switch to 'Same dose for all'."))
       }
-      dose_vals <- shared$pk_data[[shared$col_map$dose]]
-      dose_by_subj <- tapply(dose_vals, shared$pk_data[[shared$col_map$subject]],
-                             function(x) max(x, na.rm = TRUE))
-      unique_doses <- sort(unique(dose_by_subj))
-      tags$div(class = "alert alert-success py-2 small",
-               icon("circle-check"),
-               paste0(" Dose column '", shared$col_map$dose, "': ",
-                      length(unique_doses), " dose level(s): ",
-                      paste(unique_doses, collapse = ", "), " ",
-                      input$dose_unit, "."))
+      dose_column_panel(shared$pk_data, shared$col_map, input$dose_unit)
     })
     
     output$data_gate <- renderUI({
@@ -420,7 +412,7 @@ path_be_server <- function(id, shared) {
     # The parameters to compare are not watched: after a run their boxes are
     # set to what was compared, and each result row names its parameter
     clear_result_on_change(
-      reactive(list(input$admin_route, input$dose, input$dose_source, input$is_ss, input$tau,
+      reactive(list(input$admin_route, input$dose, input$dose_source, input$is_ss, input$tau, input$ctau_window,
                     input$dose_unit, input$time_unit, input$conc_unit, input$trap_method,
                     input$r2adj_be, input$mw, input$be_design, input$be_reference, input$model_type,
                     input$log_transform, input$ci_level, input$be_lower, input$be_upper,
@@ -453,7 +445,7 @@ path_be_server <- function(id, shared) {
       nr <- nrow(shared$pk_data)
       if (nr > 50000) {
         showNotification("Dataset too large for BE analysis (>50,000 rows). Consider subsetting.",
-                         type = "error", duration = 8); return()
+                         type = "error", duration = NULL); return()
       }
       if (nr > 10000) {
         showNotification("Large dataset — analysis may take a moment.", type = "warning", duration = 5)
@@ -465,7 +457,7 @@ path_be_server <- function(id, shared) {
       if (!use_data_dose) {
         if (is.null(input$dose) || is.na(input$dose) || input$dose <= 0) {
           showNotification("Please enter a valid dose (greater than 0).",
-                           type = "error", duration = 5)
+                           type = "error", duration = NULL)
           return()
         }
       }
@@ -474,36 +466,36 @@ path_be_server <- function(id, shared) {
       if (is.null(input$be_lower) || is.na(input$be_lower) ||
           is.null(input$be_upper) || is.na(input$be_upper)) {
         showNotification("Please enter both acceptance limits (lower and upper).",
-                         type = "error", duration = 5)
+                         type = "error", duration = NULL)
         return()
       }
       if (input$be_lower >= input$be_upper) {
         showNotification("Lower acceptance limit must be less than upper (e.g., 80 and 125).",
-                         type = "error", duration = 5)
+                         type = "error", duration = NULL)
         return()
       }
       
       # Validate IV infusion duration
       if (input$admin_route == "iv_infusion") {
         showNotification("IV infusion is not supported in the BE module. Select Oral/IM/SC or IV Bolus.",
-                         type = "error", duration = 8)
+                         type = "error", duration = NULL)
         return()
       }
       
       if (is.null(input$be_reference) || !nzchar(input$be_reference)) {
         showNotification("Choose the Reference treatment in Step 2 (the ratio is Test / Reference).",
-                         type = "error", duration = 8)
+                         type = "error", duration = NULL)
         return()
       }
 
       if (isTRUE(input$is_ss) && (is.null(input$tau) || is.na(input$tau) || input$tau <= 0)) {
         showNotification("Steady state: enter the dosing interval \u03C4 (for example 12 or 24 h).",
-                         type = "error", duration = 8)
+                         type = "error", duration = NULL)
         return()
       }
       pauc_err <- validate_partial_aucs(pauc_spec(), isTRUE(input$is_ss), input$tau)
       if (!is.null(pauc_err)) {
-        showNotification(pauc_err, type = "error", duration = 10)
+        showNotification(pauc_err, type = "error", duration = NULL)
         return()
       }
       withProgress(message = "Step 1: Running NCA...", value = 0.3, {
@@ -513,7 +505,7 @@ path_be_server <- function(id, shared) {
           admin_route = input$admin_route,
           dose = if (use_data_dose) NA else input$dose,
           infusion_duration = 0,
-          is_steady_state = isTRUE(input$is_ss), tau = input$tau,
+          is_steady_state = isTRUE(input$is_ss), tau = input$tau, ctau_window = input$ctau_window,
           dose_unit = input$dose_unit,
           time_unit = input$time_unit,
           conc_unit = input$conc_unit,
@@ -527,12 +519,12 @@ path_be_server <- function(id, shared) {
         # Check the combination before running so the user gets a usable error.
         uchk <- validate_units(input$dose_unit, input$time_unit, input$conc_unit, input$mw)
         if (!uchk$valid) {
-          showNotification(uchk$message, type = "error", duration = 12)
+          showNotification(uchk$message, type = "error", duration = NULL)
           return()
         }
         umsg <- check_units_against_data(shared$study_info$units, input$dose_unit, input$time_unit, input$conc_unit)
         if (!is.null(umsg)) {
-          showNotification(umsg, type = "error", duration = 12)
+          showNotification(umsg, type = "error", duration = NULL)
           return()
         }
 
@@ -541,7 +533,7 @@ path_be_server <- function(id, shared) {
           if (any(!is.finite(dose_vec) | dose_vec <= 0)) {
             showNotification(
               "Some subjects have missing or zero dose values. Check the Dose column in your data.",
-              type = "error", duration = 8)
+              type = "error", duration = NULL)
             return()
           }
           # One dose per profile (subject x treatment x period), matched by profile
@@ -610,7 +602,7 @@ path_be_server <- function(id, shared) {
                    if (length(trt_levels) > 0) paste0(": ", paste(trt_levels, collapse = ", ")) else "",
                    "). Please ensure your Treatment column contains exactly two values ",
                    "(e.g., Test and Reference, or Drug A and Drug B)."),
-            type = "error", duration = 10)
+            type = "error", duration = NULL)
           return()
         }
         
@@ -761,7 +753,7 @@ path_be_server <- function(id, shared) {
           if (!is.null(fit_out$reason)) {
             showNotification(
               paste0("Could not compute BE results for ", friendly_name(param), ": ", fit_out$reason),
-              type = "error", duration = 12)
+              type = "error", duration = NULL)
           }
           if (!is.null(fit_out$anova)) anova_results[[param]] <- fit_out$anova
           ci_results[[param]] <- fit_out$row
@@ -1058,6 +1050,7 @@ path_be_server <- function(id, shared) {
                    "Zero values (Test)", "Zero values (Reference)",
                    "Profiles excluded (Test)", "Profiles excluded (Reference)",
                    "Half-life flags (Test)", "Half-life flags (Reference)",
+                   "Subjects without both treatments",
                    "Mostly BLQ (Test)", "Mostly BLQ (Reference)")) {
         v <- suppressWarnings(as.numeric(display_ci[[cc]]))
         if (!is.null(v) && any(v > 0, na.rm = TRUE))
@@ -1379,7 +1372,8 @@ path_be_server <- function(id, shared) {
         badge,
         {
           res <- be_nca_result(); i <- if (is.null(res)) integer(0) else profile_result_row(res, input$lz_profile)
-          pe <- if (length(i) == 1 && "AUCPEO" %in% names(res)) suppressWarnings(as.numeric(res$AUCPEO[i])) else NA
+          pe_col <- if (isTRUE(input$is_ss)) "AUCTAU_PCTEXT" else "AUCPEO"
+          pe <- if (length(i) == 1 && pe_col %in% names(res)) suppressWarnings(as.numeric(res[[pe_col]][i])) else NA
           tags$div(class = "small mt-1", "Rules: ",
                    lz_checklist(lz, input$r2adj_be, lzr(), pe = pe, ss = isTRUE(input$is_ss)))
         })
@@ -1456,7 +1450,7 @@ path_be_server <- function(id, shared) {
       lz_calc <- recalculate_lambda_z(sd$time, sd$conc, sel_idx, is_blq = sd$is_blq)
       
       if (!is.null(lz_calc$error)) {
-        showNotification(lz_calc$error, type = "error", duration = 10)
+        showNotification(lz_calc$error, type = "error", duration = NULL)
         return()
       }
       if (!is.null(lz_calc$warning)) {

@@ -2613,10 +2613,12 @@ check("REV-06", "Subjects counted are those that contribute to the comparison",
     d <- be_input(be_d); d <- d[!(d$Subject == "1" & d$Treatment == "R"), ]
     f <- fit_be_parameter(d, "CMAX", "2x2x2", "fixed", "Treatment", "Subject", "Period", "Sequence")$row
     m <- fit_be_parameter(d, "CMAX", "2x2x2", "mixed", "Treatment", "Subject", "Period", "Sequence")$row
-    f$N_Test == 23 && f$N_Ref == 23 && m$N_Test == 24 && m$N_Ref == 23
+    # A subject without both treatments leaves both models (ARV-04)
+    f$N_Test == 23 && f$N_Ref == 23 && m$N_Test == 23 && m$N_Ref == 23 &&
+      f$Incomplete_Subjects == 1 && m$Incomplete_Subjects == 1
   }, error = function(e) FALSE),
   "URS-BE-01", critical = FALSE, method = "24-subject 2x2 with one subject missing Reference",
-  expected = "fixed model counts 23 complete subjects; mixed model uses all 24")
+  expected = "both models count and use the 23 complete subjects; 1 incomplete subject reported")
 check("REV-07", "Leading/trailing spaces in IDs and design labels do not create extra levels",
   tryCatch({
     d <- data.frame(Subject = c("S1 ", "S1", "S1", "S1", "S1", "S1"), Treatment = c("Test", "Test ", " Test", "Reference", "Reference", "Reference"),
@@ -5882,15 +5884,15 @@ check("DSR-03", "D-2: a partial AUC that is missing because the interval passes 
   method = "example_be_crossover.csv with subject 2's Test period at 25% and BLQ from 6 h; pivotal AUC 0-8 with Cmax; AUClast",
   expected = "AUC 0-8 and Cmax 0-8: no estimate, the reason names the profile (was: subject dropped, YES); AUClast keeps its verdict")
 
-check("DSR-04", "D-3: negative (pre-dose) times stop the analysis, as in the ADNCA upload",
+check("DSR-04", "D-3: negative times stop the analysis, except one pre-dose sample close to the dose (ARV-06)",
   tryCatch({
-    d <- data.frame(Subject = 1, Time = c(-0.5, 0.5, 1, 2, 4, 8, 12), Conc = c(0, 5, 10, 8, 4, 2, 1))
+    d <- data.frame(Subject = 1, Time = c(-5, 0.5, 1, 2, 4, 8, 12), Conc = c(0, 5, 10, 8, 4, 2, 1))
     qc <- run_data_quality_check(d, list(subject = "Subject", time = "Time", conc = "Conc"), lloq = 0)
     !qc$pass && any(qc$findings$Severity == "ERROR" & grepl("negative time", qc$findings$Message))
   }, error = function(e) FALSE),
   "URS-DAT-03", critical = TRUE,
-  method = "A profile with a pre-dose sample at -0.5 h",
-  expected = "ERROR, processing blocked (was a WARNING: AUClast +2.8% and a lag time of -0.5 h)")
+  method = "A 12 h profile with a pre-dose sample at -5 h (beyond 10% of the profile before the dose)",
+  expected = "ERROR, processing blocked (a single pre-dose sample within 10% is analysed at 0, ARV-06)")
 
 check("DSR-05", "D-4: several analytes in one concentration column are refused even when their sampling times differ",
   tryCatch({
@@ -6082,7 +6084,7 @@ check("HLF-01", "Span ratio and the rule boundaries",
   "URS-NCA-04, URS-NCA-15", critical = TRUE, method = "lambda_z_flags() on spans of exactly 2, just under 2 and 1, and % extrapolated of exactly 20 and just over",
   expected = "Span 2 and 20% pass; below 2 and over 20% flagged; back-extrapolation not applicable (extravascular)")
 
-check("HLF-02", "Flags in the NCA: blank where the half-life is blanked, off at steady state for extrapolation, back-extrapolation only for IV bolus",
+check("HLF-02", "Flags in the NCA: blank where the half-life is blanked, at steady state extrapolation of AUCtau, back-extrapolation only for IV bolus",
   tryCatch({
     th <- read.csv("data/example_theoph.csv"); cm <- list(subject = "Subject", time = "Time", conc = "conc")
     r <- suppressWarnings(run_nca(th, cm, hlf_st(r2adj_threshold = 0.999)))
@@ -6092,11 +6094,11 @@ check("HLF-02", "Flags in the NCA: blank where the half-life is blanked, off at 
                                    list(subject = "S", time = "T", conc = "C"), hlf_st(admin_route = "iv_bolus")))
     any(blank) && all(is.na(r$FLAG_SPAN[blank])) && all(!is.na(r$FLAG_SPAN[!blank])) &&
       all(abs(r$LZSPAN[!blank] - (r$LAMZUL - r$LAMZLL)[!blank] / r$LAMZHL[!blank]) < 1e-12) &&
-      all(is.na(ss$FLAG_AUCPE)) && !is.na(bo$FLAG_AUCPBE) && all(is.na(r$FLAG_AUCPBE))
+      all(ss$FLAG_AUCPE == as.numeric(ss$AUCTAU_PCTEXT > 20)) && !is.na(bo$FLAG_AUCPBE) && all(is.na(r$FLAG_AUCPBE))
   }, error = function(e) FALSE),
   "URS-NCA-04, URS-NCA-07, URS-NCA-15", critical = TRUE,
   method = "Theophylline with a minimum R2 of 0.999 (some half-lives blanked), at steady state, and an IV bolus profile",
-  expected = "Flags NA where blanked, span = (LAMZUL - LAMZLL) / t1/2, no extrapolation flag at steady state, back-extrapolation flag only for the bolus")
+  expected = "Flags NA where blanked, span = (LAMZUL - LAMZLL) / t1/2, at steady state the extrapolation flag follows AUCtau % extrapolated, back-extrapolation flag only for the bolus")
 
 check("HLF-03", "The rules are settings: switched off, changed, recorded, reproduced",
   tryCatch({
@@ -6367,7 +6369,8 @@ check("EXC-10", "Controlled mode: exclusions are written to the audit trail firs
     mu <- paste(readLines("R/mod_path_multi_nca.R"), collapse = "\n"); be <- paste(readLines("R/mod_path_be.R"), collapse = "\n")
     up <- paste(readLines("R/mod_data_upload.R"), collapse = "\n")
     grepl('if (!gxp_guard("exclusion_added"', ex, fixed = TRUE) && grepl('if (!gxp_guard("exclusion_restored"', ex, fixed = TRUE) &&
-      regexpr('gxp_guard("exclusion_added"', ex, fixed = TRUE) < regexpr("shared$exclusions <- rbind(", ex, fixed = TRUE) &&
+      regexpr('gxp_guard("exclusion_added"', ex, fixed = TRUE) < regexpr("shared$exclusions <- rbind(as_exclusions(shared$exclusions), new)", ex, fixed = TRUE) &&
+      regexpr('gxp_guard("exclusion_imported"', ex, fixed = TRUE) < regexpr("shared$exclusions <- rbind(have, imp)", ex, fixed = TRUE) &&
       grepl("observeEvent(shared$data_id, {", mu, fixed = TRUE) && grepl("observeEvent(shared$data_id, {", be, fixed = TRUE) &&
       !grepl("observeEvent(shared$pk_data, {", mu, fixed = TRUE) && grepl("prune_overrides(lz_state, shared$exclusions)", mu, fixed = TRUE) &&
       grepl("shared$data_id    <- shared$data_id + 1", up, fixed = TRUE)
@@ -6389,6 +6392,208 @@ check("EXC-11", "A settings file of schema 1.3.0 (no exclusions, no rules) still
   expected = "Default rules, no exclusions, 12 profiles")
 
 end_section("EXC")
+
+
+# =============================================================================
+# SECTION ARV: Adversarial review of the app (dose unit, trough, subjects,
+# pre-dose time, exclusion register, error messages)
+# =============================================================================
+# One test per finding that held up on reproduction, each built from the
+# failing case: theophylline's Dose column in mg/kg, a trough drawn 15 minutes
+# late, a crossover subject left with one period, a last sample before tau, a
+# pre-dose sample at -0.25 h, a register lost with the session.
+start_section("ARV")
+
+arv_th <- read.csv("data/example_theoph.csv", colClasses = c(Subject = "character"))
+arv_cm <- list(subject = "Subject", time = "Time", conc = "conc", dose = "Dose")
+arv_ss <- function(t, c, ...) suppressWarnings(run_nca(data.frame(Subject = "1", Time = t, Conc = c),
+  list(subject = "Subject", time = "Time", conc = "Conc"),
+  hlf_st(is_steady_state = TRUE, tau = 12, ...)))
+
+check("ARV-01", "A Dose column per kg is multiplied by body weight: CL/F as with the amount given",
+  tryCatch({
+    cmk <- c(arv_cm, list(dose_weight = "Wt"))
+    ds <- prepare_pk_dataset(arv_th, cmk, list())
+    st <- hlf_st(dose_unit = "mg", conc_unit = "mg/L", dose = dose_by_profile(ds$data, cmk), dose_source = "per_profile")
+    r <- suppressWarnings(run_nca(ds$data, cmk, st))
+    old <- suppressWarnings(run_nca(arv_th, arv_cm, hlf_st(dose_unit = "mg", conc_unit = "mg/L",
+                                                           dose = dose_by_profile(arv_th, arv_cm), dose_source = "per_profile")))
+    amt <- tapply(arv_th$Dose * arv_th$Wt, arv_th$Subject, max)[r$Subject]
+    wt <- tapply(arv_th$Wt, arv_th$Subject, max)[r$Subject]
+    k <- match(r$Subject, old$Subject)
+    identical(ds$provenance$dose_basis, "per_kg") && all(ds$data[[DOSE_PER_KG_COLUMN]] == arv_th$Dose[order(arv_th$Subject, arv_th$Time)]) &&
+      all(abs(as.numeric(r$CLFO) - amt / as.numeric(r$AUCIFO)) < 1e-9 * as.numeric(r$CLFO)) &&
+      all(abs(as.numeric(r$CLFO) / as.numeric(old$CLFO[k]) - wt) < 1e-6 * wt)
+  }, error = function(e) FALSE),
+  "URS-NCA-09, URS-DAT-01", critical = TRUE,
+  method = "example_theoph.csv with Dose (mg/kg) and the weight column Wt mapped, against the Dose column read as mg",
+  expected = "CL/F = Dose x Wt / AUC to infinity for every subject, i.e. body weight (54.6 to 86.4 kg) times the value from reading mg/kg as mg; uploaded dose kept")
+
+check("ARV-02", "The Dose panel states the assumed unit and warns when doses look per kg",
+  tryCatch({
+    h <- as.character(dose_column_panel(arv_th, arv_cm, "mg"))
+    hk <- as.character(dose_column_panel(prepare_pk_dataset(arv_th, c(arv_cm, list(dose_weight = "Wt")), list())$data,
+                                         c(arv_cm, list(dose_weight = "Wt")), "mg"))
+    xo <- read.csv("data/example_be_crossover.csv"); xo$Dose <- 100
+    hx <- as.character(dose_column_panel(xo, list(subject = "Subject", time = "Time", conc = "Concentration", dose = "Dose"), "mg"))
+    dose_looks_per_kg(arv_th, arv_cm) && grepl("alert-warning", h) && grepl("per subject", h) &&
+      !grepl("alert-success|circle-check", paste(h, hk, hx)) && !grepl("alert-warning", hk) && grepl("per kg", hk) &&
+      !grepl("alert-warning", hx)
+  }, error = function(e) FALSE),
+  "URS-NCA-09, URS-UI-01", critical = FALSE,
+  method = "dose_column_panel() for theophylline without and with the weight column, and for a 100 mg crossover",
+  expected = "No green confirmation; the unit read is stated; a warning only for the theophylline doses read per subject")
+
+check("ARV-03", "A record with doses per kg reproduces",
+  tryCatch({
+    td <- tempfile("arv03_"); dir.create(td); zf <- file.path(td, "rec.zip")
+    cmk <- c(arv_cm, list(dose_weight = "Wt"))
+    d <- prepare_pk_dataset(read.csv(example_path("example_theoph.csv")), cmk, list(lloq = 0))$data
+    st <- hlf_st(dose_unit = "mg", conc_unit = "mg/L", dose = dose_by_profile(d, cmk), dose_source = "per_profile")
+    create_analysis_record(zf, suppressWarnings(run_nca(d, cmk, st)), st, cmk,
+                           example_path("example_theoph.csv"), "example_theoph.csv", blq_rule = "rule1", lloq = 0,
+                           analyst = "Validation", study_name = "ARV-03")
+    utils::unzip(zf, exdir = td)
+    any(grepl("^Result: MATCH", readLines(file.path(td, "reproduction_check.txt"))))
+  }, error = function(e) FALSE),
+  "URS-EXP-02, URS-EXP-03", critical = TRUE,
+  method = "create_analysis_record() for theophylline with the weight column mapped, per-profile doses",
+  expected = "reproduction_check.txt: MATCH (the mapping carries the conversion)")
+
+check("ARV-04", "A crossover subject without both treatments leaves both models",
+  tryCatch({
+    st <- hlf_st()
+    ex <- exc_one("profile", "3", "Reference", "2", category = "Vomiting or diarrhoea")
+    r <- suppressWarnings(run_nca(exc_xo, exc_cm, c(st, list(exclusions = ex))))
+    bd <- build_be_data(r, exc_xo, exc_cm, reference = "Reference", exclusions = ex)$data
+    xo2 <- exc_xo[exc_xo$Subject != 3, ]
+    bd2 <- build_be_data(suppressWarnings(run_nca(xo2, exc_cm, st)), xo2, exc_cm, reference = "Reference")$data
+    f <- function(b, m) fit_be_parameter(b, "CMAX", "2x2x2", m, "Treatment", "Subject", "Period", "Sequence")$row
+    a <- f(bd, "fixed"); b <- f(bd, "mixed"); c2 <- f(bd2, "mixed")
+    a$N_Test == 5 && b$N_Test == 5 && b$N_Ref == 5 && b$Incomplete_Subjects == 1 &&
+      abs(b$Point_Est - c2$Point_Est) < 1e-9 && abs(b$CI_Lower - c2$CI_Lower) < 1e-9 && abs(a$Point_Est - b$Point_Est) < 1e-6
+  }, error = function(e) FALSE),
+  "URS-BE-01, URS-BE-11", critical = TRUE,
+  method = "example_be_crossover.csv, the Reference profile of subject 3 excluded; Method A and B against the data without subject 3",
+  expected = "Method B equals the analysis without subject 3 (was: Test 6 / Reference 5 and a shifted ratio); 1 incomplete subject reported")
+
+check("ARV-05", "C(tau) is the sample nearest to tau within the trough window, never interpolated",
+  tryCatch({
+    t <- c(0, 0.5, 1, 2, 4, 6, 8); cc <- c(20, 50, 80, 90, 70, 50, 35)
+    late <- arv_ss(c(t, 12.25), c(cc, 20)); far <- arv_ss(c(t, 13.5), c(cc, 18))
+    exact <- arv_ss(c(t, 12.25), c(cc, 20), ctau_window = 0)
+    w <- tryCatch({ arv_ss(c(t, 13.5), c(cc, 18)); character(0) }, warning = function(w) conditionMessage(w))
+    msgs <- character(0)
+    withCallingHandlers(run_nca(data.frame(Subject = "1", Time = c(t, 13.5), Conc = c(cc, 18)),
+      list(subject = "Subject", time = "Time", conc = "Conc"), hlf_st(is_steady_state = TRUE, tau = 12)),
+      warning = function(w) { msgs <<- c(msgs, conditionMessage(w)); invokeRestart("muffleWarning") })
+    late$CTAU_SS == 20 && late$CTAU_TIME == 12.25 && is.na(far$CTAU_SS) && is.na(exact$CTAU_SS) &&
+      ctau_window(list(), 12) == 1 && ctau_window(list(), 4) == 0.4 && any(grepl("is empty. It is never interpolated", msgs, fixed = TRUE))
+  }, error = function(e) FALSE),
+  "URS-NCA-07", critical = TRUE,
+  method = "tau 12 h; troughs at 12.25 h and 13.5 h; window default (min(10% of tau, 1)) and 0",
+  expected = "12.25 h used with its time; 13.5 h and window 0 give no Ctau, with a note (was: empty without a note)")
+
+check("ARV-06", "AUCtau extrapolated past the last sample is reported, noted and flagged",
+  tryCatch({
+    t <- c(0, 0.5, 1, 2, 4, 6, 8, 10); cc <- c(20, 50, 80, 90, 70, 50, 35, 26)
+    msgs <- character(0)
+    r <- withCallingHandlers(run_nca(data.frame(Subject = "1", Time = t, Conc = cc),
+      list(subject = "Subject", time = "Time", conc = "Conc"), hlf_st(is_steady_state = TRUE, tau = 12)),
+      warning = function(w) { msgs <<- c(msgs, conditionMessage(w)); invokeRestart("muffleWarning") })
+    full <- arv_ss(c(t, 12), c(cc, 20))
+    strict <- suppressWarnings(run_nca(data.frame(Subject = "1", Time = t, Conc = cc), list(subject = "Subject", time = "Time", conc = "Conc"),
+      hlf_st(is_steady_state = TRUE, tau = 12, lz_rules = list(span_min = 2, aucpext_max = 5, aucpbe_max = 20))))
+    p <- 100 * (r$AUCTAU - r$AUCLST) / r$AUCTAU
+    abs(r$AUCTAU_PCTEXT - p) < 1e-9 && r$AUCTAU_PCTEXT > 0 && full$AUCTAU_PCTEXT == 0 &&
+      any(grepl("extrapolated with", msgs)) && r$FLAG_AUCPE == 0 && strict$FLAG_AUCPE == 1 &&
+      grepl("extrapolated 7.3 > 5", lz_flag_text(strict, list(span_min = 2, aucpext_max = 5, aucpbe_max = 20)), fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-NCA-07, URS-NCA-15", critical = TRUE,
+  method = "tau 12 h with the last sample at 10 h, and at 12 h; extrapolation limit 20% and 5%",
+  expected = "AUCTAU_PCTEXT = (AUCtau - AUClast) / AUCtau x 100, 0 when sampled to tau; a note; flagged above the limit (was: silent)")
+
+check("ARV-07", "One pre-dose sample at a small negative time is analysed at 0; other negative times are refused",
+  tryCatch({
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc")
+    tt <- c(0.5, 1, 2, 4, 6, 8, 12); cc <- c(40, 70, 80, 60, 45, 34, 19)
+    neg <- data.frame(Subject = "1", Time = c(-0.25, tt), Conc = c(0, cc))
+    zero <- data.frame(Subject = "1", Time = c(0, tt), Conc = c(0, cc))
+    qc <- run_data_quality_check(neg, cm, lloq = 0); ds <- prepare_pk_dataset(neg, cm, list())
+    r1 <- suppressWarnings(run_nca(ds$data, cm, hlf_st())); r0 <- suppressWarnings(run_nca(zero, cm, hlf_st()))
+    two <- neg; two$Time[2] <- -0.1
+    both <- rbind(neg, transform(zero, Subject = "2")); both$Time[both$Subject == "2"][1] <- -0.25
+    both <- rbind(both, data.frame(Subject = "2", Time = 0, Conc = 0))
+    qc$pass && any(qc$findings$Severity == "WARNING" & grepl("analysed at time 0", qc$findings$Message)) &&
+      ds$data$Time[1] == 0 && ds$data[[PREDOSE_TIME_COLUMN]][1] == -0.25 && ds$provenance$predose_times_set_to_0 == 1 &&
+      isTRUE(all.equal(r1$AUCLST, r0$AUCLST)) && isTRUE(all.equal(r1$TLAG, r0$TLAG)) &&
+      !run_data_quality_check(two, cm, lloq = 0)$pass && !run_data_quality_check(both, cm, lloq = 0)$pass
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE,
+  method = "A 12 h profile with its pre-dose sample at -0.25 h; two negative times; a negative and a 0 h pre-dose sample",
+  expected = "Analysed at 0 with a warning and the uploaded time kept, results equal to the file with 0 (was: refused); the others refused")
+
+check("ARV-08", "The exclusion register can be loaded again, and keeps its evidence of timing",
+  tryCatch({
+    ok <- FALSE
+    cm <- list(subject = "Subject", time = "Time", conc = "conc")
+    th <- read.csv("data/example_theoph.csv")
+    opts <- list(lloq = 0, blq_rule = "rule1", door = "flat", read_args = list(), col_map = cm)
+    ds <- prepare_pk_dataset(th, cm, opts[setdiff(names(opts), "col_map")])
+    reg <- as_exclusions(data.frame(id = c("a1", "a2"), level = c("sample", "profile"), subject = c("1", "2"),
+      treatment = NA, period = NA, time = c(0.25, NA), category = c("Sample handling", "Vomiting or diarrhoea"),
+      after_be = c(TRUE, FALSE), created_utc = "2026-09-01T10:00:00Z", created_by = "Analyst (ana)", stringsAsFactors = FALSE))
+    f_csv <- tempfile(fileext = ".csv"); utils::write.csv(reg, f_csv, row.names = FALSE, na = "")
+    f_json <- tempfile(fileext = ".json"); jsonlite::write_json(list(exclusions = reg), f_json, auto_unbox = TRUE)
+    bad <- reg; bad$subject[1] <- "99"; f_bad <- tempfile(fileext = ".csv"); utils::write.csv(bad, f_bad, row.names = FALSE, na = "")
+    rc <- read_exclusion_file(f_csv); rj <- read_exclusion_file(f_json, "analysis_settings.json")
+    sh <- shiny::reactiveValues(data_ready = TRUE, raw_data = th, col_map = cm, pk_data = ds$data, pk_dataset = ds,
+                                prepare_opts = opts, exclusions = NULL, be_results = list(ci_table = 1), exclusion_request = NULL)
+    suppressWarnings(shiny::testServer(exclusions_server, args = list(shared = sh), {
+      session$setInputs(import = list(name = "exclusions.csv", datapath = f_bad))
+      none <- nrow(as_exclusions(sh$exclusions)) == 0
+      session$setInputs(import = list(name = "exclusions.csv", datapath = f_csv))
+      ex <- as_exclusions(sh$exclusions)
+      ok <<- none && nrow(ex) == 2 && all(ex$after_be) && all(!is.na(ex$imported_utc)) &&
+        all(ex$created_utc == "2026-09-01T10:00:00Z") && nrow(sh$pk_data) == nrow(ds$data) - 1
+    }))
+    ok && identical(rc$id, reg$id) && identical(rj$category, reg$category) && is.null(read_exclusion_file(f_json, "x.csv"))
+  }, error = function(e) FALSE),
+  "URS-DAT-09, URS-GXP-05", critical = TRUE,
+  method = "exclusions.csv and analysis_settings.json read back; shiny::testServer: a register that does not match, then one that does, after bioequivalence results",
+  expected = "Nothing loaded from the non-matching file; both exclusions loaded with their original time and author, marked as after bioequivalence results, the sample removed")
+
+check("ARV-09", "Controlled mode: an exclusion made in a new session after bioequivalence results is still marked",
+  tryCatch({
+    ex <- paste(readLines("R/mod_exclusions.R"), collapse = "\n")
+    grepl("after_be = be_results_seen(shared)", ex, fixed = TRUE) &&
+      grepl('tr$event == "analysis_run" & grepl("^bioequivalence", tr$object) & tr$sha256 %in% sha', ex, fixed = TRUE) &&
+      grepl("imp$after_be <- imp$after_be | be_results_seen(shared)", ex, fixed = TRUE) &&
+      grepl('if (!gxp_guard("exclusion_imported"', ex, fixed = TRUE) &&
+      grepl("window.onbeforeunload", ex, fixed = TRUE) && grepl("unsaved(FALSE)", ex, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-DAT-09, URS-GXP-05", critical = TRUE,
+  method = "Code inspection of R/mod_exclusions.R",
+  expected = "The mark uses the audit trail's bioequivalence runs for the data's SHA-256; imports are audited first; the page warns before closing with an undownloaded register")
+
+check("ARV-10", "Errors stay on screen until closed and are announced to screen readers",
+  tryCatch({
+    files <- c(list.files("R", pattern = "\\.R$", full.names = TRUE), "app.R")
+    calls <- unlist(lapply(files, function(f) {
+      s <- paste(readLines(f, warn = FALSE), collapse = "\n")
+      regmatches(s, gregexpr("showNotification\\((?:[^()]|\\((?:[^()]|\\([^()]*\\))*\\))*\\)", s, perl = TRUE))[[1]]
+    }))
+    err <- calls[grepl('type\\s*=\\s*"error"', calls)]
+    app <- paste(readLines("app.R", warn = FALSE), collapse = "\n")
+    length(err) > 40 && all(grepl("duration\\s*=\\s*NULL", err)) &&
+      grepl('id = "nca-live-assertive", class = "visually-hidden", role = "alert"', app, fixed = TRUE) &&
+      grepl("shiny-notification-error", app, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-UI-01", critical = FALSE,
+  method = "Every showNotification(type = \"error\") call in R/ and app.R; the live regions in app.R",
+  expected = "No error disappears on a timer (were 5 to 12 s); notification text is copied into live regions, errors assertively")
+
+end_section("ARV")
 
 # =============================================================================
 # Post-execution

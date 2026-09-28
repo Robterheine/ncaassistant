@@ -63,7 +63,8 @@ path_multi_nca_ui <- function(id) {
                             value = FALSE),
               conditionalPanel(
                 condition = sprintf("input['%s'] == true", ns("is_ss")),
-                numericInput(ns("tau"), "Dosing interval \u03C4 (same unit as Time)", value = NA, min = 0))
+                numericInput(ns("tau"), "Dosing interval \u03C4 (same unit as Time)", value = NA, min = 0),
+                numericInput(ns("ctau_window"), "Trough window \u00B1 for C\u03C4 (empty: 10% of \u03C4, at most 1)", value = NA, min = 0))
             )
           ),
           
@@ -297,24 +298,7 @@ path_multi_nca_server <- function(id, shared) {
       }
       
       # Show dose summary from data
-      dose_vals <- shared$pk_data[[shared$col_map$dose]]
-      dose_by_subj <- tapply(dose_vals, shared$pk_data[[shared$col_map$subject]],
-                             function(x) max(x, na.rm = TRUE))
-      unique_doses <- sort(unique(dose_by_subj))
-      
-      tags$div(
-        class = "alert alert-success py-2 small",
-        icon("circle-check"),
-        paste0(" Dose column '", shared$col_map$dose, "' found. "),
-        if (length(unique_doses) == 1) {
-          paste0("All subjects received ", unique_doses, " ",
-                 input$dose_unit, ".")
-        } else {
-          paste0(length(unique_doses), " different doses: ",
-                 paste(unique_doses, collapse = ", "), " ", input$dose_unit,
-                 " (", length(dose_by_subj), " subjects).")
-        }
-      )
+      dose_column_panel(shared$pk_data, shared$col_map, input$dose_unit)
     })
     
     output$data_gate <- renderUI({
@@ -338,7 +322,7 @@ path_multi_nca_server <- function(id, shared) {
     pauc_notes    <- reactiveVal(character(0))
 
     clear_result_on_change(
-      reactive(list(input$admin_route, input$dose, input$inf_dur, input$is_ss, input$tau,
+      reactive(list(input$admin_route, input$dose, input$inf_dur, input$is_ss, input$tau, input$ctau_window,
                     input$dose_unit, input$time_unit, input$conc_unit, input$trap_method,
                     input$r2adj, input$mw, input$dose_norm, input$dose_source, pauc_spec(), lzr())),
       has_result = function() !is.null(nca_result()), clear = function() nca_result(NULL),
@@ -355,7 +339,7 @@ path_multi_nca_server <- function(id, shared) {
       if (!use_data_dose) {
         if (is.null(input$dose) || is.na(input$dose) || input$dose <= 0) {
           showNotification("Please enter a valid dose (greater than 0).",
-                           type = "error", duration = 5)
+                           type = "error", duration = NULL)
           return()
         }
       }
@@ -363,18 +347,18 @@ path_multi_nca_server <- function(id, shared) {
       if (input$admin_route == "iv_infusion" &&
           (is.null(input$inf_dur) || is.na(input$inf_dur) || input$inf_dur <= 0)) {
         showNotification("Please enter the infusion duration (greater than 0) for IV infusion.",
-                         type = "error", duration = 5)
+                         type = "error", duration = NULL)
         return()
       }
       
       if (isTRUE(input$is_ss) && (is.null(input$tau) || is.na(input$tau) || input$tau <= 0)) {
         showNotification("Steady state: enter the dosing interval \u03C4 (for example 12 or 24 h).",
-                         type = "error", duration = 8)
+                         type = "error", duration = NULL)
         return()
       }
       pauc_err <- validate_partial_aucs(pauc_spec(), isTRUE(input$is_ss), input$tau)
       if (!is.null(pauc_err)) {
-        showNotification(pauc_err, type = "error", duration = 10)
+        showNotification(pauc_err, type = "error", duration = NULL)
         return()
       }
       settings <- list(
@@ -383,7 +367,7 @@ path_multi_nca_server <- function(id, shared) {
         infusion_duration = ifelse(input$admin_route == "iv_infusion",
                                    input$inf_dur, 0),
         is_steady_state   = input$is_ss,
-        tau               = input$tau,
+        tau               = input$tau, ctau_window = input$ctau_window,
         dose_unit         = input$dose_unit,
         time_unit         = input$time_unit,
         conc_unit         = input$conc_unit,
@@ -400,12 +384,12 @@ path_multi_nca_server <- function(id, shared) {
       # Check the combination before running so the user gets a usable error.
       uchk <- validate_units(input$dose_unit, input$time_unit, input$conc_unit, input$mw)
       if (!uchk$valid) {
-        showNotification(uchk$message, type = "error", duration = 12)
+        showNotification(uchk$message, type = "error", duration = NULL)
         return()
       }
       umsg <- check_units_against_data(shared$study_info$units, input$dose_unit, input$time_unit, input$conc_unit)
       if (!is.null(umsg)) {
-        showNotification(umsg, type = "error", duration = 12)
+        showNotification(umsg, type = "error", duration = NULL)
         return()
       }
 
@@ -414,7 +398,7 @@ path_multi_nca_server <- function(id, shared) {
         if (any(!is.finite(dose_vec) | dose_vec <= 0)) {
           showNotification(
             "Some subjects have missing or zero dose values. Check the Dose column in your data.",
-            type = "error", duration = 8)
+            type = "error", duration = NULL)
           return()
         }
         # One dose per profile (subject x treatment x period), matched by profile
@@ -787,7 +771,8 @@ path_multi_nca_server <- function(id, shared) {
         badge <- if (!is.null(lz_state$override))
           tags$span(class = "badge bg-info ms-2", "manually adjusted") else NULL
         res <- nca_result(); i <- if (is.null(res)) integer(0) else profile_result_row(res, input$lz_profile)
-        pe <- if (length(i) == 1 && "AUCPEO" %in% names(res)) suppressWarnings(as.numeric(res$AUCPEO[i])) else NA
+        pe_col <- if (isTRUE(input$is_ss)) "AUCTAU_PCTEXT" else "AUCPEO"
+          pe <- if (length(i) == 1 && pe_col %in% names(res)) suppressWarnings(as.numeric(res[[pe_col]][i])) else NA
         tags$div(class="alert alert-success py-2",
                  tags$small(paste0("Half-life: ", signif(lz$half_life,4), " ", input$time_unit, " | R\u00B2: ",
                                    signif(lz$r2adj,4), " | ", lz$n_points, " pts")),
@@ -902,7 +887,7 @@ path_multi_nca_server <- function(id, shared) {
       lz_calc <- recalculate_lambda_z(sd$time, sd$conc, sel_idx, is_blq = sd$is_blq)
       
       if (!is.null(lz_calc$error)) {
-        showNotification(lz_calc$error, type = "error", duration = 10)
+        showNotification(lz_calc$error, type = "error", duration = NULL)
         return()
       }
       if (!is.null(lz_calc$warning)) {
@@ -1007,7 +992,7 @@ path_multi_nca_server <- function(id, shared) {
           if (is.null(settings)) {
             settings <- list(
               admin_route = input$admin_route, dose = input$dose,
-              infusion_duration = 0, is_steady_state = isTRUE(input$is_ss), tau = input$tau,
+              infusion_duration = 0, is_steady_state = isTRUE(input$is_ss), tau = input$tau, ctau_window = input$ctau_window,
               dose_unit = input$dose_unit, time_unit = input$time_unit,
               conc_unit = input$conc_unit, trap_method = input$trap_method,
               r2adj_threshold = input$r2adj, n_obs = nrow(shared$pk_data)

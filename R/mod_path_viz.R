@@ -913,12 +913,12 @@ path_viz_server <- function(id, shared) {
 
         if (is.na(w) || w < 2 || w > 20) {
           showNotification("Width must be between 2 and 20 inches.",
-                           type = "error")
+                           type = "error", duration = NULL)
           return(NULL)
         }
         if (is.na(h) || h < 2 || h > 20) {
           showNotification("Height must be between 2 and 20 inches.",
-                           type = "error")
+                           type = "error", duration = NULL)
           return(NULL)
         }
 
@@ -926,7 +926,7 @@ path_viz_server <- function(id, shared) {
           resolve_export_plot(),
           error = function(e) {
             showNotification(paste("Figure build failed:", conditionMessage(e)),
-                             type = "error", duration = 8)
+                             type = "error", duration = NULL)
             NULL
           }
         )
@@ -937,7 +937,7 @@ path_viz_server <- function(id, shared) {
                           width = w, height = h, dpi = r, units = "in"),
           error = function(e)
             showNotification(paste("Export failed:", conditionMessage(e)),
-                             type = "error", duration = 8)
+                             type = "error", duration = NULL)
         )
         if (file.exists(file)) gxp_export_done(file, plot_file_name(), fmt, gxp_data_sha256(shared$study_info))
       }

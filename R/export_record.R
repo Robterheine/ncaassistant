@@ -543,6 +543,7 @@ create_analysis_record <- function(output_path, results, settings, col_map,
       infusion_dur    = settings$infusion_duration,
       steady_state    = settings$is_steady_state,
       tau             = settings$tau,
+      ctau_window     = if (isTRUE(settings$is_steady_state)) ctau_window(settings, steady_state_tau(settings)) else NULL,
       trap_method     = settings$trap_method,
       r2adj_threshold = settings$r2adj_threshold,
       lz_rules        = lz_rules(settings),
@@ -732,6 +733,7 @@ create_single_analysis_record <- function(output_path, result, settings,
       infusion_dur    = if (is.null(settings$infusion_duration)) 0 else settings$infusion_duration,
       steady_state    = isTRUE(settings$is_steady_state),
       tau             = settings$tau,
+      ctau_window     = if (isTRUE(settings$is_steady_state)) ctau_window(settings, steady_state_tau(settings)) else NULL,
       trap_method     = settings$trap_method,
       r2adj_threshold = if (is.null(settings$r2adj_threshold)) 0.7 else settings$r2adj_threshold,
       lz_rules        = lz_rules(settings),
@@ -1105,7 +1107,7 @@ if (identical(rec$data_source, "uploaded_file")) {
 cat("Profile:", rec$subject, "-", length(time), "time points\n")
 
 settings <- list(admin_route = rec$admin_route, dose = rec$dose, infusion_duration = rec$infusion_dur,
-                 is_steady_state = isTRUE(rec$steady_state), tau = rec$tau, dose_unit = rec$dose_unit,
+                 is_steady_state = isTRUE(rec$steady_state), tau = rec$tau, ctau_window = rec$ctau_window, dose_unit = rec$dose_unit,
                  time_unit = rec$time_unit, conc_unit = rec$conc_unit,
                  trap_method = rec$trap_method, mw = rec$mw,
                  r2adj_threshold = rec$r2adj_threshold, lz_rules = rec$lz_rules,
@@ -1448,5 +1450,6 @@ exclusion_sheet <- function(x) {
              Status = ifelse(is.na(ex$restored_utc) | !nzchar(ex$restored_utc), "in force",
                              paste0("restored ", ex$restored_utc,
                                     ifelse(is.na(ex$restore_reason), "", paste0(": ", ex$restore_reason)))),
+             `Loaded from a file (UTC)` = ex$imported_utc,
              check.names = FALSE, stringsAsFactors = FALSE)
 }

@@ -125,6 +125,7 @@ path_single_nca_ui <- function(id) {
           conditionalPanel(
             condition = sprintf("input['%s'] == true", ns("is_ss")),
             numericInput(ns("tau"), "Dosing interval \u03C4 (same unit as Time)", value = NA, min = 0),
+                numericInput(ns("ctau_window"), "Trough window \u00B1 for C\u03C4 (empty: 10% of \u03C4, at most 1)", value = NA, min = 0),
             tags$p(class = "text-muted small",
                    "The pre-dose concentration is not zero because the drug has accumulated. ",
                    "The app calculates AUC from 0 to \u03C4 (AUC\u03C4), average concentration and ",
@@ -234,9 +235,13 @@ path_single_nca_server <- function(id, shared) {
     # Dose hint
     output$dose_hint <- renderUI({
       if (shared$data_ready && !is.null(shared$col_map$dose)) {
-        tags$span(class = "text-muted", style = "font-size: 0.75rem;",
-                  icon("circle-info", class = "me-1"),
-                  "Auto-filled from your data's Dose column.")
+        tagList(
+          tags$span(class = "text-muted", style = "font-size: 0.75rem;",
+                    icon("circle-info", class = "me-1"),
+                    if (is.null(shared$col_map$dose_weight)) "Auto-filled from your data's Dose column."
+                    else paste0("Auto-filled from your data's Dose column, per kg \u00D7 the weight in '",
+                                shared$col_map$dose_weight, "'.")),
+          dose_per_kg_warning(shared$pk_data, shared$col_map))
       }
     })
     
@@ -292,7 +297,7 @@ path_single_nca_server <- function(id, shared) {
     
     observeEvent(input$btn_use_manual, {
       p <- manual_parsed()
-      if (!p$ok) { showNotification("Fix data issues first.", type = "error"); return() }
+      if (!p$ok) { showNotification("Fix data issues first.", type = "error", duration = NULL); return() }
       if (!gxp_guard("data_loaded", object = "typed in", sha256 = sha256_values(p$time, p$conc),
                      details = list(source = "typed in", points = p$nt))) return()
       local$time <- p$time; local$conc <- p$conc
@@ -419,7 +424,7 @@ path_single_nca_server <- function(id, shared) {
     lzr <- lz_rules_server("lzr", shared)
     exclusion_strip_server("strip", shared)
     clear_result_on_change(
-      reactive(list(input$admin_route, input$dose, input$inf_dur, input$is_ss, input$tau,
+      reactive(list(input$admin_route, input$dose, input$inf_dur, input$is_ss, input$tau, input$ctau_window,
                     input$dose_unit, input$time_unit, input$conc_unit, input$trap_method,
                     input$r2adj, input$mw, pauc_spec(), lzr(), shared$exclusions)),
       has_result = function() !is.null(nca_res()), clear = function() nca_res(NULL),
@@ -430,7 +435,7 @@ path_single_nca_server <- function(id, shared) {
       list(admin_route = input$admin_route,
            dose = suppressWarnings(as.numeric(input$dose)),
            infusion_duration = if (input$admin_route == "iv_infusion") input$inf_dur else 0,
-           is_steady_state = isTRUE(input$is_ss), tau = input$tau,
+           is_steady_state = isTRUE(input$is_ss), tau = input$tau, ctau_window = input$ctau_window,
            dose_unit = input$dose_unit, time_unit = input$time_unit, conc_unit = input$conc_unit,
            trap_method = input$trap_method, r2adj_threshold = input$r2adj, lz_rules = lzr(),
            exclusions = shared$exclusions,
@@ -447,7 +452,7 @@ path_single_nca_server <- function(id, shared) {
       
       if (is.null(input$dose) || is.na(input$dose) || input$dose <= 0) {
         showNotification("Please enter a valid dose (greater than 0).",
-                         type = "error", duration = 5)
+                         type = "error", duration = NULL)
         return()
       }
       
@@ -461,28 +466,28 @@ path_single_nca_server <- function(id, shared) {
       if (input$admin_route == "iv_infusion" &&
           (is.null(input$inf_dur) || is.na(input$inf_dur) || input$inf_dur <= 0)) {
         showNotification("Please enter the infusion duration (greater than 0) for IV infusion.",
-                         type = "error", duration = 5)
+                         type = "error", duration = NULL)
         return(NULL)
       }
       uchk <- validate_units(input$dose_unit, input$time_unit, input$conc_unit, input$mw)
       if (!uchk$valid) {
-        showNotification(uchk$message, type = "error", duration = 12)
+        showNotification(uchk$message, type = "error", duration = NULL)
         return(NULL)
       }
       umsg <- if (identical(input$data_mode, "uploaded")) check_units_against_data(shared$study_info$units, input$dose_unit, input$time_unit, input$conc_unit)
       if (!is.null(umsg)) {
-        showNotification(umsg, type = "error", duration = 12)
+        showNotification(umsg, type = "error", duration = NULL)
         return(NULL)
       }
 
       if (isTRUE(input$is_ss) && (is.null(input$tau) || is.na(input$tau) || input$tau <= 0)) {
         showNotification("Steady state: enter the dosing interval \u03C4 (for example 12 or 24 h).",
-                         type = "error", duration = 8)
+                         type = "error", duration = NULL)
         return()
       }
       pauc_err <- validate_partial_aucs(pauc_spec(), isTRUE(input$is_ss), input$tau)
       if (!is.null(pauc_err)) {
-        showNotification(pauc_err, type = "error", duration = 10)
+        showNotification(pauc_err, type = "error", duration = NULL)
         return()
       }
       settings <- single_settings()
@@ -494,7 +499,7 @@ path_single_nca_server <- function(id, shared) {
                                             invokeRestart("muffleWarning")
                                           }
                                         }),
-                     error = function(e) { showNotification(paste("Error:", e$message), type="error"); NULL })
+                     error = function(e) { showNotification(paste("Error:", e$message), type="error", duration = NULL); NULL })
       pauc_notes(notes)
       if (length(notes) > 0)
         showNotification("Partial AUCs: see the notes under the PK parameters.", type = "warning", duration = 8)
@@ -695,7 +700,7 @@ path_single_nca_server <- function(id, shared) {
       lz_calc <- recalculate_lambda_z(d$time, d$conc, sel_idx, is_blq = d$is_blq)
       
       if (!is.null(lz_calc$error)) {
-        showNotification(lz_calc$error, type = "error", duration = 10)
+        showNotification(lz_calc$error, type = "error", duration = NULL)
         return()
       }
       if (!is.null(lz_calc$warning)) {

@@ -451,7 +451,7 @@ path_power_server <- function(id, shared) {
       # CV
       cv_pct <- input$cv
       if (is.null(cv_pct) || is.na(cv_pct) || cv_pct <= 0) {
-        showNotification("CV must be greater than 0%.", type = "error", duration = 6)
+        showNotification("CV must be greater than 0%.", type = "error", duration = NULL)
         return(FALSE)
       }
       if (cv_pct > 150) {
@@ -468,7 +468,7 @@ path_power_server <- function(id, shared) {
         cv_wr_pct <- input$cv_wr
         if (is.null(cv_wr_pct) || is.na(cv_wr_pct) || cv_wr_pct <= 0) {
           showNotification("Reference CV must be greater than 0%.",
-                           type = "error", duration = 6)
+                           type = "error", duration = NULL)
           return(FALSE)
         }
       }
@@ -477,7 +477,7 @@ path_power_server <- function(id, shared) {
       t0 <- input$theta0
       if (is.null(t0) || is.na(t0) || t0 <= 0) {
         showNotification("Expected T/R ratio must be greater than 0%.",
-                         type = "error", duration = 6)
+                         type = "error", duration = NULL)
         return(FALSE)
       }
 
@@ -485,7 +485,7 @@ path_power_server <- function(id, shared) {
       alp <- input$alpha
       if (is.null(alp) || is.na(alp) || alp <= 0 || alp >= 1) {
         showNotification("Significance level must be between 0 and 1.",
-                         type = "error", duration = 6)
+                         type = "error", duration = NULL)
         return(FALSE)
       }
 
@@ -493,12 +493,12 @@ path_power_server <- function(id, shared) {
       t1 <- input$theta1; t2 <- input$theta2
       if (is.null(t1) || is.null(t2) || is.na(t1) || is.na(t2)) {
         showNotification("Please set both acceptance limits.",
-                         type = "error", duration = 6)
+                         type = "error", duration = NULL)
         return(FALSE)
       }
       if (t1 >= t2) {
         showNotification("Lower limit must be less than upper limit.",
-                         type = "error", duration = 6)
+                         type = "error", duration = NULL)
         return(FALSE)
       }
 
@@ -507,7 +507,7 @@ path_power_server <- function(id, shared) {
         n <- input$n_subjects
         if (is.null(n) || is.na(n) || n < 4) {
           showNotification("At least 4 subjects are needed.",
-                           type = "error", duration = 6)
+                           type = "error", duration = NULL)
           return(FALSE)
         }
       }
@@ -517,7 +517,7 @@ path_power_server <- function(id, shared) {
         tp <- input$target_power
         if (is.null(tp) || is.na(tp) || tp <= 50 || tp >= 100) {
           showNotification("Target power must be between 50% and 100%.",
-                           type = "error", duration = 6)
+                           type = "error", duration = NULL)
           return(FALSE)
         }
       }
@@ -576,7 +576,7 @@ path_power_server <- function(id, shared) {
         showNotification(
           paste0("The selected design is not valid for this study type. ",
                  "Please choose: ", paste(valid_designs[[atype]], collapse = ", ")),
-          type = "error", duration = 8)
+          type = "error", duration = NULL)
         return()
       }
 
@@ -603,7 +603,7 @@ path_power_server <- function(id, shared) {
           }
         }, error = function(e) {
           showNotification(paste("Calculation error:", conditionMessage(e)),
-                           type = "error", duration = 10)
+                           type = "error", duration = NULL)
           NULL
         })
 

@@ -164,6 +164,8 @@ pk_param_labels <- c(
   "CAVG"     = "Average Concentration (Cavg)",
   "CMIN_SS"  = "Minimum Concentration (Cmin)",
   "CTAU_SS"  = "Concentration at Tau (Ctau)",
+  "CTAU_TIME" = "Time of Ctau",
+  "AUCTAU_PCTEXT" = "AUC Within Dosing Interval % Extrapolated",
   "FLUCTP"   = "Peak-Trough Fluctuation (%)",
   "SWING"    = "Swing ((Cmax-Cmin)/Cmin)",
   
@@ -301,6 +303,7 @@ rename_be_columns <- function(df, ci_level = 90) {
     "Excluded_Ref"  = "Profiles excluded (Reference)",
     "Flagged_Test"  = "Half-life flags (Test)",
     "Flagged_Ref"   = "Half-life flags (Reference)",
+    "Incomplete_Subjects" = "Subjects without both treatments",
     "BLQ_Test"      = "Mostly BLQ (Test)",
     "BLQ_Ref"       = "Mostly BLQ (Reference)",
     "Bioequivalent" = "Bioequivalent?",
@@ -437,6 +440,7 @@ add_units_to_labels <- function(labels, dose_unit = "mg", time_unit = "h", conc_
     "Average Concentration (Cavg)"       = conc_unit,
     "Minimum Concentration (Cmin)"       = conc_unit,
     "Concentration at Tau (Ctau)"        = conc_unit,
+    "Time of Ctau"                       = time_unit,
     "Dosing Interval (tau)"              = time_unit,
     "Half-Life"                          = time_unit,
     "Elimination Rate Constant"          = paste0("1/", time_unit),
@@ -780,10 +784,13 @@ lz_flag_text <- function(r, rules = LZ_RULES_DEFAULT) {
   n <- nrow(r)
   col <- function(x) if (x %in% names(r)) suppressWarnings(as.numeric(r[[x]])) else rep(NA_real_, n)
   f <- function(v) trimws(formatC(v, digits = 3, format = "g"))
-  span <- col("LZSPAN"); pe <- col("AUCPEO"); pbe <- col("AUCPBEO")
+  span <- col("LZSPAN"); pe <- col("AUCPEO"); pbe <- col("AUCPBEO"); pe_ss <- col("AUCTAU_PCTEXT")
   vapply(seq_len(n), function(i) paste(c(
     if (isTRUE(col("FLAG_SPAN")[i] == 1)) paste0("span ", f(span[i]), " < ", rules$span_min),
-    if (isTRUE(col("FLAG_AUCPE")[i] == 1)) paste0("% extrapolated ", f(pe[i]), " > ", rules$aucpext_max),
+    if (isTRUE(col("FLAG_AUCPE")[i] == 1)) {
+      if (!is.na(pe_ss[i])) paste0("% of AUC\u03C4 extrapolated ", f(pe_ss[i]), " > ", rules$aucpext_max)
+      else paste0("% extrapolated ", f(pe[i]), " > ", rules$aucpext_max)
+    },
     if (isTRUE(col("FLAG_AUCPBE")[i] == 1)) paste0("% back-extrapolated ", f(pbe[i]), " > ", rules$aucpbe_max)),
     collapse = "; "), character(1))
 }
@@ -796,8 +803,11 @@ lz_flag_cols <- function(param) {
   inf <- base %in% c("AUCIFO", "AUCIFP", "AUCIFOD", "AUCIFPD", "AUCPEO", "AUCPEP", "AUMCIFO", "AUMCIFP",
                      "CLFO", "CLFP", "CLO", "CLP", "VZFO", "VZFP", "VZO", "VZP", "VSSO", "VSSP",
                      "MRTEVIFO", "MRTEVIFP", "MRTIVIFO", "MRTIVIFP")
+  # At steady state the extrapolation rule concerns AUCtau and what is
+  # derived from it
+  tau_dep <- base %in% c("AUCTAU", "AUCTAU_PCTEXT", "CAVG", "FLUCTP")
   c(if (base %in% c(LAMZ_DEPENDENT, "LAMZHL", "LAMZ")) "FLAG_SPAN",
-    if (inf) c("FLAG_AUCPE", "FLAG_AUCPBE"))
+    if (inf) c("FLAG_AUCPE", "FLAG_AUCPBE"), if (tau_dep) "FLAG_AUCPE")
 }
 
 #' Number of values of a parameter from fits with a raised flag
@@ -820,7 +830,8 @@ add_flag_text <- function(r, rules = LZ_RULES_DEFAULT) {
 #' e.g. "Adj. R\u00b2 0.93 \u2265 0.70 pass \u00b7 span 1.4 < 2 flag"
 #' @param lz estimate_lambda_z()/recalculate_lambda_z() result (lambda_z,
 #'   half_life, r2adj, time_used)
-#' @param pe % of AUC to infinity extrapolated for this profile (NA: not shown)
+#' @param pe % of AUC to infinity extrapolated for this profile, at steady
+#'   state % of AUCtau extrapolated (NA: not shown)
 lz_checklist <- function(lz, r2_threshold, rules, pe = NA_real_, ss = FALSE) {
   f <- function(v) trimws(formatC(v, digits = 3, format = "g"))
   out <- character(0)
@@ -830,7 +841,7 @@ lz_checklist <- function(lz, r2_threshold, rules, pe = NA_real_, ss = FALSE) {
   if (!is.na(rules$span_min) && !is.na(span)) out <- c(out, paste0("span ", f(span),
     if (span >= rules$span_min) paste0(" \u2265 ", rules$span_min, " pass") else paste0(" < ", rules$span_min, " flag"),
     if (isTRUE(ss)) " (informational at steady state)" else ""))
-  if (!isTRUE(ss) && !is.na(rules$aucpext_max) && !is.na(pe)) out <- c(out, paste0("extrapolated ", f(pe), "%",
+  if (!is.na(rules$aucpext_max) && !is.na(pe)) out <- c(out, paste0(if (isTRUE(ss)) "AUC\u03C4 extrapolated " else "extrapolated ", f(pe), "%",
     if (pe <= rules$aucpext_max) paste0(" \u2264 ", rules$aucpext_max, "% pass") else paste0(" > ", rules$aucpext_max, "% flag")))
   paste(out, collapse = " \u00b7 ")
 }
@@ -843,3 +854,43 @@ lz_profile_choices <- function(result) {
   if (is.null(fl)) fl <- rep(FALSE, length(lab))
   stats::setNames(lab, ifelse(fl, paste(lab, "(flagged)"), lab))
 }
+
+#' The Dose-column summary shown under "Doses differ by subject or period"
+#'
+#' Neutral, not a confirmation: the file does not say in which unit its doses
+#' are, so the panel says which unit the analysis assumes, and warns when the
+#' values look like doses per kg (dose_looks_per_kg() in R/pipeline.R).
+dose_column_panel <- function(data, col_map, dose_unit) {
+  per_subj <- tapply(suppressWarnings(as.numeric(data[[col_map$dose]])), data[[col_map$subject]],
+                     function(x) if (all(is.na(x))) NA_real_ else max(x, na.rm = TRUE))
+  lv <- sort(unique(signif(per_subj[!is.na(per_subj)], 6)))
+  shown <- paste0(paste(utils::head(lv, 6), collapse = ", "), if (length(lv) > 6) ", ..." else "")
+  tagList(
+    tags$div(class = "alert alert-info py-2 small mb-2", role = "status",
+      if (!is.null(col_map$dose_weight))
+        tagList(tags$strong(paste0("Doses from '", col_map$dose, "' (", dose_unit, " per kg) \u00D7 the weight in '",
+                                   col_map$dose_weight, "': ")),
+                paste0(length(lv), " amount(s), ", shown, " ", dose_unit, " per subject."))
+      else
+        tagList(tags$strong(paste0("Doses from the column '", col_map$dose, "': ")),
+                paste0(length(lv), " level(s), ", shown, ". Read as ", dose_unit,
+                       " per subject: the file does not state the unit, so check it."))),
+    dose_per_kg_warning(data, col_map))
+}
+
+#' Warning when an amount-per-subject Dose column looks like a dose per kg
+dose_per_kg_warning <- function(data, col_map) {
+  if (!dose_looks_per_kg(data, col_map)) return(NULL)
+  tags$div(class = "alert alert-warning py-2 small mb-2", role = "alert",
+    icon("triangle-exclamation", class = "me-1", `aria-hidden` = "true"),
+    paste0("Every dose is below 20 and the file has a body-weight column ('", weight_column(names(data)),
+           "'). If the doses are per kg, choose that column under 'Dose per kg: weight column' on the Upload ",
+           "page and process the data again. Otherwise CL/F, Vz/F and every dose-normalised value are off by ",
+           "the body weight."))
+}
+
+#' An error the user must read: it stays until closed (a message that
+#' disappears after a few seconds is missed by a slow reader or a screen
+#' magnifier user, WCAG 2.2.1)
+notify_error <- function(msg, ...) showNotification(msg, type = "error", duration = NULL, ...)
+

@@ -84,3 +84,5 @@ CAVG_DN,any,any,,"Dose-normalised Cavg: no code in the pinned terms of this rele
 CMIN_SS_DN,any,any,,"Dose-normalised Cmin: no code in the pinned terms of this release"
 CTAU_SS_DN,any,any,,"Dose-normalised Ctau: no PK parameter code in this release"
 EXCL,any,any,,"Profile excluded by the analyst (app marker), not a PK parameter"
+CTAU_TIME,any,any,,"Actual time of the sample used as Ctau (app column), no PK parameter code in this release"
+AUCTAU_PCTEXT,any,any,,"Share of AUCtau extrapolated past the last sample (app quality measure), no PK parameter code in this release"
