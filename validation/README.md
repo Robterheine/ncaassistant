@@ -72,7 +72,7 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **526 automated tests** in twenty-six sections, each mapped to a URS requirement:
+The script runs **536 automated tests** in twenty-seven sections, each mapped to a URS requirement:
 
 | Section | Code | Tests | Tests cover |
 |---------|------|------:|-------------|
@@ -102,8 +102,9 @@ The script runs **526 automated tests** in twenty-six sections, each mapped to a
 | Example datasets | EXM | 6 | Every bundled example loads through the upload path and is recorded as an example (also in controlled mode, with its SHA-256); only bundled files can be loaded or downloaded by name; a record made from an example says so and reproduces; the download serves the file unchanged |
 | Half-life quality flags | HLF | 6 | The span ratio and the rule limits at their boundaries; flags blank where the half-life is blanked, off at steady state for extrapolation, back-extrapolation for IV bolus only; rules switched off, changed, recorded and reproduced; manual fits flagged; flags counted in summaries and bioequivalence, excluding nothing; flags in words |
 | Exclusions with a reason | EXC | 11 | An excluded sample equals deleting it from the file under every BLQ rule; matching by profile and time; an exclusion that no longer matches is reported; a profile exclusion keeps its NCA and leaves summaries and bioequivalence; records hold and reproduce the register; IV bolus, trough and partial AUC edge cases; ICH M13A checks on the data before exclusions; the sensitivity analysis; adding and restoring in the app; audit entries first; schema 1.3.0 settings still read |
+| Adversarial review of the app | ARV | 10 | One test per finding that held up, each built from the failing case: a Dose column per kg (converted with the weight column, the Dose panel, a reproducing record), Cτ within a trough window, AUCτ extrapolated past the last sample, a 2×2 subject without both treatments in Method B, a pre-dose sample at a negative time, loading the exclusion register again with its timing, errors that stay on screen |
 
-In addition, **65 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload (flat and CDISC ADNCA), column mapping, interlock messages, the half-life review and minimum-R² note, choosing the Reference treatment, the replicate variability table, planning with both CVs, CDISC parameter codes, partial AUC intervals in the batch and bioequivalence paths (including an invalid interval, a suppressed metric and the shaded figure), the Complete Analysis Record download and its reproduction check, the Visualize Figure Record, loading and downloading an example, exclusions in the app and the half-life rules dialog. They are included in the script for traceability but are marked SKIP in automated runs. The 13 MAN-GXP tests cover controlled mode: nothing runs before sign-in, the first sign-in, the header, the inactivity warning, the password change, sign-out, open mode unchanged, every path's audit entries, fail-closed behaviour, the Records page and signing dialog, the inspector account, the Audit trail page and restoring an archive on a clean machine. They need a test server set up as described in the user manual's appendix on controlled installations, not a laptop.
+In addition, **66 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload (flat and CDISC ADNCA), column mapping, interlock messages, the half-life review and minimum-R² note, choosing the Reference treatment, the replicate variability table, planning with both CVs, CDISC parameter codes, partial AUC intervals in the batch and bioequivalence paths (including an invalid interval, a suppressed metric and the shaded figure), the Complete Analysis Record download and its reproduction check, the Visualize Figure Record, loading and downloading an example, exclusions in the app (including download and loading back), the half-life rules dialog and a Dose column per kg. They are included in the script for traceability but are marked SKIP in automated runs. The 13 MAN-GXP tests cover controlled mode: nothing runs before sign-in, the first sign-in, the header, the inactivity warning, the password change, sign-out, open mode unchanged, every path's audit entries, fail-closed behaviour, the Records page and signing dialog, the inspector account, the Audit trail page and restoring an archive on a clean machine. They need a test server set up as described in the user manual's appendix on controlled installations, not a laptop.
 
 The test tables in `NCA_Assistant_IQOQPQ.docx` (IQ, automated OQ/PQ sections, manual tests, traceability matrix and totals) are generated from `validation_results.csv` of a passing reference run, so they list exactly the tests the script defines.
 
@@ -125,8 +126,8 @@ Visualisation tests (URS-VIZ) are classified SUPPORTIVE because graphical output
 A passing run produces:
 
 ```
-Total: 591 (auto: 526, manual: 65)
-  PASS: 526 | FAIL: 0 | ERROR: 0 | SKIP: 65
+Total: 602 (auto: 536, manual: 66)
+  PASS: 536 | FAIL: 0 | ERROR: 0 | SKIP: 66
 
 ALL CRITICAL TESTS PASSED
 
@@ -135,7 +136,7 @@ URS: 92/92 covered (89 by automated tests; manual tests only: URS-BE-06, URS-BE-
 Results: validation/validation_results.csv
 ```
 
-Of the 526 automated tests, 380 are CRITICAL and 146 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
+Of the 536 automated tests, 388 are CRITICAL and 148 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
 
 IQ-REL-01 and IQ-REL-02 pass only on an unchanged release: after any edit to a file listed in the manifest, IQ-REL-01 fails until `make_release_files.R` is run again for a new release. When IQ-REL-02 fails, its Detail column names each package whose version differs from `renv.lock`.
 

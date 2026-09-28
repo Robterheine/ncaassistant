@@ -249,7 +249,10 @@ help_steady_state <- info_btn("help_steady_state", "When is data 'steady-state'?
   If the drug was given <b>multiple times</b> and you're looking at the profile 
   after several days of dosing, check this box and enter the dosing interval (τ), 
   for example 12 h for twice-daily dosing. The app then calculates AUCτ (AUC from 0 to τ), 
-  average concentration, fluctuation and swing, and clearance from AUCτ.")
+  average concentration, fluctuation and swing, and clearance from AUCτ.
+  <br><br>
+  Cτ is the sample nearest to τ within the <b>trough window</b> (by default ±10% of τ,
+  at most 1 time unit). Widen it only when your protocol allows a later trough.")
 
 help_partial_auc <- info_btn("help_partial_auc", "What is a partial AUC?",
   "A <b>partial AUC</b> is the area under the curve over part of the profile, for

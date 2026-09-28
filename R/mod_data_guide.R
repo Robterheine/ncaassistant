@@ -281,7 +281,9 @@ data_guide_ui <- function() {
           "map the Dose column during upload, then choose ",
           "'Doses differ by subject or period (from Dose column in data)' in the analysis settings. ",
           "Clearance and volume then use each subject's own dose. The Dose column should hold one ",
-          "value per profile; if it varies within a profile, the app uses the largest value."
+          "value per profile; if it varies within a profile, the app uses the largest value. ",
+          "With weight-based dosing the column may hold the dose per kg: then also choose the body-weight ",
+          "column (kg) under 'Dose per kg: weight column', and the app uses dose \u00D7 weight."
         ),
 
         tags$div(
@@ -630,7 +632,8 @@ data_guide_ui <- function() {
           tags$strong("In the app: "),
           "tick 'Steady-state (drug given repeatedly)' and enter the dosing interval \u03C4. The app reports ",
           "AUC\u03C4, average concentration, trough, fluctuation and swing, and calculates CL/F from AUC\u03C4; ",
-          "AUC to infinity has no meaning during repeated dosing."
+          "AUC to infinity has no meaning during repeated dosing. C\u03C4 is the sample nearest to \u03C4 within a ",
+          "trough window (by default \u00B110% of \u03C4, at most 1 time unit), so a trough drawn a little late still counts."
         ),
         checklist(c(
           "Time 0 is just before the dose of the sampled interval",

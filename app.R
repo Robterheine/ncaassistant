@@ -858,7 +858,7 @@ server <- function(input, output, session) {
                     tags$span(class = "badge bg-primary ms-2", "current")),
             tags$p(class = "text-muted mb-1", "September 2026"),
             tags$p(class = "mb-1", tags$strong("Results can differ from v1.7.0"),
-                   " for fluctuation and swing at steady state when the highest concentration lies after \u03C4, for a manual half-life fit that included values set by a BLQ rule, for a profile with a single measurable concentration (now analysed) and for partial AUCs in bioequivalence that pass a profile's last measurable concentration (now no verdict). The release adds an optional controlled mode for installations under GxP. Without it, the app works as before."),
+                   " for fluctuation and swing at steady state when the highest concentration lies after \u03C4, for a manual half-life fit that included values set by a BLQ rule, for a profile with a single measurable concentration (now analysed), for partial AUCs in bioequivalence that pass a profile's last measurable concentration (now no verdict), for C\u03C4 when the trough was not drawn at exactly \u03C4, for Method B when a 2\u00D72 subject lacks one treatment, and for files with a pre-dose sample at a negative time. The release adds an optional controlled mode for installations under GxP. Without it, the app works as before."),
             tags$ul(class = "mb-0",
               tags$li(tags$strong("New: "), "controlled mode on a server: sign-in with personal accounts and roles (analyst, reviewer, inspector), a tamper-evident audit trail of every data load, analysis, download and record, and review signatures on stored records"),
               tags$li(tags$strong("New: "), "Records page with the data history of each record, approval or rejection with user ID and password, signature sheets and a check for copies of a record"),
@@ -871,7 +871,10 @@ server <- function(input, output, session) {
               tags$li(tags$strong("New: "), "exclusions with a reason: leave out a sample or a whole profile from the Upload page or the Half-Life Review, restore it later, and see it in every path, the downloads and the Analysis Record. Bioequivalence then adds a sensitivity analysis without the exclusions"),
               tags$li(tags$strong("New: "), "half-life flags for the span of the fitted points and the % of AUC extrapolated or back-extrapolated. The rules can be edited, only flag a fit and never change a value"),
               tags$li(tags$strong("New: "), "load an example dataset with one click, or download it to see how the file is laid out"),
-              tags$li("Validation: 526 automated and 65 manual tests (was 431 and 49), with sections for controlled mode, the two reviews, exclusions, half-life flags and the example data")
+              tags$li(tags$strong("Correctness fix: "), "a Dose column per kg can be multiplied by a body-weight column; the Dose panel says which unit it assumes and warns when doses look per kg (read as mg, theophylline's CL/F came out about 80 times too low)"),
+              tags$li(tags$strong("Correctness fix: "), "C\u03C4 is the sample nearest to \u03C4 within a trough window, with its time; AUC\u03C4 extrapolated past the last sample is reported, noted and flagged; in a 2\u00D72 crossover a subject without both treatments leaves Method B as it leaves Method A"),
+              tags$li(tags$strong("Changed: "), "one pre-dose sample at a small negative time is analysed at 0; the exclusion register can be downloaded and loaded again, and keeps its evidence of timing; errors stay on screen until closed and are read out by screen readers; the Half-Life Flags column is never empty. From an adversarial review of the app"),
+              tags$li("Validation: 536 automated and 66 manual tests (was 431 and 49), with sections for controlled mode, the three reviews, exclusions, half-life flags and the example data")
             )
           ),
 
