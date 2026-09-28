@@ -12,7 +12,7 @@ This folder contains the validation package for NCA Assistant v1.8.0. It follows
 | `make_iqoqpq.py` | Regenerates the test tables, traceability matrix and counts of the IQ/OQ/PQ protocol from `validation_results.csv` (needs python-docx) |
 | `NCA_Assistant_URS.docx` | User Requirement Specification — 92 requirements across 9 categories, with a hazard-based FMEA |
 | `NCA_Assistant_IQOQPQ.docx` | IQ/OQ/PQ protocol — approval before execution, a checklist for adopting organisations, every test listed individually with method, expected result, URS cross-reference, and criticality, and a template for the user's own PQ |
-| `fixtures/` | Committed test data (crossover, replicate and ADNCA-shaped files, plus reference values from `replicateBE`) and the deterministic scripts that generate them |
+| `fixtures/` | Committed test data (crossover, replicate and ADNCA-shaped files, plus reference values from `replicateBE` and the published parallel-group datasets) and the deterministic scripts that generate them |
 | `make_release_files.R` | Writes `renv.lock` and `release_manifest.csv` when a release is tagged |
 | `renv.lock` | The package versions the release was validated with. `renv::restore(lockfile = "validation/renv.lock")` rebuilds that library. It sits here rather than in the project root, where rsconnect would pick it up when deploying |
 | `release_manifest.csv` | SHA-256 of every file the app runs on (`app.R`, `R/`, `converters/`, `cdisc/`, `www/`, `gxp/`), with the app version. Checks IQ-REL-01 and IQ-REL-02 compare an installation with this file and with `renv.lock` |
@@ -60,7 +60,7 @@ The interface packages the app loads (shiny, bslib, shinyWidgets, DT, plotly, gg
 - `converters/adnca_to_flat.R` — the standalone ADNCA converter (section CONV);
 - `cdisc/ct_release.dcf` and `cdisc/pk_parameter_terms.csv` — the pinned CDISC release the parameter codes come from (checks EXP-CD-01..03 and REC-09);
 - `data/example_theoph.csv`, `data/example_be_crossover.csv` and `data/example_blq.csv` — example datasets used by the NCA, record and BLQ checks;
-- **`validation/fixtures/`** — required. Crossover, replicate and ADNCA-shaped test data, plus `replicateBE_reference.csv` with the committed `replicateBE::method.A` values. These files are read at the top level of the script, so a missing fixture stops the run with `cannot open file ...` rather than failing a single test: without the folder the run aborts partway and produces no results file.
+- **`validation/fixtures/`** — required. Crossover, replicate and ADNCA-shaped test data, plus `replicateBE_reference.csv` with the committed `replicateBE::method.A` values, and `parallel_be_datasets.csv` and `parallel_be_reference.csv` with the 11 parallel-group datasets and the 90% confidence intervals published by Fuglsang et al. (doi:10.1208/s12248-014-9704-6). These files are read at the top level of the script, so a missing fixture stops the run with `cannot open file ...` rather than failing a single test: without the folder the run aborts partway and produces no results file.
 
 Test data for crossover and replicate designs live in `validation/fixtures/`, not in `data/`. `make_fixtures.R` (crossover and replicate designs) and `make_adnca_fixtures.R` (ADNCA-shaped data) generate them deterministically, and `make_reference_values.R` records the matching `replicateBE::method.A` results; the generators and their outputs are both committed, so the suite runs without regenerating anything.
 
@@ -72,7 +72,7 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **536 automated tests** in twenty-seven sections, each mapped to a URS requirement:
+The script runs **540 automated tests** in twenty-eight sections, each mapped to a URS requirement:
 
 | Section | Code | Tests | Tests cover |
 |---------|------|------:|-------------|
@@ -103,6 +103,7 @@ The script runs **536 automated tests** in twenty-seven sections, each mapped to
 | Half-life quality flags | HLF | 6 | The span ratio and the rule limits at their boundaries; flags blank where the half-life is blanked, off at steady state for extrapolation, back-extrapolation for IV bolus only; rules switched off, changed, recorded and reproduced; manual fits flagged; flags counted in summaries and bioequivalence, excluding nothing; flags in words |
 | Exclusions with a reason | EXC | 11 | An excluded sample equals deleting it from the file under every BLQ rule; matching by profile and time; an exclusion that no longer matches is reported; a profile exclusion keeps its NCA and leaves summaries and bioequivalence; records hold and reproduce the register; IV bolus, trough and partial AUC edge cases; ICH M13A checks on the data before exclusions; the sensitivity analysis; adding and restoring in the app; audit entries first; schema 1.3.0 settings still read |
 | Adversarial review of the app | ARV | 10 | One test per finding that held up, each built from the failing case: a Dose column per kg (converted with the weight column, the Dose panel, a reproducing record), Cτ within a trough window, AUCτ extrapolated past the last sample, a 2×2 subject without both treatments in Method B, a pre-dose sample at a negative time, loading the exclusion register again with its timing, errors that stay on screen |
+| Parallel-group bioequivalence | PAR | 4 | The 11 published datasets of Fuglsang et al. (AAPS J 2015): group sizes, the pooled-variance 90% CI and point estimate against the paper's consensus (Table II), the Welch CI against Table I, and the Welch note in the app appearing exactly where the two verdicts differ |
 
 In addition, **66 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload (flat and CDISC ADNCA), column mapping, interlock messages, the half-life review and minimum-R² note, choosing the Reference treatment, the replicate variability table, planning with both CVs, CDISC parameter codes, partial AUC intervals in the batch and bioequivalence paths (including an invalid interval, a suppressed metric and the shaded figure), the Complete Analysis Record download and its reproduction check, the Visualize Figure Record, loading and downloading an example, exclusions in the app (including download and loading back), the half-life rules dialog and a Dose column per kg. They are included in the script for traceability but are marked SKIP in automated runs. The 13 MAN-GXP tests cover controlled mode: nothing runs before sign-in, the first sign-in, the header, the inactivity warning, the password change, sign-out, open mode unchanged, every path's audit entries, fail-closed behaviour, the Records page and signing dialog, the inspector account, the Audit trail page and restoring an archive on a clean machine. They need a test server set up as described in the user manual's appendix on controlled installations, not a laptop.
 
@@ -126,8 +127,8 @@ Visualisation tests (URS-VIZ) are classified SUPPORTIVE because graphical output
 A passing run produces:
 
 ```
-Total: 602 (auto: 536, manual: 66)
-  PASS: 536 | FAIL: 0 | ERROR: 0 | SKIP: 66
+Total: 606 (auto: 540, manual: 66)
+  PASS: 540 | FAIL: 0 | ERROR: 0 | SKIP: 66
 
 ALL CRITICAL TESTS PASSED
 
@@ -136,7 +137,7 @@ URS: 92/92 covered (89 by automated tests; manual tests only: URS-BE-06, URS-BE-
 Results: validation/validation_results.csv
 ```
 
-Of the 536 automated tests, 388 are CRITICAL and 148 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
+Of the 540 automated tests, 391 are CRITICAL and 149 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
 
 IQ-REL-01 and IQ-REL-02 pass only on an unchanged release: after any edit to a file listed in the manifest, IQ-REL-01 fails until `make_release_files.R` is run again for a new release. When IQ-REL-02 fails, its Detail column names each package whose version differs from `renv.lock`.
 

@@ -1,0 +1,12 @@
+dataset,pooled_lo,pooled_hi,welch_lo,welch_hi,pe,source
+P1,27.15,86.94,26.78,88.14,48.58,"Fuglsang et al. AAPS J 2015;17:400-404, Tables I and II (doi:10.1208/s12248-014-9704-6)"
+P2,18.26,96.59,23.71,74.38,41.99,"Fuglsang et al. AAPS J 2015;17:400-404, Tables I and II (doi:10.1208/s12248-014-9704-6)"
+P3,26.35,415.71,24.4,449.08,104.67,"Fuglsang et al. AAPS J 2015;17:400-404, Tables I and II (doi:10.1208/s12248-014-9704-6)"
+P4,38.6,134.21,38.05,136.15,71.97,"Fuglsang et al. AAPS J 2015;17:400-404, Tables I and II (doi:10.1208/s12248-014-9704-6)"
+P5,106.44,112.1,106.44,112.1,109.23,"Fuglsang et al. AAPS J 2015;17:400-404, Tables I and II (doi:10.1208/s12248-014-9704-6)"
+P6,91.85,115.78,91.84,115.79,103.12,"Fuglsang et al. AAPS J 2015;17:400-404, Tables I and II (doi:10.1208/s12248-014-9704-6)"
+P7,106.86,126.23,97.38,138.51,116.14,"Fuglsang et al. AAPS J 2015;17:400-404, Tables I and II (doi:10.1208/s12248-014-9704-6)"
+P8,105.79,113.49,105.79,113.49,109.57,"Fuglsang et al. AAPS J 2015;17:400-404, Tables I and II (doi:10.1208/s12248-014-9704-6)"
+P9,103.8,120.61,103.8,120.61,111.89,"Fuglsang et al. AAPS J 2015;17:400-404, Tables I and II (doi:10.1208/s12248-014-9704-6)"
+P10,107.2,126.99,97.82,139.17,116.68,"Fuglsang et al. AAPS J 2015;17:400-404, Tables I and II (doi:10.1208/s12248-014-9704-6)"
+P11,7.83,17.38,6.3,21.6,11.67,"Fuglsang et al. AAPS J 2015;17:400-404, Tables I and II (doi:10.1208/s12248-014-9704-6)"

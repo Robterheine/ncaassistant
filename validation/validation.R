@@ -6598,6 +6598,78 @@ check("ARV-10", "Errors stay on screen until closed and are announced to screen 
 end_section("ARV")
 
 # =============================================================================
+# SECTION PAR: Parallel-group bioequivalence against published reference data
+# =============================================================================
+# The 11 datasets of Fuglsang et al. (AAPS J 2015;17:400-404,
+# doi:10.1208/s12248-014-9704-6), with the 90% CIs the paper proposes as
+# validation targets: pooled variance (Table II) and Welch (Table I). They
+# cover imbalance, outliers, heteroscedasticity and extreme ranges.
+start_section("PAR")
+
+par_dat <- read.csv(file.path("validation", "fixtures", "parallel_be_datasets.csv"), stringsAsFactors = FALSE)
+par_ref <- read.csv(file.path("validation", "fixtures", "parallel_be_reference.csv"), stringsAsFactors = FALSE)
+par_set <- function(id) {
+  x <- par_dat[par_dat$dataset == id, ]
+  x$Treat <- factor(x$Treat, levels = c("R", "T")); x$Var <- as.numeric(x$Var); x
+}
+par_fit <- function(id) fit_be_parameter(par_set(id), "Var", "parallel", trt_col = "Treat", subj_col = "Subj")$estimate
+
+check("PAR-01", "Datasets are the published ones (11 sets, group sizes as in the paper)",
+  {
+    n <- sapply(par_ref$dataset, function(id) { x <- par_set(id); c(T = sum(x$Treat == "T"), R = sum(x$Treat == "R")) })
+    exp_n <- cbind(P1 = c(9, 9), P2 = c(9, 4), P3 = c(9, 9), P4 = c(20, 20), P5 = c(31, 29), P6 = c(24, 26),
+                   P7 = c(1000, 200), P8 = c(1000, 1000), P9 = c(1000, 1000), P10 = c(1000, 200), P11 = c(1000, 200))
+    nrow(par_ref) == 11 && all(unname(n) == unname(exp_n))
+  },
+  "URS-BE-01", critical = TRUE, method = "group sizes of P1-P11",
+  expected = "N(T)/N(R) as in Fuglsang et al. (P2 9/4, P5 31/29, P7 1000/200 ...)")
+
+check("PAR-02", "Pooled-variance 90% CI and point estimate match the paper (Table II), P1-P11",
+  tryCatch({
+    ok <- TRUE
+    for (i in seq_len(nrow(par_ref))) {
+      e <- par_fit(par_ref$dataset[i]); r <- par_ref[i, ]
+      ok <- ok && isTRUE(all.equal(round(c(e$ci_lo, e$ci_hi, e$pe), 2), c(r$pooled_lo, r$pooled_hi, r$pe)))
+    }
+    ok
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = TRUE, method = "fit_be_parameter(design = 'parallel') on each dataset, rounded to 2 decimals",
+  expected = "Equal to the consensus of R, OpenOffice Calc, WinNonlin, EquivTest/PK, SAS (Kinetica differs on unbalanced sets)")
+
+check("PAR-03", "Welch 90% CI matches the paper (Table I), P1-P11",
+  tryCatch({
+    ok <- TRUE
+    for (i in seq_len(nrow(par_ref))) {
+      x <- par_set(par_ref$dataset[i]); y <- log(x$Var); r <- par_ref[i, ]
+      w <- round(100 * exp(stats::t.test(y[x$Treat == "T"], y[x$Treat == "R"], var.equal = FALSE, conf.level = 0.90)$conf.int), 2)
+      ok <- ok && isTRUE(all.equal(as.numeric(w), c(r$welch_lo, r$welch_hi)))
+    }
+    ok
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = FALSE, method = "stats::t.test(var.equal = FALSE), the same call parallel_welch_notes() uses",
+  expected = "Equal to the paper's Welch intervals (WinNonlin needs a workaround; EquivTest/PK and Kinetica cannot)")
+
+check("PAR-04", "The Welch note appears exactly where the pooled and Welch verdicts differ",
+  tryCatch({
+    lim <- function(lo, hi, L, U) lo >= L && hi <= U
+    ok <- TRUE; flips <- 0
+    # 80-125 flips nothing in these data; 80-130 and 70-143 make P7 and others flip
+    for (L in list(c(80, 125), c(80, 130), c(70, 143))) {
+      for (i in seq_len(nrow(par_ref))) {
+        r <- par_ref[i, ]; x <- par_set(r$dataset)
+        expect_note <- lim(r$pooled_lo, r$pooled_hi, L[1], L[2]) != lim(r$welch_lo, r$welch_hi, L[1], L[2])
+        got_note <- length(parallel_welch_notes(x, "Var", "Treat", be_lower = L[1], be_upper = L[2])) > 0
+        ok <- ok && identical(expect_note, got_note); flips <- flips + expect_note
+      }
+    }
+    ok && flips > 0
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = TRUE, method = "parallel_welch_notes() on P1-P11 at limits 80-125, 80-130 and 70-143; expected verdicts taken from the paper's two tables",
+  expected = "A note exactly where the verdict of the pooled and the Welch interval differ, and at least one such case")
+
+end_section("PAR")
+
+# =============================================================================
 # Post-execution
 # =============================================================================
 cat("\n", paste(rep("=",72),collapse=""), "\n")
