@@ -121,6 +121,7 @@ path_single_nca_ui <- function(id) {
                         tagList("Min R\u00B2 for half-life", help_r2adj),
                         min = 0, max = 1, value = 0.7, step = 0.05)
           ),
+          lz_rules_ui(ns("lzr")),
           conditionalPanel(
             condition = sprintf("input['%s'] == true", ns("is_ss")),
             numericInput(ns("tau"), "Dosing interval \u03C4 (same unit as Time)", value = NA, min = 0),
@@ -135,6 +136,7 @@ path_single_nca_ui <- function(id) {
       partial_auc_ui(ns("pauc")),
 
       # Profile navigator (uploaded mode, multiple profiles only)
+      exclusion_strip_ui(ns("strip")),
       uiOutput(ns("navigator")),
       
       actionButton(ns("run_nca"), "Run PK Analysis",
@@ -414,10 +416,12 @@ path_single_nca_server <- function(id, shared) {
     # NCA
     nca_res <- reactiveVal(NULL)
     pauc_spec <- partial_auc_server("pauc")
+    lzr <- lz_rules_server("lzr", shared)
+    exclusion_strip_server("strip", shared)
     clear_result_on_change(
       reactive(list(input$admin_route, input$dose, input$inf_dur, input$is_ss, input$tau,
                     input$dose_unit, input$time_unit, input$conc_unit, input$trap_method,
-                    input$r2adj, input$mw, pauc_spec())),
+                    input$r2adj, input$mw, pauc_spec(), lzr(), shared$exclusions)),
       has_result = function() !is.null(nca_res()), clear = function() nca_res(NULL),
       id = "single_nca_stale")
     pauc_notes <- reactiveVal(character(0))
@@ -428,7 +432,8 @@ path_single_nca_server <- function(id, shared) {
            infusion_duration = if (input$admin_route == "iv_infusion") input$inf_dur else 0,
            is_steady_state = isTRUE(input$is_ss), tau = input$tau,
            dose_unit = input$dose_unit, time_unit = input$time_unit, conc_unit = input$conc_unit,
-           trap_method = input$trap_method, r2adj_threshold = input$r2adj,
+           trap_method = input$trap_method, r2adj_threshold = input$r2adj, lz_rules = lzr(),
+           exclusions = shared$exclusions,
            mw = if (is.null(input$mw) || is.na(input$mw)) 0 else input$mw,
            partial_aucs = pauc_spec())
     }
@@ -826,6 +831,7 @@ path_single_nca_server <- function(id, shared) {
             subject_label      = subject_label,
             original_file_path = original_path,
             original_file_name = original_name,
+            data_source        = if (has_file) shared$study_info$source,
             blq_rule           = blq_rule,
             lloq               = lloq,
             analyst            = gxp_analyst(input$record_analyst),

@@ -139,6 +139,85 @@ blq_text_summary <- function(conc_raw) {
        lloq_candidates = cand)
 }
 
+# ----------------------------------------------------------------------------
+# Exclusions made by the analyst
+# ----------------------------------------------------------------------------
+# A sample exclusion treats the sample as never collected: the row is removed
+# before the BLQ rule, so first and last measurable, Cmax, Tmax, Tlag and
+# Tlast come from the samples that remain. A profile exclusion keeps the NCA
+# (listed, EXCL = 1) and leaves the profile out of summaries, mean curves and
+# the bioequivalence comparison. Exclusions are matched by profile and time,
+# never by row number, and a restored exclusion stays in the register.
+
+EXCLUSION_COLUMNS <- c("id", "level", "subject", "treatment", "period", "time", "category", "detail",
+                       "protocol_section", "after_be", "created_utc", "created_by", "restored_utc",
+                       "restore_reason")
+
+#' The exclusion register in one shape
+#' @param x NULL, a data.frame, or a list of records as read back from
+#'   analysis_settings.json
+#' @return data.frame with EXCLUSION_COLUMNS (zero rows when empty)
+as_exclusions <- function(x) {
+  empty <- as.data.frame(stats::setNames(replicate(length(EXCLUSION_COLUMNS), character(0), simplify = FALSE),
+                                         EXCLUSION_COLUMNS), stringsAsFactors = FALSE)
+  empty$time <- numeric(0); empty$after_be <- logical(0)
+  if (is.null(x) || length(x) == 0) return(empty)
+  if (!is.data.frame(x)) {
+    # JSON leaves out missing fields, so every record is completed first
+    x <- do.call(rbind, lapply(x, function(r) {
+      v <- lapply(EXCLUSION_COLUMNS, function(n) if (is.null(r[[n]]) || length(r[[n]]) == 0) NA else r[[n]][[1]])
+      as.data.frame(stats::setNames(v, EXCLUSION_COLUMNS), stringsAsFactors = FALSE)
+    }))
+  }
+  if (is.null(x) || nrow(x) == 0) return(empty)
+  for (cc in setdiff(EXCLUSION_COLUMNS, names(x))) x[[cc]] <- NA
+  x <- x[, EXCLUSION_COLUMNS, drop = FALSE]
+  for (cc in setdiff(EXCLUSION_COLUMNS, c("time", "after_be"))) x[[cc]] <- as.character(x[[cc]])
+  x$time <- suppressWarnings(as.numeric(x$time))
+  x$after_be <- as.logical(x$after_be) %in% TRUE
+  rownames(x) <- NULL
+  x
+}
+
+#' Exclusions in force (not restored)
+active_exclusions <- function(x) {
+  x <- as_exclusions(x)
+  x[is.na(x$restored_utc) | !nzchar(x$restored_utc), , drop = FALSE]
+}
+
+#' Same sampling time, within floating-point tolerance
+same_time <- function(x, t) !is.na(x) & abs(x - t) <= 1e-9 * max(1, abs(t))
+
+#' Which rows and profiles of a dataset the exclusions in force refer to
+#'
+#' Subject, and Treatment and Period when mapped, identify the profile; a
+#' sample also needs its time. Duplicate times are refused by an interlock, so
+#' a sample key is unique.
+#' @return list(rows = row indices of excluded samples, profiles = profile
+#'   keys of excluded profiles, unmatched = ids of exclusions that match nothing)
+resolve_exclusions <- function(data, col_map, excl) {
+  ex <- active_exclusions(excl)
+  out <- list(rows = integer(0), profiles = character(0), unmatched = character(0))
+  if (nrow(ex) == 0) return(out)
+  pk <- profile_key(data, col_map)
+  t <- suppressWarnings(as.numeric(data[[col_map$time]]))
+  for (i in seq_len(nrow(ex))) {
+    m <- pk$parts$Subject == ex$subject[i]
+    if ("Treatment" %in% pk$cols) m <- m & pk$parts$Treatment %in% ex$treatment[i]
+    if ("Period" %in% pk$cols) m <- m & pk$parts$Period %in% ex$period[i]
+    m <- m %in% TRUE
+    if (identical(ex$level[i], "sample")) {
+      hit <- which(m & same_time(t, ex$time[i]))
+      if (length(hit) == 1) out$rows <- c(out$rows, hit) else out$unmatched <- c(out$unmatched, ex$id[i])
+    } else {
+      k <- unique(pk$key[m])
+      if (length(k) == 1) out$profiles <- c(out$profiles, k) else out$unmatched <- c(out$unmatched, ex$id[i])
+    }
+  }
+  out$rows <- unique(out$rows); out$profiles <- unique(out$profiles)
+  out
+}
+
 #' Turn an uploaded table into the canonical analysis dataset
 #'
 #' Converts time and concentration to numbers (rewriting "<x" BLQ text to a
@@ -200,6 +279,12 @@ prepare_pk_dataset <- function(raw, col_map, opts = list()) {
   data <- data[order(data[[col_map$subject]], data[[col_map$time]]), ]
   n_dropped <- n_before - nrow(data)
 
+  # Samples the analyst excluded are removed before the BLQ rule, as if they
+  # had never been collected
+  res_ex <- resolve_exclusions(data, col_map, opts$exclusions)
+  excluded_rows <- data[res_ex$rows, , drop = FALSE]
+  if (length(res_ex$rows) > 0) data <- data[-res_ex$rows, , drop = FALSE]
+
   if (lloq > 0) {
     data <- apply_blq_rules(data, col_map, rule = rule, lloq = lloq)
   } else {
@@ -233,6 +318,7 @@ prepare_pk_dataset <- function(raw, col_map, opts = list()) {
                       na_policy = "missing"),
     flags      = list(anl01fl_applied = FALSE, dtype_present = FALSE,
                       n_rows_dropped = n_dropped),
+    excluded   = list(samples = excluded_rows, profiles = res_ex$profiles, unmatched = res_ex$unmatched),
     interlocks = if (!is.null(opts$interlocks)) opts$interlocks else
                  data.frame(Severity = character(0), Category = character(0),
                             Message = character(0), Detail = character(0),
@@ -632,6 +718,44 @@ lamz_dependent_cols <- function(names_in, steady_state = FALSE) {
   cols
 }
 
+#' Half-life quality rules: defaults, and the rules in force for an analysis
+#'
+#' Adjusted R2 keeps its own setting (r2adj_threshold, which blanks the
+#' parameters). These rules only flag. NULL or NA switches a rule off.
+LZ_RULES_DEFAULT <- list(span_min = 2, aucpext_max = 20, aucpbe_max = 20)
+lz_rules <- function(settings) {
+  r <- LZ_RULES_DEFAULT
+  given <- settings$lz_rules
+  if (is.list(given)) for (n in intersect(names(given), names(r)))
+    r[[n]] <- if (is.null(given[[n]]) || length(given[[n]]) == 0) NA_real_ else suppressWarnings(as.numeric(given[[n]]))
+  r
+}
+
+#' Flag half-life fits that break a quality rule
+#'
+#' LZSPAN = (LAMZUL - LAMZLL) / half-life: how many half-lives the fitted points
+#' cover. FLAG_SPAN: span below span_min (every fit, manual ones included; at
+#' steady state informational). FLAG_AUCPE: % of AUC to infinity extrapolated
+#' above aucpext_max (single dose only). FLAG_AUCPBE: IV bolus, % of AUC
+#' back-extrapolated to time 0 above aucpbe_max. Numeric 0/1, missing when the
+#' rule is off or does not apply, so the reproduction check compares them.
+#' @param r NCA result: named vector (one profile) or data frame
+lambda_z_flags <- function(r, rules, ss = FALSE, adm = "Extravascular") {
+  one <- !is.data.frame(r)
+  get <- function(n) if (n %in% names(r)) suppressWarnings(as.numeric(if (one) r[[n]] else r[[n]])) else
+    rep(NA_real_, if (one) 1 else nrow(r))
+  flag <- function(x, on) if (is.na(on)) rep(NA_real_, length(x)) else ifelse(is.na(x), NA_real_, as.numeric(x))
+  span <- (get("LAMZUL") - get("LAMZLL")) / get("LAMZHL")
+  span[!is.finite(span)] <- NA_real_
+  pe <- get("AUCPEO"); pbe <- get("AUCPBEO")
+  out <- list(LZSPAN = span,
+              FLAG_SPAN = flag(span < rules$span_min, rules$span_min),
+              FLAG_AUCPE = if (isTRUE(ss)) rep(NA_real_, length(span)) else flag(pe > rules$aucpext_max, rules$aucpext_max),
+              FLAG_AUCPBE = if (toupper(adm) != "BOLUS") rep(NA_real_, length(span)) else flag(pbe > rules$aucpbe_max, rules$aucpbe_max))
+  for (n in names(out)) r[[n]] <- out[[n]]
+  r
+}
+
 #' Is an automatic terminal-phase fit below the adjusted R2 threshold?
 #' @return logical per value; NA R2ADJ (no fit) is not flagged
 below_r2_threshold <- function(r2adj, threshold) {
@@ -857,7 +981,7 @@ run_single_nca <- function(time, conc, settings, time_used = NULL, is_blq = NULL
     for (msg in partial_auc_notes(pauc, list(p), "this profile", settings$trap_method,
                                   partial_auc_blq_fraction(settings))) warning(msg)
   }
-  r
+  lambda_z_flags(r, lz_rules(settings), ss = ss, adm = adm)
 }
 
 #' Steady-state warning for profiles without a measured pre-dose sample
@@ -1482,6 +1606,16 @@ run_nca <- function(data, col_map, settings, lz_overrides = NULL) {
     result <- result[, c(pk$cols, setdiff(names(result), pk$cols))]
   }
 
+  if (!is.null(result)) result <- lambda_z_flags(result, lz_rules(settings), ss = ss, adm = adm)
+  # Profiles the analyst excluded keep their NCA, marked EXCL = 1: they are
+  # left out of summaries, mean curves and bioequivalence
+  if (!is.null(result)) {
+    ex_prof <- resolve_exclusions(data_all, col_map, settings$exclusions)$profiles
+    res_key <- if (use_composite_key) do.call(paste, c(lapply(result[pk$cols], as.character), sep = "||")) else
+      as.character(result[[1]])
+    result$EXCL <- as.numeric(res_key %in% ex_prof)
+  }
+
   if (!is.null(result) && exists("pauc_blq", inherits = FALSE)) {
     key_cols <- intersect(if (use_composite_key) pk$cols else names(result)[1], names(result))
     attr(result, "partial_auc_blq") <- cbind(result[, key_cols, drop = FALSE], pauc_blq)
@@ -1640,6 +1774,7 @@ record_nca_settings <- function(rec, data, col_map) {
        dose_unit = rec$dose_unit, time_unit = rec$time_unit, conc_unit = rec$conc_unit,
        trap_method = rec$trap_method, r2adj_threshold = rec$r2adj_threshold,
        mw = if (is.null(rec$mw)) 0 else rec$mw, partial_aucs = partial_auc_spec(rec$partial_aucs),
+       lz_rules = rec$lz_rules, exclusions = rec$exclusions,
        partial_auc_blq_fraction = rec$partial_auc_blq_fraction)
 }
 

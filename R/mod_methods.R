@@ -160,6 +160,14 @@ methods_ui <- function() {
                " and all dependent parameters (t", tags$sub("\u00BD"),
                ", AUC", tags$sub("0\u2013\u221E"), ", CL/F, V", tags$sub("z"),
                "/F, MRT) are recalculated accordingly."),
+
+        tags$p(class = "small",
+               "Each fit, automatic or manual, was also checked against three rules that flag but never change ",
+               "a value: the fitted points should span at least two half-lives, and AUC", tags$sub("0\u2013\u221E"),
+               " should be at most 20% extrapolated (not assessed at steady state) and, after an IV bolus, at most ",
+               "20% back-extrapolated to time zero. The analyst can change or switch off these limits; the ones used ",
+               "are stored in the Analysis Record. Many SOPs also set a stricter minimum R\u00B2", tags$sub("adj"),
+               ", often 0.80 to 0.90."),
         
         tags$h6(class = "fw-semibold mt-3", "Terminal Half-Life"),
         tags$p("The terminal elimination half-life was calculated as:"),
@@ -592,6 +600,15 @@ tags$h6(class = "fw-semibold mt-3", "Descriptive Statistics"),
           "The confidence limits were rounded to two decimals before comparison with the acceptance ",
           "limits (FDA, Statistical Approaches to Establishing Bioequivalence, 2026). The Reference ",
           "treatment was chosen by the analyst."
+        ),
+
+        tags$h6(class = "fw-semibold mt-3", "Excluded Data"),
+        tags$p(
+          "Samples or whole profiles were left out only for a documented reason, preferably one defined in ",
+          "the protocol (ICH M13A). An excluded sample was treated as never collected, before the BLQ rule ",
+          "was applied. An excluded profile kept its NCA result but was left out of the summary statistics, ",
+          "the mean curves and the bioequivalence comparison. The ICH M13A checks used the data before ",
+          "exclusions, and the comparison was repeated without the exclusions as a sensitivity analysis."
         ),
         
         ref_box(

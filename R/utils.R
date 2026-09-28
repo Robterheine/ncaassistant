@@ -167,6 +167,14 @@ pk_param_labels <- c(
   "FLUCTP"   = "Peak-Trough Fluctuation (%)",
   "SWING"    = "Swing ((Cmax-Cmin)/Cmin)",
   
+  # Half-life quality flags (lambda_z_flags in R/pipeline.R)
+  "LZSPAN"      = "Half-Life Span Ratio",
+  "FLAGS"       = "Half-Life Flags",
+  "EXCL"        = "Excluded by Analyst (1 = yes)",
+  "FLAG_SPAN"   = "Flag: Span Below Minimum",
+  "FLAG_AUCPE"  = "Flag: AUC Extrapolated Above Maximum",
+  "FLAG_AUCPBE" = "Flag: AUC Back-Extrapolated Above Maximum",
+
   # Dose-normalised (from add_dose_normalized)
   "CMAX_DN"  = "Dose-Normalised Cmax",
   "AUCLST_DN"= "Dose-Normalised AUC Last",
@@ -241,6 +249,7 @@ rename_summary_columns <- function(df) {
     "Treatment" = "Treatment",
     "Parameter" = "Parameter",
     "N"         = "N",
+    "N_Flagged" = "N Flagged (half-life rules)",
     "Geo_Mean"  = "Geometric Mean",
     "Geo_CV_pct"= "Geometric CV (%)",
     "Median"    = "Median",
@@ -288,6 +297,10 @@ rename_be_columns <- function(df, ci_level = 90) {
     "Missing_Ref"   = "Profiles missing (Reference)",
     "Zeros_Test"    = "Zero values (Test)",
     "Zeros_Ref"     = "Zero values (Reference)",
+    "Excluded_Test" = "Profiles excluded (Test)",
+    "Excluded_Ref"  = "Profiles excluded (Reference)",
+    "Flagged_Test"  = "Half-life flags (Test)",
+    "Flagged_Ref"   = "Half-life flags (Reference)",
     "BLQ_Test"      = "Mostly BLQ (Test)",
     "BLQ_Ref"       = "Mostly BLQ (Reference)",
     "Bioequivalent" = "Bioequivalent?",
@@ -325,6 +338,8 @@ fmt_pk <- function(x, digits = 4) {
 #' @param params Character vector of parameter names to summarize
 #' @return Data frame with summary statistics
 summarize_pk_params <- function(data, params, group_col = NULL) {
+  # Profiles the analyst excluded (EXCL = 1) stay in the listing, not in summaries
+  if ("EXCL" %in% names(data)) data <- data[!(suppressWarnings(as.numeric(data$EXCL)) %in% 1), , drop = FALSE]
   # If a grouping column is provided (e.g., Treatment), compute
   # statistics separately for each group level.
   if (!is.null(group_col) && group_col %in% names(data)) {
@@ -346,7 +361,7 @@ summarize_pk_params <- function(data, params, group_col = NULL) {
     n <- length(vals)
     if (n == 0) {
       return(data.frame(
-        Parameter = p, N = 0,
+        Parameter = p, N = 0, N_Flagged = 0L,
         Geo_Mean = NA, Geo_CV_pct = NA,
         Median = NA, Q25 = NA, Q75 = NA,
         Mean = NA, SD = NA, CV_pct = NA,
@@ -362,6 +377,7 @@ summarize_pk_params <- function(data, params, group_col = NULL) {
     data.frame(
       Parameter  = p,
       N          = n,
+      N_Flagged  = lz_flagged_n(data, p),
       Geo_Mean   = ifelse(all(vals > 0), geo_mean, NA),
       Geo_CV_pct = ifelse(all(vals > 0), geo_cv, NA),
       Median     = median(vals),
@@ -739,4 +755,91 @@ viz_exact_time_note <- function(d) {
   if (length(n) == 0 || mean(n == 1) <= 0.5) return(NULL)
   paste0("Most time points hold a single profile (", sum(n == 1), " of ", length(n), "): the sampling times ",
          "differ between profiles, so the mean profile shows single values. Use nominal times for this figure.")
+}
+
+
+#' Bundled example datasets offered by "Load example" (a whitelist)
+EXAMPLE_FILES <- c(
+  "Theophylline, 12 subjects (Tutorials 3, 7)" = "example_theoph.csv",
+  "BLQ results \"<0.5\" (Tutorial 2)"          = "example_blq.csv",
+  "2x2 crossover BE (Tutorials 4, 6)"      = "example_be_crossover.csv",
+  "Parallel-group BE"                          = "example_be_parallel.csv",
+  "2x2x4 full replicate BE"            = "example_be_replicate_2x2x4.csv",
+  "CDISC ADNCA dataset"                        = "example_adnca.csv")
+
+#' Absolute path of a bundled example; only whitelisted names are accepted
+example_path <- function(f) {
+  if (length(f) != 1 || !f %in% EXAMPLE_FILES) stop("Not a bundled example dataset: ", f)
+  normalizePath(file.path("data", f), mustWork = TRUE)
+}
+
+
+#' The half-life flags of each profile in plain words, e.g.
+#' "span 1.4 < 2; % extrapolated 27 > 20"; "" when none is raised
+lz_flag_text <- function(r, rules = LZ_RULES_DEFAULT) {
+  n <- nrow(r)
+  col <- function(x) if (x %in% names(r)) suppressWarnings(as.numeric(r[[x]])) else rep(NA_real_, n)
+  f <- function(v) trimws(formatC(v, digits = 3, format = "g"))
+  span <- col("LZSPAN"); pe <- col("AUCPEO"); pbe <- col("AUCPBEO")
+  vapply(seq_len(n), function(i) paste(c(
+    if (isTRUE(col("FLAG_SPAN")[i] == 1)) paste0("span ", f(span[i]), " < ", rules$span_min),
+    if (isTRUE(col("FLAG_AUCPE")[i] == 1)) paste0("% extrapolated ", f(pe[i]), " > ", rules$aucpext_max),
+    if (isTRUE(col("FLAG_AUCPBE")[i] == 1)) paste0("% back-extrapolated ", f(pbe[i]), " > ", rules$aucpbe_max)),
+    collapse = "; "), character(1))
+}
+
+#' Flag columns that concern a parameter: the span rule for everything that
+#' depends on lambda-z, the extrapolation rules for AUC to infinity and what
+#' is derived from it
+lz_flag_cols <- function(param) {
+  base <- sub("_DN$", "", param)
+  inf <- base %in% c("AUCIFO", "AUCIFP", "AUCIFOD", "AUCIFPD", "AUCPEO", "AUCPEP", "AUMCIFO", "AUMCIFP",
+                     "CLFO", "CLFP", "CLO", "CLP", "VZFO", "VZFP", "VZO", "VZP", "VSSO", "VSSP",
+                     "MRTEVIFO", "MRTEVIFP", "MRTIVIFO", "MRTIVIFP")
+  c(if (base %in% c(LAMZ_DEPENDENT, "LAMZHL", "LAMZ")) "FLAG_SPAN",
+    if (inf) c("FLAG_AUCPE", "FLAG_AUCPBE"))
+}
+
+#' Number of values of a parameter from fits with a raised flag
+lz_flagged_n <- function(data, param) {
+  fc <- intersect(lz_flag_cols(param), names(data))
+  if (length(fc) == 0 || !param %in% names(data)) return(0L)
+  has <- !is.na(suppressWarnings(as.numeric(data[[param]])))
+  hit <- Reduce(`|`, lapply(fc, function(cc) suppressWarnings(as.numeric(data[[cc]])) %in% 1))
+  sum(has & hit)
+}
+
+#' Add the half-life flags as plain text (column FLAGS), for tables and exports
+add_flag_text <- function(r, rules = LZ_RULES_DEFAULT) {
+  if (is.null(r) || !is.data.frame(r) || nrow(r) == 0 || !any(grepl("^FLAG_", names(r)))) return(r)
+  r$FLAGS <- lz_flag_text(r, rules)
+  r
+}
+
+#' The half-life rules checked for one fit, as text for the Half-Life Review,
+#' e.g. "Adj. R\u00b2 0.93 \u2265 0.70 pass \u00b7 span 1.4 < 2 flag"
+#' @param lz estimate_lambda_z()/recalculate_lambda_z() result (lambda_z,
+#'   half_life, r2adj, time_used)
+#' @param pe % of AUC to infinity extrapolated for this profile (NA: not shown)
+lz_checklist <- function(lz, r2_threshold, rules, pe = NA_real_, ss = FALSE) {
+  f <- function(v) trimws(formatC(v, digits = 3, format = "g"))
+  out <- character(0)
+  if (!is.na(lz$r2adj)) out <- c(out, paste0("Adj. R\u00b2 ", f(lz$r2adj),
+    if (lz$r2adj >= r2_threshold) paste0(" \u2265 ", r2_threshold, " pass") else paste0(" < ", r2_threshold, " blank")))
+  span <- if (length(lz$time_used) >= 2 && is.finite(lz$half_life)) diff(range(lz$time_used)) / lz$half_life else NA
+  if (!is.na(rules$span_min) && !is.na(span)) out <- c(out, paste0("span ", f(span),
+    if (span >= rules$span_min) paste0(" \u2265 ", rules$span_min, " pass") else paste0(" < ", rules$span_min, " flag"),
+    if (isTRUE(ss)) " (informational at steady state)" else ""))
+  if (!isTRUE(ss) && !is.na(rules$aucpext_max) && !is.na(pe)) out <- c(out, paste0("extrapolated ", f(pe), "%",
+    if (pe <= rules$aucpext_max) paste0(" \u2264 ", rules$aucpext_max, "% pass") else paste0(" > ", rules$aucpext_max, "% flag")))
+  paste(out, collapse = " \u00b7 ")
+}
+
+#' Profile choices for the Half-Life Review, with "(flagged)" in the label
+lz_profile_choices <- function(result) {
+  lab <- result_profile_labels(result)
+  fl <- Reduce(`|`, lapply(intersect(c("FLAG_SPAN", "FLAG_AUCPE", "FLAG_AUCPBE"), names(result)),
+                           function(cc) suppressWarnings(as.numeric(result[[cc]])) %in% 1))
+  if (is.null(fl)) fl <- rep(FALSE, length(lab))
+  stats::setNames(lab, ifelse(fl, paste(lab, "(flagged)"), lab))
 }

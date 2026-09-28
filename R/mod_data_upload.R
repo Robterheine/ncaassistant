@@ -34,6 +34,15 @@ data_upload_ui <- function(id) {
             fileInput(ns("file_upload"), NULL,
                       accept = c(".csv", ".xlsx", ".xls", ".txt", ".tsv"),
                       placeholder = "Choose CSV or Excel file"),
+            # Bundled example datasets, loaded through the same path as an upload
+            tags$div(class = "d-flex align-items-end gap-2 mb-2",
+              tags$div(class = "flex-grow-1",
+                selectInput(ns("example"), "Or use an example:",
+                            choices = c("Choose an example" = "", EXAMPLE_FILES), width = "100%")),
+              actionButton(ns("btn_example"), "Load example", class = "btn-outline-primary btn-sm mb-3",
+                           icon = icon("file-import")),
+              # The same file, to open in Excel and see how it is laid out
+              downloadButton(ns("dl_example"), "Download", class = "btn-outline-secondary btn-sm mb-3")),
             tags$p(class = "text-muted small mb-2", icon("shield-halved", class = "me-1"),
                    data_protection_notice()),
             
@@ -188,10 +197,14 @@ data_upload_server <- function(id, shared) {
         type = "message", duration = 6)
     })
     
+    # The data source: an uploaded file or a bundled example, one path for both.
+    # The nonce makes loading the same example twice read it again.
+    src <- reactiveVal(NULL)   # list(name, datapath, origin = "file"|"example", nonce)
+
     # File type detection
     file_ext <- reactive({
-      req(input$file_upload)
-      tools::file_ext(input$file_upload$name)
+      req(src())
+      tools::file_ext(src()$name)
     })
     
     output$is_csv <- reactive({ file_ext() %in% c("csv", "txt", "tsv") })
@@ -203,11 +216,12 @@ data_upload_server <- function(id, shared) {
     output$has_data <- reactive({ !is.null(raw_data()) })
     outputOptions(output, "has_data", suspendWhenHidden = FALSE)
 
-    output$has_file <- reactive({ !is.null(input$file_upload) })
+    output$has_file <- reactive({ !is.null(src()) })
     outputOptions(output, "has_file", suspendWhenHidden = FALSE)
     
-    # Reset all shared state when a new file is uploaded
-    observeEvent(input$file_upload, {
+    # Reset all shared state when new data arrive (an upload or an example),
+    # before the new source is set
+    reset_for_new_data <- function() {
       shared$qc_result   <- NULL
       shared$pk_data      <- NULL
       shared$col_map      <- NULL
@@ -222,7 +236,51 @@ data_upload_server <- function(id, shared) {
       shared$be_results   <- NULL
       shared$partial_aucs <- NULL
       shared$viz_settings <- NULL
-    }, priority = 10)  # high priority: runs before raw_data() updates
+    }
+    # New data clear the exclusion register; when it holds exclusions, the
+    # user is asked first and can download them
+    pending_src <- reactiveVal(NULL)
+    load_source <- function(x) {
+      if (nrow(active_exclusions(shared$exclusions)) == 0) {
+        reset_for_new_data(); shared$exclusions <- NULL; src(x); return(invisible())
+      }
+      pending_src(x)
+      n <- nrow(active_exclusions(shared$exclusions))
+      showModal(modalDialog(
+        title = "New data clear the exclusions",
+        paste0("Loading ", x$name, " clears the ", n, " exclusion(s) you made for the current data. ",
+               "Download them first if you want to keep a copy."),
+        footer = tagList(downloadButton(ns("dl_exclusions_before_new"), "Download exclusions"),
+                         modalButton("Cancel"),
+                         actionButton(ns("confirm_new_source"), "Load new data", class = "btn-primary"))))
+    }
+    output$dl_exclusions_before_new <- downloadHandler(
+      filename = function() "exclusions.csv",
+      content = function(file) utils::write.csv(as_exclusions(shared$exclusions), file, row.names = FALSE))
+    observeEvent(input$confirm_new_source, {
+      removeModal(); req(pending_src())
+      reset_for_new_data(); shared$exclusions <- NULL; src(pending_src()); pending_src(NULL)
+    })
+    observeEvent(input$file_upload, {
+      load_source(list(name = input$file_upload$name, datapath = input$file_upload$datapath,
+                       origin = "file", nonce = Sys.time()))
+    })
+    output$dl_example <- downloadHandler(
+      filename = function() if (isTRUE(input$example %in% EXAMPLE_FILES)) input$example else "example.csv",
+      content = function(file) {
+        req(input$example %in% EXAMPLE_FILES)
+        file.copy(example_path(input$example), file)
+      })
+    observeEvent(input$btn_example, {
+      req(input$example %in% EXAMPLE_FILES)
+      # The file type follows the example; comma-separated with a decimal point
+      updateRadioButtons(session, "data_type",
+                         selected = if (identical(input$example, "example_adnca.csv")) "adnca" else "flat")
+      updateSelectInput(session, "csv_sep", selected = ",")
+      updateSelectInput(session, "csv_dec", selected = ".")
+      load_source(list(name = input$example, datapath = example_path(input$example),
+                       origin = "example", nonce = Sys.time()))
+    })
     
     # How the file is read; recorded so the reproduction reads it the same way
     read_args <- reactive({
@@ -235,8 +293,8 @@ data_upload_server <- function(id, shared) {
     adnca_error <- reactiveVal(NULL)   # refusal message
 
     adnca_file <- reactive({
-      req(input$file_upload, input$data_type == "adnca", !identical(tolower(file_ext()), "xpt"))
-      tryCatch(adnca_read(input$file_upload$datapath, read_args(), ext = file_ext()),
+      req(src(), input$data_type == "adnca", !identical(tolower(file_ext()), "xpt"))
+      tryCatch(adnca_read(src()$datapath, read_args(), ext = file_ext()),
                error = function(e) {
                  showNotification(friendly_read_error(conditionMessage(e)), type = "error", duration = 8)
                  NULL
@@ -245,7 +303,7 @@ data_upload_server <- function(id, shared) {
     adnca_info <- reactive({ req(adnca_file()); adnca_inspect(adnca_file()) })
 
     # Any change of file, file type or choice invalidates a previous conversion
-    observeEvent(list(input$file_upload, input$data_type, input$csv_sep, input$csv_dec,
+    observeEvent(list(src(), input$data_type, input$csv_sep, input$csv_dec,
                       input$excel_sheet, input$adnca_time, input$adnca_paramcd,
                       input$adnca_pcspec, input$adnca_zero_predose), {
       adnca_conv(NULL); adnca_error(NULL)
@@ -359,14 +417,14 @@ data_upload_server <- function(id, shared) {
 
     # Read raw data: the uploaded table, or the converted ADNCA dataset
     raw_data <- reactive({
-      req(input$file_upload)
+      req(src())
       if (identical(input$data_type, "adnca")) {
         conv <- adnca_conv()
         req(conv)
         return(conv$flat)
       }
       ext <- file_ext()
-      path <- input$file_upload$datapath
+      path <- src()$datapath
       tryCatch({
         read_pk_file(path, read_args(), ext = ext)
       }, error = function(e) {
@@ -376,14 +434,18 @@ data_upload_server <- function(id, shared) {
       })
     })
     
+    # A bundled example is marked as such next to its name
+    example_badge <- function() if (identical(src()$origin, "example"))
+      tags$span(class = "badge bg-info ms-2", "Example dataset")
+
     # Upload status
     output$upload_status <- renderUI({
-      if (identical(input$data_type, "adnca") && !is.null(input$file_upload) && is.null(adnca_conv())) {
+      if (identical(input$data_type, "adnca") && !is.null(src()) && is.null(adnca_conv())) {
         info <- tryCatch(adnca_info(), error = function(e) NULL)
         return(tags$div(class = "py-2",
           tags$div(class = "d-flex align-items-center mb-2",
                    icon("file-medical", class = "text-primary me-2"),
-                   tags$strong(input$file_upload$name)),
+                   tags$strong(src()$name), example_badge()),
           tags$p(class = "text-muted small mb-0",
                  if (!is.null(info)) paste0(info$n_records, " records. ") else "",
                  "Check the summary below, choose the time to use and click Convert dataset.")))
@@ -400,7 +462,7 @@ data_upload_server <- function(id, shared) {
           class = "py-2",
           tags$div(class = "d-flex align-items-center mb-2",
                    icon("circle-check", class = "text-success me-2"),
-                   tags$strong(input$file_upload$name)),
+                   tags$strong(src()$name), example_badge()),
           tags$p(class = "text-muted small mb-0",
                  paste(nrow(d), "rows,", ncol(d), "columns. ",
                        "Columns: ", paste(head(names(d), 6), collapse = ", "),
@@ -527,23 +589,37 @@ data_upload_server <- function(id, shared) {
       
       # Process: one Shiny-free implementation (R/pipeline.R), shared with the
       # validation suite and the reproduction script
-      ds <- prepare_pk_dataset(raw_data(), col_map, list(
+      prep_opts <- list(
         lloq = input$lloq, blq_rule = input$blq_rule, door = if (is_adnca) "adnca" else "flat",
-        file_name = input$file_upload$name, file_path = input$file_upload$datapath,
+        file_name = src()$name, file_path = src()$datapath,
         read_args = if (is_adnca) list() else read_args(),
-        pipeline_sha256 = PIPELINE_SHA256, qc = qc,
-        interlocks = run_interlocks(raw_data(), col_map)))
+        pipeline_sha256 = PIPELINE_SHA256)
+      ds <- prepare_pk_dataset(raw_data(), col_map, c(prep_opts, list(
+        qc = qc, interlocks = run_interlocks(raw_data(), col_map), exclusions = shared$exclusions)))
+      # Exclusions are matched by subject, treatment, period and time: after a
+      # change of mapping one may no longer match anything. Never dropped silently
+      if (length(ds$excluded$unmatched) > 0) {
+        ex <- active_exclusions(shared$exclusions)
+        ex <- ex[ex$id %in% ds$excluded$unmatched, , drop = FALSE]
+        showNotification(paste0(nrow(ex), " exclusion(s) match no sample or profile of these data: ",
+                                paste(head(exclusion_labels(ex), 5), collapse = "; "),
+                                ". Restore them in the Exclusions card, or map the columns as before."),
+                         type = "error", duration = NULL)
+        return()
+      }
       data   <- ds$data
       design <- ds$design
       # Controlled mode: log the data before they become available (fail closed)
-      if (!gxp_guard("data_loaded", object = input$file_upload$name,
-                     sha256 = sha256_file(input$file_upload$datapath),
-                     details = list(source = "file", format = if (is_adnca) "adnca" else "flat",
+      if (!gxp_guard("data_loaded", object = src()$name,
+                     sha256 = sha256_file(src()$datapath),
+                     details = list(source = src()$origin, format = if (is_adnca) "adnca" else "flat",
                                     adnca = if (is_adnca) adnca_conv()$options else NULL,
                                     rows = nrow(data), subjects = design$n_subjects,
                                     blq_rule = input$blq_rule, lloq = input$lloq))) return()
       
       shared$raw_data   <- raw_data()
+      shared$prepare_opts <- c(prep_opts, list(col_map = col_map))
+      shared$data_id    <- shared$data_id + 1
       shared$pk_dataset <- ds
       shared$pk_data    <- data
       shared$col_map    <- col_map
@@ -557,8 +633,10 @@ data_upload_server <- function(id, shared) {
         design    = design,
         lloq      = input$lloq,
         blq_rule  = input$blq_rule,
-        file_name = input$file_upload$name,
-        file_path = input$file_upload$datapath,
+        file_name = src()$name,
+        file_path = src()$datapath,
+        # "example" for a bundled example dataset; the Analysis Record says so
+        source    = src()$origin,
         read_args = read_args(),
         door      = if (is_adnca) "adnca" else "flat",
         # Units stated in the file; the analysis paths pre-select them and

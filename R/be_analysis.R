@@ -23,7 +23,7 @@
 #'   level alphabetically (which may be the Test: callers should pass it).
 #' @return list(data, trt_col, subj_col, per_col, seq_col); Treatment is a
 #'   factor with the reference as its first level.
-build_be_data <- function(nca_res, pk_data, col_map, reference = NULL) {
+build_be_data <- function(nca_res, pk_data, col_map, reference = NULL, exclusions = NULL) {
   keys <- intersect(c("Subject", "Treatment", "Period"), names(nca_res))
   if (!all(c("Subject", "Treatment") %in% keys))
     stop("The NCA result has no Subject/Treatment columns; map the Treatment column.")
@@ -70,6 +70,20 @@ build_be_data <- function(nca_res, pk_data, col_map, reference = NULL) {
     be$Treatment <- relevel(be$Treatment, ref = "Reference")
   }
 
+  # Profiles the analyst excluded (EXCL = 1 in the NCA result) carry their
+  # reason; fit_be_parameter() leaves them out and counts them separately
+  be$EXCLUDED <- NA_character_
+  if ("EXCL" %in% names(be)) {
+    x <- suppressWarnings(as.numeric(be$EXCL)) %in% 1
+    ex <- active_exclusions(exclusions); ex <- ex[ex$level == "profile", , drop = FALSE]
+    reason <- vapply(which(x), function(i) {
+      m <- ex$subject == be$Subject[i] &
+        (if ("Treatment" %in% keys) ex$treatment %in% as.character(be$Treatment[i]) else TRUE) &
+        (if ("Period" %in% keys) ex$period %in% be$Period[i] else TRUE)
+      if (any(m)) paste(na.omit(c(ex$category[m][1], ex$detail[m][1])), collapse = ": ") else "excluded"
+    }, character(1))
+    be$EXCLUDED[x] <- reason
+  }
   list(data = be, trt_col = "Treatment", subj_col = "Subject",
        per_col = if ("Period" %in% keys) "Period" else NULL, seq_col = seq_col)
 }
@@ -185,6 +199,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   # sees how much of the design is left (a subject missing one period drops out)
   n_zero_t <- NA_integer_; n_zero_r <- NA_integer_
   n_miss_t <- NA_integer_; n_miss_r <- NA_integer_
+  n_excl_t <- 0L; n_excl_r <- 0L; n_flag_t <- 0L; n_flag_r <- 0L
   make_row <- function(pe = NA, lo = NA, hi = NA, n_t = NA, n_r = NA, o_t = NA, o_r = NA,
                        pe_status = NA, verdict = NA, mse = NA, dfe = NA) {
     data.frame(
@@ -197,6 +212,8 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
       PE_Constraint = pe_status, Bioequivalent = verdict,
       Missing_Test = n_miss_t, Missing_Ref = n_miss_r,
       Zeros_Test = n_zero_t, Zeros_Ref = n_zero_r,
+      Excluded_Test = n_excl_t, Excluded_Ref = n_excl_r,
+      Flagged_Test = n_flag_t, Flagged_Ref = n_flag_r,
       MSE = mse, DF = dfe, Model = model_label, stringsAsFactors = FALSE)
   }
 
@@ -227,7 +244,19 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   prof_label <- function(i) paste0(as.character(be_data[[subj_col]][i]),
     if (!is.null(per_col) && per_col %in% names(be_data))
       paste0(" period ", as.character(be_data[[per_col]][i])) else "")
-  missing <- is.na(vals)
+  # Profiles the analyst excluded (with a reason) leave the comparison and are
+  # counted apart from missing ones
+  excl <- if ("EXCLUDED" %in% names(be_data)) !is.na(be_data$EXCLUDED) & nzchar(be_data$EXCLUDED) else
+    rep(FALSE, nrow(be_data))
+  n_excl_t <- sum(excl & trt == trt_levels[2]); n_excl_r <- sum(excl & trt == trt_levels[1])
+  vals[excl] <- NA
+  # Values from half-life fits with a raised flag (informational; nothing is excluded)
+  fc <- intersect(lz_flag_cols(param), names(be_data))
+  if (length(fc) > 0) {
+    fl <- !is.na(vals) & Reduce(`|`, lapply(fc, function(cc) suppressWarnings(as.numeric(be_data[[cc]])) %in% 1))
+    n_flag_t <- sum(fl & trt == trt_levels[2]); n_flag_r <- sum(fl & trt == trt_levels[1])
+  }
+  missing <- is.na(vals) & !excl
   n_miss_t <- sum(missing & trt == trt_levels[2]); n_miss_r <- sum(missing & trt == trt_levels[1])
   # A partial AUC (or Cmax/Tmax within an interval) is not reported when the
   # interval reaches past the profile's last measurable concentration, while

@@ -91,6 +91,7 @@ path_multi_nca_ui <- function(id) {
               sliderInput(ns("r2adj"),
                           tagList("Minimum R² for half-life estimation", help_r2adj),
                           min = 0, max = 1, value = 0.7, step = 0.05),
+              lz_rules_ui(ns("lzr")),
               checkboxInput(ns("dose_norm"),
                             tagList("Calculate dose-normalised parameters", help_dose_norm),
                             FALSE)
@@ -108,6 +109,7 @@ path_multi_nca_ui <- function(id) {
         # --- Main content ----------------------------------------------------
         tagList(
           uiOutput(ns("result_status")),
+          exclusion_strip_ui(ns("strip")),
           uiOutput(ns("excl_note")),
           uiOutput(ns("pauc_note")),
           
@@ -205,7 +207,8 @@ path_multi_nca_ui <- function(id) {
                                  icon = icon("refresh")),
                     actionButton(ns("lz_reset"), "Remove override (automatic fit)",
                                  class = "btn-outline-secondary btn-sm w-100 mt-1",
-                                 icon = icon("rotate-left"))
+                                 icon = icon("rotate-left")),
+                    actionLink(ns("lz_exclude"), "Exclude samples or this profile\u2026", class = "small d-block mt-1")
                   )
                 ),
                 card(
@@ -243,12 +246,27 @@ path_multi_nca_server <- function(id, shared) {
     lz_state <- reactiveValues(override = NULL, overrides_log = list(), fits = list())
     # Overrides belong to one data set: clear them when new data are processed,
     # so they can never be applied to matching profiles of a different file.
-    observeEvent(shared$pk_data, {
+    # data_id changes only when Process Data runs, not when an exclusion
+    # prepares the same data again
+    observeEvent(shared$data_id, {
       lz_state$overrides_log <- list(); lz_state$fits <- list()
       lz_state$override <- NULL
       # Results of the previous file must not be shown or exported with the new one
       nca_result(NULL)
     }, ignoreNULL = FALSE)
+    # An exclusion changes the data of its profile: drop that profile's manual
+    # half-life fit (its points may be gone) and clear the results
+    observeEvent(shared$exclusions, {
+      gone <- prune_overrides(lz_state, shared$exclusions)
+      if (length(gone) > 0)
+        showNotification(paste0("Manual half-life fit removed for ", paste(gone, collapse = ", "),
+                                ": an exclusion changed that profile."), type = "message", duration = 8)
+      if (!is.null(nca_result())) {
+        nca_result(NULL)
+        showNotification("Exclusions changed, so the results were cleared. Run the analysis again.",
+                         type = "message", duration = 6, id = "multi_nca_stale")
+      }
+    }, ignoreInit = TRUE)
     
     # Show the selected profile's own override, if it has one
     observeEvent(input$lz_profile, { lz_state$override <- lz_state$fits[[input$lz_profile]] }, ignoreInit = TRUE)
@@ -314,12 +332,15 @@ path_multi_nca_server <- function(id, shared) {
     nca_result    <- reactiveVal(NULL)
     nca_excl_note <- reactiveVal(NULL)  # persists degenerate-profile exclusion warnings
     pauc_spec     <- partial_auc_server("pauc")
+    lzr           <- lz_rules_server("lzr", shared)
+    exclusion_strip_server("strip", shared)
+    observeEvent(input$lz_exclude, shared$exclusion_request <- list(label = input$lz_profile, nonce = Sys.time()))
     pauc_notes    <- reactiveVal(character(0))
 
     clear_result_on_change(
       reactive(list(input$admin_route, input$dose, input$inf_dur, input$is_ss, input$tau,
                     input$dose_unit, input$time_unit, input$conc_unit, input$trap_method,
-                    input$r2adj, input$mw, input$dose_norm, input$dose_source, pauc_spec())),
+                    input$r2adj, input$mw, input$dose_norm, input$dose_source, pauc_spec(), lzr())),
       has_result = function() !is.null(nca_result()), clear = function() nca_result(NULL),
       id = "multi_nca_stale")
     
@@ -368,6 +389,8 @@ path_multi_nca_server <- function(id, shared) {
         conc_unit         = input$conc_unit,
         trap_method       = input$trap_method,
         r2adj_threshold   = input$r2adj,
+        lz_rules          = lzr(),
+        exclusions        = shared$exclusions,
         mw = input$mw,
         partial_aucs = pauc_spec()
       )
@@ -458,7 +481,7 @@ path_multi_nca_server <- function(id, shared) {
       
       # Update half-life profile selector
       # One entry per profile: subject | treatment | period (as mapped)
-      updateSelectInput(session, "lz_profile", choices = result_profile_labels(result))
+      updateSelectInput(session, "lz_profile", choices = lz_profile_choices(result))
       
       showNotification(paste("NCA complete:", nrow(result), "profiles analysed."),
                        type = "message")
@@ -559,7 +582,7 @@ path_multi_nca_server <- function(id, shared) {
     # Parameter table
     output$param_table <- renderDT({
       req(nca_result())
-      display_df <- rename_nca_columns(drop_duplicate_dose_normalised(nca_result()))
+      display_df <- rename_nca_columns(drop_duplicate_dose_normalised(add_flag_text(nca_result(), lz_rules(shared$nca_settings))))
       
       if (!isTRUE(input$show_all_params)) {
         if (isTRUE(input$is_ss)) {
@@ -569,7 +592,7 @@ path_multi_nca_server <- function(id, shared) {
               "AUC Within Dosing Interval", "Average Concentration (Cavg)",
               "Minimum Concentration (Cmin)", "Concentration at Tau (Ctau)", "Peak-Trough Fluctuation (%)",
               "Half-Life", "Apparent Clearance (CL/F)", "Clearance (CL)",
-              "Adjusted R-squared"),
+              "Adjusted R-squared", "Half-Life Flags"),
             names(display_df))
         } else {
           # AUCPEO included so the >20% extrapolation flag is always visible
@@ -582,6 +605,7 @@ path_multi_nca_server <- function(id, shared) {
               "Points Used for Half-Life",
               "Apparent Clearance (CL/F)", "Clearance (CL)",
               "Apparent Volume (Vz/F)", "Volume of Distribution (Vz)", "Adjusted R-squared",
+              "Half-Life Flags",
               "Dose-Normalised Cmax", "Dose-Normalised AUC Last", "Dose-Normalised AUC Inf"),
             names(display_df))
         }
@@ -762,10 +786,14 @@ path_multi_nca_server <- function(id, shared) {
       } else {
         badge <- if (!is.null(lz_state$override))
           tags$span(class = "badge bg-info ms-2", "manually adjusted") else NULL
+        res <- nca_result(); i <- if (is.null(res)) integer(0) else profile_result_row(res, input$lz_profile)
+        pe <- if (length(i) == 1 && "AUCPEO" %in% names(res)) suppressWarnings(as.numeric(res$AUCPEO[i])) else NA
         tags$div(class="alert alert-success py-2",
                  tags$small(paste0("Half-life: ", signif(lz$half_life,4), " ", input$time_unit, " | R\u00B2: ",
                                    signif(lz$r2adj,4), " | ", lz$n_points, " pts")),
-                 badge)
+                 badge,
+                 tags$div(class = "small mt-1", "Rules: ",
+                          lz_checklist(lz, input$r2adj, lzr(), pe = pe, ss = isTRUE(input$is_ss))))
       }
     })
     
@@ -922,7 +950,7 @@ path_multi_nca_server <- function(id, shared) {
       filename = function() paste0("NCA_results_", Sys.Date(), ".csv"),
       content = function(file) {
         req(nca_result())
-        write.csv(rename_nca_columns(drop_duplicate_dose_normalised(nca_result()), units = list(dose = input$dose_unit, time = input$time_unit, conc = input$conc_unit)), file, row.names=FALSE)
+        write.csv(rename_nca_columns(drop_duplicate_dose_normalised(add_flag_text(nca_result(), lz_rules(shared$nca_settings))), units = list(dose = input$dose_unit, time = input$time_unit, conc = input$conc_unit)), file, row.names=FALSE)
         gxp_export_done(file, paste0("NCA_results_", Sys.Date(), ".csv"), "csv", gxp_data_sha256(shared$study_info))
       }
     )
@@ -932,7 +960,7 @@ path_multi_nca_server <- function(id, shared) {
         req(nca_result())
         wb <- createWorkbook()
         addWorksheet(wb, "Individual_Parameters")
-        writeData(wb, 1, rename_nca_columns(drop_duplicate_dose_normalised(nca_result()), units = list(dose = input$dose_unit, time = input$time_unit, conc = input$conc_unit)))
+        writeData(wb, 1, rename_nca_columns(drop_duplicate_dose_normalised(add_flag_text(nca_result(), lz_rules(shared$nca_settings))), units = list(dose = input$dose_unit, time = input$time_unit, conc = input$conc_unit)))
         r <- nca_result()
         add_cdisc_code_sheet(wb, names(r)[vapply(r, is.numeric, logical(1))],
                              input$admin_route, isTRUE(input$is_ss))
@@ -1014,6 +1042,7 @@ path_multi_nca_server <- function(id, shared) {
             col_map        = shared$col_map,
             original_file_path = original_path,
             original_file_name = original_name,
+            data_source = shared$study_info$source,
             blq_rule       = si$blq_rule,
             lloq           = si$lloq,
             analyst        = gxp_analyst(input$record_analyst),

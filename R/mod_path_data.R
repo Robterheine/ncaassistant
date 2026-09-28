@@ -18,6 +18,9 @@ path_data_ui <- function(id) {
     
     # Shared upload module
     data_upload_ui(ns("upload")),
+
+    # Exclusions with a reason, once the data are processed
+    conditionalPanel(condition = sprintf("output['%s'] == true", ns("data_ok")), exclusions_ui(ns("excl"))),
     
     # After processing: data preview + navigation
     uiOutput(ns("post_upload"))
@@ -30,6 +33,9 @@ path_data_server <- function(id, shared) {
     
     # Embed the shared upload module
     data_upload_server("upload", shared)
+    exclusions_server("excl", shared)
+    output$data_ok <- reactive(isTRUE(shared$data_ready))
+    outputOptions(output, "data_ok", suspendWhenHidden = FALSE)
     
     # Post-upload: preview + next-step navigation
     output$post_upload <- renderUI({

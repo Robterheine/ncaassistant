@@ -72,7 +72,9 @@ help_data_format <- info_btn("help_data_format", "What should my data look like?
   <li><b>Time</b> — when the sample was taken, as a number (e.g., 0, 0.5, 1, 2, 4, 8, 24)</li>
   <li><b>Concentration</b> — how much drug was measured (e.g., 12.5, 0, BLQ)</li>
   </ul>
-  For crossover studies (e.g., bioequivalence), you also need Treatment and Period columns, and preferably Sequence.")
+  For crossover studies (e.g., bioequivalence), you also need Treatment and Period columns, and preferably Sequence.
+  <br><br>
+  To see a file laid out correctly, pick one under <b>Or use an example</b>: <b>Download</b> saves it, <b>Load example</b> analyses it.")
 
 help_data_type <- info_btn("help_data_type", "What kind of file do I have?",
   "<b>Simple table</b> (most users): one row per blood sample, with columns such as
@@ -231,7 +233,10 @@ help_r2adj <- info_btn("help_r2adj", "What is Adjusted R²?",
   <b>Lower threshold</b> (e.g., 0.5) = more permissive, accepts noisier fits.
   <br><br>
   <em>0.7 is a reasonable default. Set the threshold in the analysis plan, before seeing the data;
-  lowering it afterwards to report more half-lives biases the results.</em>")
+  lowering it afterwards to report more half-lives biases the results.</em>
+  <br><br>
+  The <b>half-life rules</b> below this setting (span of the fitted points, % extrapolated)
+  never remove a half-life. They flag fits for you to review.")
 
 help_steady_state <- info_btn("help_steady_state", "When is data 'steady-state'?",
   "<b>Steady-state</b> means the drug has been given repeatedly (e.g., once daily for 

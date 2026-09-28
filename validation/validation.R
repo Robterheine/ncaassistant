@@ -1161,9 +1161,9 @@ skip_manual("MAN-22","BE half-life review","Upload crossover data; run BE; open 
 skip_manual("MAN-23","Override info note","Open Half-Life Review tab; verify info text","Note explaining AUC-inf dependency present","URS-NCA-12")
 skip_manual("MAN-24","CDISC ADNCA upload","Set 'What kind of file?' to CDISC ADNCA dataset; upload validation/fixtures/adnca_clean.csv; choose NRRLT; process","Summary shows analytes, time variables and record selection; data processed; choices listed in the Analysis Record","URS-DAT-01")
 skip_manual("MAN-25","Viz data gate","Navigate to Visualize Data before upload","Data gate card displayed, no plot rendered","URS-VIZ-01")
-skip_manual("MAN-26","Viz spaghetti plot","Load example_theoph.csv; open Visualize Data; Individual Profiles tab","12 lines rendered without error","URS-VIZ-02")
+skip_manual("MAN-26","Viz spaghetti plot","Choose example_theoph.csv under Or use an example, click Load example and Process Data; open Visualize Data; Individual Profiles tab","12 lines rendered without error","URS-VIZ-02")
 skip_manual("MAN-27","Viz colour-by options","Cycle through colour-by options (Subject/Treatment/Period/Sequence)","Plot updates for each available option; unavailable options absent","URS-VIZ-02")
-skip_manual("MAN-28","Viz summary plot","Load example_theoph.csv; open Summary Plot tab","Geometric mean curve with error bars, no error","URS-VIZ-03")
+skip_manual("MAN-28","Viz summary plot","Load example_theoph.csv with Load example; open Summary Plot tab","Geometric mean curve with error bars, no error","URS-VIZ-03")
 skip_manual("MAN-29","Viz BLQ note","Load dataset with zero concentration; open Summary Plot","Note counting excluded observations appears","URS-VIZ-05")
 skip_manual("MAN-30","Viz log scale","Toggle Log Y-axis with zero-concentration data","Plot renders without error; zero values omitted silently","URS-VIZ-07")
 skip_manual("MAN-31","Viz export PNG","Render any plot; go to Export tab; select PNG 7x5 300 DPI; click Download","Non-zero PNG file downloads","URS-VIZ-06")
@@ -1185,6 +1185,9 @@ skip_manual("MAN-46","Invalid partial AUC interval","Enter start 2 and end 1, th
 skip_manual("MAN-47","Partial AUCs in Bioequivalence","Bioequivalence on the same file: 0-1.5 pivotal with Cmax, 4-t supportive; run once","Both partial AUCs and Cmax 0-1.5 compared on the first run; YES/NO for pivotal, no verdict (grey in the forest plot) for supportive","URS-BE-10")
 skip_manual("MAN-48","Record with partial AUCs","Download the Complete Analysis Record after MAN-47","reproduction_check.txt says MATCH; intervals and roles in analysis_settings.json and the HTML summary","URS-EXP-08")
 skip_manual("MAN-49","Partial AUC help and shading","Open 'What is a partial AUC?'; in Visualize Data choose Summary Plot and tick shading","Help text shown; intervals shaded; the suggested legend names the shaded intervals","URS-VIZ-09")
+skip_manual("MAN-50","Load and download an example","Upload page: choose example_blq.csv under Or use an example, click Download, then Load example and Process Data; carry on with Tutorial 2","The downloaded file equals data/example_blq.csv; the data type and separators are set, the status says it is a bundled example, and the tutorial's results follow","URS-UI-02")
+skip_manual("MAN-51","Exclusions in the app","After MAN-50 on example_be_crossover.csv: add a profile exclusion with a reason, run the batch and bioequivalence paths, open Review exclusions, restore it with a reason, then load another example","The register lists the exclusion; every path shows the Left out by you line; bioequivalence shows the profile as excluded and the sensitivity analysis; restoring clears the results; new data ask before clearing the exclusions and offer a download","URS-DAT-09, URS-BE-12")
+skip_manual("MAN-52","Half-life rules dialog","Batch path: Edit half-life rules, set the span to 5 and Apply; run; open All Parameters and Half-Life Review","The summary line shows the new rule; the Half-Life Flags column and the (flagged) profiles appear; no value changes compared with the default rules","URS-NCA-15")
 
 end_section("MAN")
 
@@ -4571,7 +4574,7 @@ check("MRV-08", "T-07: every output column has a label, and every column with a 
     cols <- setdiff(cols, c("Subject", "Treatment", "Period"))
     lab <- vapply(cols, friendly_name, character(1))
     u <- add_units_to_labels(unname(lab), dose_unit = "mg", time_unit = "h", conc_unit = "ng/mL")
-    unitless <- grepl("%|R-squared|Correlation|Points Used|Intercept|Swing", lab)
+    unitless <- grepl("%|R-squared|Correlation|Points Used|Intercept|Swing|Span Ratio|^Flag:|^Excluded by Analyst", lab)
     all(lab != cols) && all(u[!unitless] != lab[!unitless]) &&
       u[lab == "AUMC to Last Point"] == "AUMC to Last Point (ng/mL\u00b7h\u00b2)" &&
       u[lab == "Initial Concentration (C0)"] == "Initial Concentration (C0) (ng/mL)" &&
@@ -5967,6 +5970,427 @@ check("DSR-09", "D-8: the ADNCA import and a flat upload use the same rule for a
 end_section("DSR")
 
 # =============================================================================
+# SECTION EXM: Bundled example datasets loaded with one click
+# =============================================================================
+start_section("EXM")
+suppressPackageStartupMessages({ library(shiny); library(bslib); library(DT) })
+# The modules call gxp_guard(); with controlled mode off it lets every action through
+for (f in c("R/help_system.R", "R/mod_data_upload.R", "R/mod_lz_rules.R", "R/mod_exclusions.R", "R/gxp_audit.R")) source(f, local = TRUE)
+if (!exists("PIPELINE_SHA256")) PIPELINE_SHA256 <- digest::digest(file = "R/pipeline.R", algo = "sha256")
+
+check("EXM-01", "Every bundled example exists and its columns are recognised",
+  tryCatch({
+    det <- function(f) auto_detect_columns(names(read_pk_file(example_path(f))))
+    th <- det("example_theoph.csv"); xo <- det("example_be_crossover.csv"); rp <- det("example_be_replicate_2x2x4.csv")
+    pa <- det("example_be_parallel.csv"); bl <- det("example_blq.csv")
+    ad <- adnca_convert(adnca_read(example_path("example_adnca.csv")), time = "NRRLT")
+    length(EXAMPLE_FILES) == 6 && all(file.exists(vapply(EXAMPLE_FILES, example_path, "")) ) &&
+      th$conc == "conc" && th$dose == "Dose" && xo$treatment == "Treatment" && xo$period == "Period" &&
+      xo$sequence == "Sequence" && rp$period == "Period" && pa$treatment == "Treatment" && bl$conc == "Concentration" &&
+      nrow(ad$flat) > 0
+  }, error = function(e) FALSE),
+  "URS-UI-02, URS-DAT-01", critical = FALSE,
+  method = "example_path() and auto_detect_columns() for the six files; adnca_convert() for the ADNCA example",
+  expected = "All six present; mappings as in the tutorials; the ADNCA example converts with NRRLT")
+
+check("EXM-02", "Load example goes through the upload path: earlier results cleared, data read, source recorded as example",
+  tryCatch({
+    ok <- FALSE
+    sh <- shiny::reactiveValues(be_results = list(ci_table = 1), nca_results = 1, data_ready = FALSE, exclusions = NULL,
+                                data_id = 0)
+    suppressWarnings(shiny::testServer(data_upload_server, args = list(shared = sh), {
+      session$setInputs(data_type = "flat", csv_sep = ",", csv_dec = ".", example = "example_theoph.csv", btn_example = 1)
+      cleared <- is.null(sh$be_results) && is.null(sh$nca_results)
+      read_ok <- identical(src()$origin, "example") && nrow(raw_data()) == 132
+      session$setInputs(col_subject = "Subject", col_time = "Time", col_conc = "conc", col_treatment = "",
+                        col_period = "", col_sequence = "", col_dose = "Dose", lloq = 0, blq_rule = "rule1", btn_apply = 1)
+      ok <<- cleared && read_ok && isTRUE(sh$data_ready) && identical(sh$study_info$source, "example") &&
+        identical(sh$study_info$file_name, "example_theoph.csv") && file.exists(sh$study_info$file_path) &&
+        sh$data_id == 1
+    }))
+    ok
+  }, error = function(e) FALSE),
+  "URS-UI-02, URS-DAT-01, URS-GEN-09", critical = FALSE,
+  method = "shiny::testServer on the upload module: choose example_theoph.csv, Load example, map the columns, Process Data",
+  expected = "Previous results cleared; 132 rows read; study_info names the file, an existing path and source \"example\"")
+
+check("EXM-03", "Only the bundled examples can be loaded or downloaded by name",
+  tryCatch({
+    bad <- tryCatch({ example_path("../app.R"); "loaded" }, error = function(e) "refused")
+    bad2 <- tryCatch({ example_path("example_theoph.csv.bak"); "loaded" }, error = function(e) "refused")
+    bad == "refused" && bad2 == "refused"
+  }, error = function(e) FALSE),
+  "URS-UI-02", critical = TRUE, method = "example_path('../app.R') and a name not in EXAMPLE_FILES",
+  expected = "Both refused")
+
+check("EXM-04", "Controlled mode records an example as an example, with its SHA-256",
+  tryCatch({
+    src_code <- paste(readLines("R/mod_data_upload.R"), collapse = "\n")
+    grepl('gxp_guard("data_loaded", object = src()$name,\n                     sha256 = sha256_file(src()$datapath),\n                     details = list(source = src()$origin,', src_code, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-GXP-05, URS-UI-02", critical = FALSE, method = "The data_loaded audit call in R/mod_data_upload.R",
+  expected = "Object is the file name, the SHA-256 of the loaded file, details$source = \"file\" or \"example\"")
+
+check("EXM-05", "A record made from an example says so and reproduces",
+  tryCatch({
+    td <- tempfile("exm05_"); dir.create(td); zf <- file.path(td, "rec.zip")
+    cm <- list(subject = "Subject", time = "Time", conc = "conc")
+    d <- prepare_pk_dataset(read.csv(example_path("example_theoph.csv")), cm, list(lloq = 0))$data
+    create_analysis_record(zf, suppressWarnings(run_nca(d, cm, theoph_settings)), theoph_settings, cm,
+                           example_path("example_theoph.csv"), "example_theoph.csv", blq_rule = "rule1", lloq = 0,
+                           analyst = "Validation", study_name = "Example", data_source = "example")
+    utils::unzip(zf, exdir = td)
+    html <- paste(readLines(file.path(td, "analysis_summary.html"), warn = FALSE), collapse = "\n")
+    grepl("(bundled example dataset)", html, fixed = TRUE) &&
+      any(grepl("^Result: MATCH", readLines(file.path(td, "reproduction_check.txt"))))
+  }, error = function(e) FALSE),
+  "URS-EXP-01, URS-EXP-02", critical = TRUE, method = "create_analysis_record() for example_theoph.csv with data_source = \"example\"",
+  expected = "Summary marks the bundled example dataset; reproduction MATCH")
+
+check("EXM-06", "Download serves the chosen example unchanged",
+  tryCatch({
+    ok <- FALSE
+    sh <- shiny::reactiveValues(data_ready = FALSE, exclusions = NULL, data_id = 0)
+    suppressWarnings(shiny::testServer(data_upload_server, args = list(shared = sh), {
+      session$setInputs(example = "example_blq.csv")
+      f <- output$dl_example
+      ok <<- identical(digest::digest(file = f, algo = "sha256"), digest::digest(file = "data/example_blq.csv", algo = "sha256"))
+    }))
+    ok
+  }, error = function(e) FALSE),
+  "URS-UI-02", critical = FALSE, method = "shiny::testServer: the Download button with example_blq.csv chosen",
+  expected = "The downloaded file has the SHA-256 of data/example_blq.csv")
+
+end_section("EXM")
+
+# =============================================================================
+# SECTION HLF: Half-life quality flags
+# =============================================================================
+start_section("HLF")
+
+hlf_st <- function(...) { s <- list(admin_route = "extravascular", dose = 100, dose_unit = "mg", time_unit = "h",
+  conc_unit = "ng/mL", trap_method = "log", r2adj_threshold = 0.7, infusion_duration = 0, mw = 0,
+  is_steady_state = FALSE, tau = NA, partial_aucs = NULL); m <- list(...); s[names(m)] <- m; s }
+
+check("HLF-01", "Span ratio and the rule boundaries",
+  tryCatch({
+    r <- data.frame(LAMZLL = c(4, 4, 4), LAMZUL = c(12, 12, 12), LAMZHL = c(4, 4.0001, 8), AUCPEO = c(20, 20.001, 5))
+    f <- lambda_z_flags(r, LZ_RULES_DEFAULT)
+    f$LZSPAN[1] == 2 && f$FLAG_SPAN[1] == 0 && f$FLAG_SPAN[2] == 1 && f$FLAG_SPAN[3] == 1 &&
+      f$FLAG_AUCPE[1] == 0 && f$FLAG_AUCPE[2] == 1 && all(is.na(f$FLAG_AUCPBE))
+  }, error = function(e) FALSE),
+  "URS-NCA-04, URS-NCA-15", critical = TRUE, method = "lambda_z_flags() on spans of exactly 2, just under 2 and 1, and % extrapolated of exactly 20 and just over",
+  expected = "Span 2 and 20% pass; below 2 and over 20% flagged; back-extrapolation not applicable (extravascular)")
+
+check("HLF-02", "Flags in the NCA: blank where the half-life is blanked, off at steady state for extrapolation, back-extrapolation only for IV bolus",
+  tryCatch({
+    th <- read.csv("data/example_theoph.csv"); cm <- list(subject = "Subject", time = "Time", conc = "conc")
+    r <- suppressWarnings(run_nca(th, cm, hlf_st(r2adj_threshold = 0.999)))
+    blank <- is.na(r$LAMZHL)
+    ss <- suppressWarnings(run_nca(th, cm, hlf_st(is_steady_state = TRUE, tau = 24)))
+    bo <- suppressWarnings(run_nca(data.frame(S = 1, T = c(0.25, 0.5, 1, 2, 4, 8, 12), C = 100 * exp(-0.2 * c(0.25, 0.5, 1, 2, 4, 8, 12))),
+                                   list(subject = "S", time = "T", conc = "C"), hlf_st(admin_route = "iv_bolus")))
+    any(blank) && all(is.na(r$FLAG_SPAN[blank])) && all(!is.na(r$FLAG_SPAN[!blank])) &&
+      all(abs(r$LZSPAN[!blank] - (r$LAMZUL - r$LAMZLL)[!blank] / r$LAMZHL[!blank]) < 1e-12) &&
+      all(is.na(ss$FLAG_AUCPE)) && !is.na(bo$FLAG_AUCPBE) && all(is.na(r$FLAG_AUCPBE))
+  }, error = function(e) FALSE),
+  "URS-NCA-04, URS-NCA-07, URS-NCA-15", critical = TRUE,
+  method = "Theophylline with a minimum R2 of 0.999 (some half-lives blanked), at steady state, and an IV bolus profile",
+  expected = "Flags NA where blanked, span = (LAMZUL - LAMZLL) / t1/2, no extrapolation flag at steady state, back-extrapolation flag only for the bolus")
+
+check("HLF-03", "The rules are settings: switched off, changed, recorded, reproduced",
+  tryCatch({
+    th <- read.csv("data/example_theoph.csv"); cm <- list(subject = "Subject", time = "Time", conc = "conc")
+    off <- suppressWarnings(run_nca(th, cm, hlf_st(lz_rules = list(span_min = NA, aucpext_max = 20, aucpbe_max = 20))))
+    st3 <- hlf_st(lz_rules = list(span_min = 3, aucpext_max = 10, aucpbe_max = 20))
+    r3 <- suppressWarnings(run_nca(th, cm, st3))
+    td <- tempfile("hlf03_"); dir.create(td); zf <- file.path(td, "rec.zip")
+    create_analysis_record(zf, r3, st3, cm, "data/example_theoph.csv", "example_theoph.csv", blq_rule = "rule1", lloq = 0,
+                           analyst = "Validation", study_name = "Rules")
+    utils::unzip(zf, exdir = td)
+    js <- jsonlite::fromJSON(file.path(td, "analysis_settings.json"))
+    all(is.na(off$FLAG_SPAN)) && sum(r3$FLAG_SPAN, na.rm = TRUE) >= sum(off$LZSPAN < 2, na.rm = TRUE) &&
+      js$lz_rules$span_min == 3 && js$lz_rules$aucpext_max == 10 &&
+      any(grepl("^Result: MATCH", readLines(file.path(td, "reproduction_check.txt"))))
+  }, error = function(e) FALSE),
+  "URS-NCA-04, URS-EXP-02, URS-NCA-15", critical = TRUE,
+  method = "Span rule switched off; span >= 3 and extrapolated <= 10%; Analysis Record of the second run",
+  expected = "No span flags when off; stricter rules flag more; the rules are in analysis_settings.json and the record reproduces (MATCH)")
+
+check("HLF-04", "A half-life fitted on chosen points is flagged too; blanking stays exempt",
+  tryCatch({
+    th <- read.csv("data/example_theoph.csv"); p <- th[th$Subject == 1, ]
+    r <- suppressWarnings(run_single_nca(p$Time, p$conc, hlf_st(r2adj_threshold = 0.99999), time_used = c(9.05, 12.12)))
+    !is.na(r[["LAMZHL"]]) && r[["FLAG_SPAN"]] == 1
+  }, error = function(e) FALSE),
+  "URS-NCA-12, URS-NCA-15", critical = FALSE, method = "Theophylline subject 1, two points 9.05 and 12.12 h chosen by hand, minimum R2 0.99999",
+  expected = "Half-life reported (manual fits are not blanked) and flagged for its short span")
+
+check("HLF-05", "Flags are counted in summaries and bioequivalence, and exclude nothing",
+  tryCatch({
+    th <- read.csv("data/example_theoph.csv"); cm <- list(subject = "Subject", time = "Time", conc = "conc")
+    r <- suppressWarnings(run_nca(th, cm, hlf_st()))
+    sm <- summarize_pk_params(r, c("LAMZHL", "CMAX"))
+    nf <- sum((r$FLAG_SPAN %in% 1) & !is.na(r$LAMZHL))
+    xo <- read.csv("data/example_be_crossover.csv", stringsAsFactors = FALSE)
+    xcm <- list(subject = "Subject", time = "Time", conc = "Concentration", treatment = "Treatment", period = "Period", sequence = "Sequence")
+    rx <- suppressWarnings(run_nca(xo, xcm, hlf_st()))
+    rx$FLAG_SPAN[1] <- 1
+    bd <- build_be_data(rx, xo, xcm, reference = "Reference")
+    f <- fit_be_parameter(bd$data, "AUCIFO", "2x2x2", trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
+    g <- fit_be_parameter(bd$data, "CMAX", "2x2x2", trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
+    sm$N_Flagged[sm$Parameter == "LAMZHL"] == nf && sm$N_Flagged[sm$Parameter == "CMAX"] == 0 &&
+      sm$N[sm$Parameter == "LAMZHL"] == sum(!is.na(r$LAMZHL)) &&
+      (f$row$Flagged_Test + f$row$Flagged_Ref) == 1 && (g$row$Flagged_Test + g$row$Flagged_Ref) == 0 &&
+      f$row$Missing_Test + f$row$Missing_Ref == 0
+  }, error = function(e) FALSE),
+  "URS-NCA-06, URS-BE-11, URS-NCA-15", critical = FALSE,
+  method = "Summary of theophylline half-lives; a crossover with one span flag, AUC to infinity and Cmax compared",
+  expected = "N flagged counted for half-life, not for Cmax; all values used; one flagged AUC to infinity profile in bioequivalence, none missing")
+
+check("HLF-06", "Flags in words: tables, Half-Life Review checklist and profile list",
+  tryCatch({
+    r <- data.frame(Subject = c("1", "2"), LZSPAN = c(1.4, 3), FLAG_SPAN = c(1, 0), AUCPEO = c(27, 5), FLAG_AUCPE = c(1, 0),
+                    FLAG_AUCPBE = NA)
+    tx <- lz_flag_text(r)
+    ck <- lz_checklist(list(r2adj = 0.93, half_life = 5, time_used = c(8, 15)), 0.7, LZ_RULES_DEFAULT, pe = 27)
+    ch <- lz_profile_choices(r)
+    tx[1] == "span 1.4 < 2; % extrapolated 27 > 20" && tx[2] == "" &&
+      grepl("pass", ck) && grepl("span 1.4 < 2 flag", ck, fixed = TRUE) && grepl("27% > 20% flag", ck, fixed = TRUE) &&
+      names(ch)[1] == "1 (flagged)" && unname(ch[1]) == "1" && names(ch)[2] == "2" &&
+      grepl("span", lz_rules_summary(LZ_RULES_DEFAULT)) && grepl("all rules off", lz_rules_summary(list(span_min = NA, aucpext_max = NA, aucpbe_max = NA)))
+  }, error = function(e) FALSE),
+  "URS-UI-01, URS-NCA-04, URS-NCA-15", critical = FALSE, method = "lz_flag_text(), lz_checklist(), lz_profile_choices(), lz_rules_summary()",
+  expected = "Plain-text flags (not colour only); a checklist per fit; '(flagged)' in the profile list, values unchanged")
+
+end_section("HLF")
+
+# =============================================================================
+# SECTION EXC: Exclusions made by the analyst, with a reason
+# =============================================================================
+start_section("EXC")
+
+exc_st <- hlf_st
+exc_xo <- read.csv("data/example_be_crossover.csv", stringsAsFactors = FALSE)
+exc_cm <- list(subject = "Subject", time = "Time", conc = "Concentration", treatment = "Treatment", period = "Period", sequence = "Sequence")
+exc_one <- function(level, subject, treatment, period, time = NA, category = "Sample handling", id = "e1")
+  as_exclusions(data.frame(id = id, level = level, subject = subject, treatment = treatment, period = period, time = time,
+                           category = category, stringsAsFactors = FALSE))
+exc_drop <- function(r) r[, setdiff(names(r), "EXCL"), drop = FALSE]
+
+check("EXC-01", "Excluding a sample gives the result of deleting it from the file, under every BLQ rule",
+  tryCatch({
+    d <- data.frame(Subject = 1, Time = c(0, 0.5, 1, 2, 4, 6, 8, 12, 24),
+                    Conc = c("BLQ", 2, 9, 12, 8, "BLQ", 4, 2, "BLQ"), stringsAsFactors = FALSE)
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc")
+    ex <- as_exclusions(data.frame(id = "e1", level = "sample", subject = "1", time = 8, category = "Sample handling"))
+    all(vapply(paste0("rule", 1:6), function(rule) {
+      a <- prepare_pk_dataset(d, cm, list(lloq = 1, blq_rule = rule, exclusions = ex))$data
+      b <- prepare_pk_dataset(d[d$Time != 8, ], cm, list(lloq = 1, blq_rule = rule))$data
+      ra <- suppressWarnings(run_nca(a, cm, exc_st(exclusions = ex))); rb <- suppressWarnings(run_nca(b, cm, exc_st()))
+      isTRUE(all.equal(exc_drop(ra), exc_drop(rb))) && identical(a$Conc, b$Conc)
+    }, logical(1)))
+  }, error = function(e) FALSE),
+  "URS-DAT-04, URS-NCA-06, URS-DAT-09", critical = TRUE,
+  method = "A profile with BLQ at 0, 6 and 24 h (LLOQ 1); the 8 h sample excluded; Rules 1 to 6",
+  expected = "Imputed values and every NCA parameter identical to the file without the 8 h row (the exclusion acts before the BLQ rule)")
+
+check("EXC-02", "Exclusions are matched by profile and time: file order and floating-point times do not matter",
+  tryCatch({
+    shuffled <- exc_xo[sample(nrow(exc_xo)), ]
+    p1 <- exc_xo$Period[exc_xo$Subject == 2 & exc_xo$Treatment == "Test"][1]
+    t0 <- sort(unique(exc_xo$Time))[4]
+    ex <- exc_one("sample", "2", "Test", as.character(p1), time = t0 + 1e-13)
+    a <- prepare_pk_dataset(shuffled, exc_cm, list(lloq = 0, exclusions = ex))
+    f <- tempfile(fileext = ".csv")
+    writeLines(c("Subject;Time;Conc", "1;0;0", "1;0,1;5", "1;0,3;9", "1;1;6", "1;2;3"), f)
+    dc <- read_pk_file(f, list(sep = ";", dec = ","))
+    b <- prepare_pk_dataset(dc, list(subject = "Subject", time = "Time", conc = "Conc"),
+                            list(lloq = 0, read_args = list(dec = ","),
+                                 exclusions = as_exclusions(data.frame(id = "e", level = "sample", subject = "1", time = 0.1 + 0.2))))
+    nrow(a$data) == nrow(exc_xo) - 1 && nrow(a$excluded$samples) == 1 && length(a$excluded$unmatched) == 0 &&
+      !any(b$data$Time == 0.3) && nrow(b$data) == 4
+  }, error = function(e) FALSE),
+  "URS-DAT-01, URS-DAT-09", critical = TRUE,
+  method = "Crossover file in random order, exclusion time off by 1e-13; a decimal-comma file with 0,3 excluded as 0.1 + 0.2",
+  expected = "Exactly the intended sample removed in both")
+
+check("EXC-03", "An exclusion that no longer matches the data is reported, never dropped silently",
+  tryCatch({
+    p1 <- exc_xo$Period[exc_xo$Subject == 2 & exc_xo$Treatment == "Test"][1]
+    ex <- exc_one("sample", "2", "Test", as.character(p1), time = 9999)
+    a <- prepare_pk_dataset(exc_xo, exc_cm, list(lloq = 0, exclusions = ex))
+    up <- paste(readLines("R/mod_data_upload.R"), collapse = "\n")
+    identical(a$excluded$unmatched, "e1") && nrow(a$data) == nrow(exc_xo) &&
+      grepl("exclusion(s) match no sample or profile of these data", up, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-DAT-03, URS-DAT-09", critical = TRUE, method = "An exclusion at a time that is not in the data; the Process Data handler",
+  expected = "Listed as unmatched; Process Data stops with a message naming it")
+
+check("EXC-04", "A profile exclusion keeps the NCA and leaves the profile out of summaries and bioequivalence",
+  tryCatch({
+    p <- exc_xo$Period[exc_xo$Subject == 3 & exc_xo$Treatment == "Reference"][1]
+    ex <- exc_one("profile", "3", "Reference", as.character(p), category = "Vomiting or diarrhoea")
+    ex$detail <- "vomited at 0.5 h"
+    d <- prepare_pk_dataset(exc_xo, exc_cm, list(lloq = 0, exclusions = ex))$data
+    r <- suppressWarnings(run_nca(d, exc_cm, exc_st(exclusions = ex)))
+    sm <- summarize_pk_params(r, "CMAX", group_col = "Treatment")
+    bd <- build_be_data(r, d, exc_cm, reference = "Reference", exclusions = ex)
+    f <- fit_be_parameter(bd$data, "CMAX", "2x2x2", trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
+    nrow(r) == 12 && sum(r$EXCL) == 1 && !is.na(r$CMAX[r$EXCL == 1]) &&
+      sm$N[sm$Treatment == "Reference"] == 5 && sm$N[sm$Treatment == "Test"] == 6 &&
+      bd$data$EXCLUDED[bd$data$Subject == "3" & bd$data$Treatment == "Reference"] == "Vomiting or diarrhoea: vomited at 0.5 h" &&
+      f$row$Excluded_Ref == 1 && f$row$Missing_Ref == 0 && f$row$N_Test == 5
+  }, error = function(e) FALSE),
+  "URS-NCA-06, URS-BE-11, URS-DAT-09", critical = TRUE,
+  method = "example_be_crossover.csv with subject 3's Reference profile excluded for vomiting",
+  expected = "12 NCA rows, that profile marked EXCL = 1 with its Cmax; Reference N 5 in the summary; excluded (not missing) in bioequivalence with its reason; 5 subjects compared")
+
+check("EXC-05", "Records hold the exclusions and reproduce them; a changed register is DIFFERENT",
+  tryCatch({
+    p1 <- exc_xo$Period[exc_xo$Subject == 2 & exc_xo$Treatment == "Test"][1]
+    p3 <- exc_xo$Period[exc_xo$Subject == 3 & exc_xo$Treatment == "Reference"][1]
+    ex <- rbind(exc_one("sample", "2", "Test", as.character(p1), time = sort(unique(exc_xo$Time))[4], id = "s1"),
+                exc_one("profile", "3", "Reference", as.character(p3), category = "Dosing deviation", id = "p1"))
+    f <- tempfile(fileext = ".csv"); write.csv(exc_xo, f, row.names = FALSE)
+    st <- exc_st(exclusions = ex)
+    d <- prepare_pk_dataset(read.csv(f, stringsAsFactors = FALSE), exc_cm, list(lloq = 0, exclusions = ex))$data
+    r <- suppressWarnings(run_nca(d, exc_cm, st))
+    td <- tempfile("exc05_"); dir.create(td); zf <- file.path(td, "rec.zip")
+    create_analysis_record(zf, r, st, exc_cm, f, "crossover.csv", blq_rule = "rule1", lloq = 0,
+                           analyst = "Validation", study_name = "Exclusions")
+    utils::unzip(zf, exdir = td)
+    js <- jsonlite::fromJSON(file.path(td, "analysis_settings.json"), simplifyDataFrame = FALSE)
+    wb_sheets <- openxlsx::getSheetNames(file.path(td, "results.xlsx"))
+    html <- paste(readLines(file.path(td, "analysis_summary.html"), warn = FALSE), collapse = "\n")
+    match1 <- any(grepl("^Result: MATCH", readLines(file.path(td, "reproduction_check.txt"))))
+    n_ex <- length(js$exclusions)
+    js$exclusions <- js$exclusions[1]   # drop the profile exclusion
+    jsonlite::write_json(js, file.path(td, "analysis_settings.json"), auto_unbox = TRUE, digits = NA, null = "null", pretty = TRUE)
+    owd <- setwd(td); out <- suppressWarnings(system2(file.path(R.home("bin"), "Rscript"), "reproduce_analysis.R", stdout = TRUE, stderr = TRUE)); setwd(owd)
+    js$schema_version == "1.4.0" && n_ex == 2 && match1 && "Exclusions" %in% wb_sheets &&
+      grepl("11. Exclusions", html, fixed = TRUE) && any(grepl("^Result: DIFFERENT", out))
+  }, error = function(e) FALSE),
+  "URS-EXP-01, URS-EXP-02, URS-EXP-03, URS-DAT-09", critical = TRUE,
+  method = "Record with one sample and one profile exclusion; reproduction; then the profile exclusion removed from analysis_settings.json",
+  expected = "Schema 1.4.0 with both exclusions; Exclusions sheet and section; MATCH; DIFFERENT after the register was changed")
+
+check("EXC-06", "Edge cases: IV bolus pre-dose, steady-state trough, and a partial AUC across an excluded sample",
+  tryCatch({
+    cm <- list(subject = "S", time = "T", conc = "C")
+    iv <- data.frame(S = 1, T = c(0, 0.25, 0.5, 1, 2, 4, 8), C = c(0, 90, 80, 65, 45, 20, 5))
+    exi <- as_exclusions(data.frame(id = "i", level = "sample", subject = "1", time = 0, category = "Sample handling"))
+    a <- suppressWarnings(run_nca(prepare_pk_dataset(iv, cm, list(lloq = 0, exclusions = exi))$data, cm, exc_st(admin_route = "iv_bolus")))
+    b <- suppressWarnings(run_nca(iv, cm, exc_st(admin_route = "iv_bolus")))
+    ss <- data.frame(S = 1, T = c(0, 1, 2, 4, 8, 12), C = c(1.5, 10, 12, 8, 5, 3))
+    exs <- as_exclusions(data.frame(id = "s", level = "sample", subject = "1", time = 0, category = "Sample handling"))
+    s1 <- suppressWarnings(run_nca(prepare_pk_dataset(ss, cm, list(lloq = 0, exclusions = exs))$data, cm,
+                                   exc_st(is_steady_state = TRUE, tau = 12)))
+    pa <- data.frame(start = 0, end = "6", cmax = FALSE, role = "pivotal")
+    pd <- data.frame(S = 1, T = c(0, 1, 2, 4, 6, 8, 12), C = c(0, 5, 9, 7, 4, 3, 1))
+    exp_ <- as_exclusions(data.frame(id = "p", level = "sample", subject = "1", time = 4, category = "Sample handling"))
+    pa1 <- suppressWarnings(run_nca(prepare_pk_dataset(pd, cm, list(lloq = 0, exclusions = exp_))$data, cm, exc_st(partial_aucs = pa)))
+    pa2 <- suppressWarnings(run_nca(pd[pd$T != 4, ], cm, exc_st(partial_aucs = pa)))
+    isTRUE(all.equal(exc_drop(a), exc_drop(b))) && s1$CMIN_SS == 3 && abs(pa1$AUC_0_6 - pa2$AUC_0_6) < 1e-12
+  }, error = function(e) FALSE),
+  "URS-NCA-02, URS-NCA-07, URS-NCA-13, URS-DAT-09", critical = TRUE,
+  method = "IV bolus with the time-0 sample excluded; steady state with the pre-dose sample excluded; AUC 0-6 h with the 4 h sample excluded",
+  expected = "Bolus unchanged (that sample is set aside anyway); Cmin from the remaining samples (3); partial AUC interpolated across the gap as without the row")
+
+check("EXC-07", "The ICH M13A checks use the data before exclusions, so excluding the pre-dose sample does not silence them",
+  tryCatch({
+    d <- exc_xo; i <- d$Subject == 1 & d$Treatment == "Test" & d$Time == 0; d$Concentration[i] <- 30
+    p1 <- d$Period[i][1]
+    ex <- exc_one("sample", "1", "Test", as.character(p1), time = 0)
+    with_ex <- prepare_pk_dataset(d, exc_cm, list(lloq = 0, exclusions = ex))$data
+    without <- prepare_pk_dataset(d, exc_cm, list(lloq = 0))$data
+    r <- suppressWarnings(run_nca(with_ex, exc_cm, exc_st(exclusions = ex)))
+    m_all <- be_m13a_checks(without, exc_cm, r, NULL); m_ex <- be_m13a_checks(with_ex, exc_cm, r, NULL)
+    be <- paste(readLines("R/mod_path_be.R"), collapse = "\n")
+    any(grepl("Pre-dose concentration above 5% of Cmax", m_all)) && !any(grepl("Pre-dose concentration above 5% of Cmax", m_ex)) &&
+      grepl("m13a = c(be_m13a_checks(d_unexcl,", be, fixed = TRUE) &&
+      grepl("data_without_exclusions(shared)", be, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-BE-11, URS-DAT-09", critical = TRUE,
+  method = "Subject 1 Test with a pre-dose value of 30 (above 5% of Cmax), that sample excluded; the checks on both datasets; the BE module",
+  expected = "The check fires on the data before exclusions and the module passes those data")
+
+check("EXC-08", "A sensitivity analysis without the exclusions is computed, shown and recorded",
+  tryCatch({
+    be <- paste(readLines("R/mod_path_be.R"), collapse = "\n")
+    f <- tempfile(fileext = ".csv"); write.csv(exc_xo, f, row.names = FALSE)
+    r <- suppressWarnings(run_nca(exc_xo, exc_cm, exc_st()))
+    bd <- build_be_data(r, exc_xo, exc_cm, reference = "Reference")
+    ci <- fit_be_parameter(bd$data, "CMAX", "2x2x2", trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")$row
+    td <- tempfile("exc08_"); dir.create(td); zf <- file.path(td, "rec.zip")
+    create_analysis_record(zf, r, exc_st(), exc_cm, f, "crossover.csv", blq_rule = "rule1", lloq = 0,
+                           be_results = list(ci_table = ci, sensitivity = ci), be_settings = list(ci_level = 90))
+    utils::unzip(zf, exdir = td)
+    grepl("sens_df <- do.call(rbind, lapply(params, function(p) fit_one(bd0$data, p)$row))", be, fixed = TRUE) &&
+      grepl("sensitivity = sens_df", be, fixed = TRUE) && grepl("Sensitivity analysis: without your exclusions", be, fixed = TRUE) &&
+      "BE_Without_Exclusions" %in% openxlsx::getSheetNames(file.path(td, "results.xlsx"))
+  }, error = function(e) FALSE),
+  "URS-BE-11, URS-EXP-05, URS-BE-12", critical = FALSE,
+  method = "The BE module code; a record built with a sensitivity table",
+  expected = "Computed with the same fit on the unexcluded data, shown under the CI table, and a BE_Without_Exclusions sheet in the record")
+
+check("EXC-09", "Adding and restoring an exclusion in the app: register, data prepared again, nothing deleted",
+  tryCatch({
+    ok <- FALSE
+    cm <- list(subject = "Subject", time = "Time", conc = "conc")
+    th <- read.csv("data/example_theoph.csv")
+    opts <- list(lloq = 0, blq_rule = "rule1", door = "flat", read_args = list(), col_map = cm)
+    ds <- prepare_pk_dataset(th, cm, opts[setdiff(names(opts), "col_map")])
+    sh <- shiny::reactiveValues(data_ready = TRUE, raw_data = th, col_map = cm, pk_data = ds$data, pk_dataset = ds,
+                                prepare_opts = opts, exclusions = NULL, be_results = list(ci_table = 1),
+                                exclusion_request = NULL)
+    suppressWarnings(shiny::testServer(exclusions_server, args = list(shared = sh), {
+      session$setInputs(dlg_profile = "1", dlg_level = "sample", dlg_times = "0.25", dlg_category = "Sample handling",
+                        dlg_detail = "", dlg_prespecified = "no", dlg_section = "", dlg_save = 1)
+      added <- nrow(active_exclusions(sh$exclusions)) == 1 && nrow(sh$pk_data) == nrow(ds$data) - 1 &&
+        isTRUE(sh$exclusions$after_be[1])
+      session$setInputs(dlg_category = "Other", dlg_detail = "", dlg_save = 2)
+      refused <- nrow(sh$exclusions) == 1
+      session$setInputs(restore_id = sh$exclusions$id[1], restore_reason = "wrong sample", restore = 1)
+      ok <<- added && refused && nrow(sh$exclusions) == 1 && !is.na(sh$exclusions$restored_utc[1]) &&
+        nrow(sh$pk_data) == nrow(ds$data) && sh$exclusions$restore_reason[1] == "wrong sample"
+    }))
+    ok
+  }, error = function(e) FALSE),
+  "URS-DAT-03, URS-GEN-09, URS-DAT-09", critical = TRUE,
+  method = "shiny::testServer on the exclusion module: exclude theophylline subject 1 at 0.25 h after BE results exist; save 'Other' without detail; restore",
+  expected = "One exclusion, marked after bioequivalence results, the sample removed; 'Other' without detail refused; after restoring the sample is back and the entry stays with its reason")
+
+check("EXC-10", "Controlled mode: exclusions are written to the audit trail first, and overrides reset only on new data",
+  tryCatch({
+    ex <- paste(readLines("R/mod_exclusions.R"), collapse = "\n")
+    mu <- paste(readLines("R/mod_path_multi_nca.R"), collapse = "\n"); be <- paste(readLines("R/mod_path_be.R"), collapse = "\n")
+    up <- paste(readLines("R/mod_data_upload.R"), collapse = "\n")
+    grepl('if (!gxp_guard("exclusion_added"', ex, fixed = TRUE) && grepl('if (!gxp_guard("exclusion_restored"', ex, fixed = TRUE) &&
+      regexpr('gxp_guard("exclusion_added"', ex, fixed = TRUE) < regexpr("shared$exclusions <- rbind(", ex, fixed = TRUE) &&
+      grepl("observeEvent(shared$data_id, {", mu, fixed = TRUE) && grepl("observeEvent(shared$data_id, {", be, fixed = TRUE) &&
+      !grepl("observeEvent(shared$pk_data, {", mu, fixed = TRUE) && grepl("prune_overrides(lz_state, shared$exclusions)", mu, fixed = TRUE) &&
+      grepl("shared$data_id    <- shared$data_id + 1", up, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-GXP-05, URS-GXP-07, URS-NCA-12, URS-DAT-09", critical = TRUE,
+  method = "R/mod_exclusions.R, the batch and BE modules, the upload module",
+  expected = "gxp_guard before the register changes (fail closed); manual fits reset on Process Data only and pruned for the changed profiles")
+
+check("EXC-11", "A settings file of schema 1.3.0 (no exclusions, no rules) still reads",
+  tryCatch({
+    rec <- list(dose_source = "single", dose = 320, admin_route = "extravascular", steady_state = FALSE, tau = NULL,
+                dose_unit = "mg", time_unit = "h", conc_unit = "mg/L", trap_method = "log", r2adj_threshold = 0.7)
+    s <- record_nca_settings(rec, NULL, NULL)
+    th <- read.csv("data/example_theoph.csv"); cm <- list(subject = "Subject", time = "Time", conc = "conc")
+    r <- suppressWarnings(run_nca(th, cm, s))
+    nrow(r) == 12 && all(r$EXCL == 0) && nrow(as_exclusions(NULL)) == 0 && identical(lz_rules(s), LZ_RULES_DEFAULT)
+  }, error = function(e) FALSE),
+  "URS-EXP-03, URS-DAT-09", critical = FALSE, method = "record_nca_settings() on a settings list without exclusions or lz_rules",
+  expected = "Default rules, no exclusions, 12 profiles")
+
+end_section("EXC")
+
+# =============================================================================
 # Post-execution
 # =============================================================================
 cat("\n", paste(rep("=",72),collapse=""), "\n")
@@ -5991,8 +6415,8 @@ if (nrow(cf)>0) {
   if(n_fail>0) cat(sprintf("  (%d supportive failures need risk assessment)\n",n_fail))
 }
 
-all_urs <- c(paste0("URS-GEN-0",c(1,3:9)),paste0("URS-DAT-0",1:8),paste0("URS-NCA-",sprintf("%02d",1:14)),
-             paste0("URS-BE-0",1:9),"URS-BE-10","URS-BE-11",paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:8),paste0("URS-UI-0",1:5),
+all_urs <- c(paste0("URS-GEN-0",c(1,3:9)),paste0("URS-DAT-0",1:9),paste0("URS-NCA-",sprintf("%02d",1:15)),
+             paste0("URS-BE-0",1:9),"URS-BE-10","URS-BE-11","URS-BE-12",paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:8),paste0("URS-UI-0",1:5),
              paste0("URS-VIZ-0",1:9),paste0("URS-GXP-",sprintf("%02d",1:20)))
 covered <- unique(unlist(strsplit(results_df$URS_Ref,",\\s*")))
 # Coverage by executed tests only: a requirement whose only tests are manual

@@ -72,6 +72,7 @@ path_be_ui <- function(id) {
               sliderInput(ns("r2adj_be"),
                           tagList("Minimum R\u00B2 for half-life estimation", help_r2adj),
                           min = 0,   max = 1, value = 0.7, step = 0.05),
+              lz_rules_ui(ns("lzr")),
               checkboxInput(ns("is_ss"),
                             tagList("Steady-state (drug given repeatedly)", help_steady_state),
                             value = FALSE),
@@ -185,6 +186,7 @@ path_be_ui <- function(id) {
         
         # --- Results ---------------------------------------------------------
         tagList(
+          exclusion_strip_ui(ns("strip")),
           uiOutput(ns("be_status")),
           uiOutput(ns("ss_note")),
           uiOutput(ns("blq_rule_note")),
@@ -209,6 +211,7 @@ path_be_ui <- function(id) {
                      "bioequivalence endpoint. A partial AUC marked as supportive is shown the same way. Tmax, and any parameter analysed without ",
                      "log-transformation, is shown as a difference in its own units and has no verdict."),
               DTOutput(ns("ci_table")),
+              uiOutput(ns("sensitivity_ui")),
               tags$p(class = "text-muted small mt-2",
                      icon("circle-info", class = "me-1"),
                      "Full details (N per group, acceptance limits, residual variance, ",
@@ -282,7 +285,8 @@ path_be_ui <- function(id) {
                              icon = icon("refresh")),
                 actionButton(ns("lz_reset"), "Remove override (automatic fit)",
                              class = "btn-outline-secondary btn-sm ms-1",
-                             icon = icon("rotate-left"))
+                             icon = icon("rotate-left")),
+                actionLink(ns("lz_exclude"), "Exclude samples or this profile\u2026", class = "small d-block mt-1")
               )
             )
           ),
@@ -410,6 +414,9 @@ path_be_server <- function(id, shared) {
     be_nca_settings <- reactiveVal(NULL)   # NCA settings of the last run (for recalculation)
     pauc_spec  <- partial_auc_server("pauc", show_role = TRUE)
     pauc_notes <- reactiveVal(character(0))
+    lzr <- lz_rules_server("lzr", shared)
+    exclusion_strip_server("strip", shared)
+    observeEvent(input$lz_exclude, shared$exclusion_request <- list(label = input$lz_profile, nonce = Sys.time()))
     # The parameters to compare are not watched: after a run their boxes are
     # set to what was compared, and each result row names its parameter
     clear_result_on_change(
@@ -417,7 +424,7 @@ path_be_server <- function(id, shared) {
                     input$dose_unit, input$time_unit, input$conc_unit, input$trap_method,
                     input$r2adj_be, input$mw, input$be_design, input$be_reference, input$model_type,
                     input$log_transform, input$ci_level, input$be_lower, input$be_upper,
-                    input$pe_constraint, input$widened_scope, pauc_spec())),
+                    input$pe_constraint, input$widened_scope, pauc_spec(), lzr())),
       has_result = function() !is.null(be_result()) || !is.null(be_nca_result()),
       clear = function() { be_result(NULL); be_nca_result(NULL); be_run_settings(NULL); balance_result(NULL) },
       id = "be_stale")
@@ -511,7 +518,7 @@ path_be_server <- function(id, shared) {
           time_unit = input$time_unit,
           conc_unit = input$conc_unit,
           trap_method = input$trap_method,
-          r2adj_threshold = input$r2adj_be,
+          r2adj_threshold = input$r2adj_be, lz_rules = lzr(), exclusions = shared$exclusions,
           mw = input$mw, partial_aucs = pauc_spec()
         )
         
@@ -582,7 +589,8 @@ path_be_server <- function(id, shared) {
         
         # Merge with design info: one row per NCA profile (subject x treatment
         # x period), with the Sequence column attached. See build_be_data().
-        bd <- tryCatch(build_be_data(nca_res, shared$pk_data, cm, reference = input$be_reference),
+        bd <- tryCatch(build_be_data(nca_res, shared$pk_data, cm, reference = input$be_reference,
+                                     exclusions = shared$exclusions),
                        error = function(e) {
                          showNotification(conditionMessage(e), type = "error", duration = NULL)
                          NULL
@@ -712,6 +720,22 @@ path_be_server <- function(id, shared) {
                  NULL)
         }
 
+        fit_one <- function(dat, param) fit_be_parameter(
+            dat, param,
+            design        = design_used$design,
+            model_type    = input$model_type,
+            trt_col       = trt_col_be,
+            subj_col      = subj_col_be,
+            per_col       = per_col,
+            seq_col       = seq_col,
+            log_transform = input$log_transform,
+            ci_level      = input$ci_level,
+            be_lower      = input$be_lower,
+            be_upper      = input$be_upper,
+            pe_constraint = !identical(input$pe_constraint, FALSE),
+            widened_scope = widened_scope_value(input$widened_scope),
+            diff_unit     = diff_unit_for(param),
+            verdict       = !param %in% supportive)
         for (param in params) {
           fit_out <- fit_be_parameter(
             be_data, param,
@@ -744,6 +768,21 @@ path_be_server <- function(id, shared) {
         }
         
         ci_df <- do.call(rbind, ci_results)
+
+        # Exclusions touch the comparison: the same analysis without any of
+        # them, as a sensitivity result next to the primary one. The ICH M13A
+        # checks always look at the data before exclusions.
+        has_excl <- nrow(active_exclusions(shared$exclusions)) > 0
+        d_unexcl <- if (has_excl) data_without_exclusions(shared) else shared$pk_data
+        sens_df <- NULL
+        if (has_excl) {
+          s0 <- settings; s0$exclusions <- NULL
+          if (use_data_dose) s0$dose <- suppressWarnings(dose_by_profile(d_unexcl, cm))
+          nca0 <- suppressWarnings(run_nca(d_unexcl, cm, s0, lz_overrides = lz_state$overrides_log))
+          bd0 <- if (is.null(nca0)) NULL else
+            tryCatch(build_be_data(nca0, d_unexcl, cm, reference = input$be_reference), error = function(e) NULL)
+          if (!is.null(bd0)) sens_df <- do.call(rbind, lapply(params, function(p) fit_one(bd0$data, p)$row))
+        }
 
         # How many profiles of each treatment rest mainly on BLQ-derived values
         # for that metric. A ratio can be driven by such a profile without any
@@ -788,9 +827,15 @@ path_be_server <- function(id, shared) {
                                                          widened_scope = widened_scope_value(input$widened_scope),
                                                          parameters = params)))) return()
         be_result(list(ci_table = ci_df, anova = anova_results, cv_table = cv_df, design = design_used$design,
-                       m13a = c(be_m13a_checks(shared$pk_data, shared$col_map, nca_res,
+                       sensitivity = sens_df,
+                       m13a = c(be_m13a_checks(d_unexcl, shared$col_map, nca_res,
                                                ci_df[ci_df$Parameter %in% setdiff(params, c(supportive, BE_NO_VERDICT_PARAMS)), ],
                                                isTRUE(input$is_ss)),
+                                if (has_excl && !setequal(
+                                  be_m13a_checks(d_unexcl, shared$col_map, nca_res, NULL, isTRUE(input$is_ss)),
+                                  be_m13a_checks(shared$pk_data, shared$col_map, nca_res, NULL, isTRUE(input$is_ss))))
+                                  paste0("These checks use the data before your exclusions; with the exclusions ",
+                                         "applied their outcome would differ."),
                                 if (identical(be_design_model(design_used$design), "parallel"))
                                   parallel_welch_notes(be_data, setdiff(params, c("TMAX", BE_NO_VERDICT_PARAMS)), trt_col_be,
                                                        input$be_lower, input$be_upper))))
@@ -939,6 +984,24 @@ path_be_server <- function(id, shared) {
       partial_auc_notes_ui(pauc_notes())
     })
 
+    # Sensitivity result: the same analysis without the exclusions
+    output$sensitivity_ui <- renderUI({
+      sens <- be_result()$sensitivity
+      if (is.null(sens)) return(NULL)
+      tbl <- rename_be_columns(sens, ci_level = run_ci_level())
+      keep <- intersect(c("PK Parameter", "Estimate", paste0(run_ci_level(), "% CI Lower"), paste0(run_ci_level(), "% CI Upper"),
+                          "Bioequivalent?"), names(tbl))
+      tags$div(class = "mt-3",
+        tags$h6("Sensitivity analysis: without your exclusions"),
+        tags$p(class = "small text-muted",
+               "The primary result above uses your exclusions. Below is the same analysis with every sample and profile ",
+               "included, which ICH M13A asks for when data are left out. Both are in the downloads and the Analysis Record."),
+        tags$table(class = "table table-sm small",
+          tags$thead(tags$tr(lapply(if (length(keep)) keep else names(tbl), tags$th))),
+          tags$tbody(lapply(seq_len(nrow(tbl)), function(i)
+            tags$tr(lapply(tbl[i, if (length(keep)) keep else names(tbl), drop = TRUE], function(v) tags$td(as.character(v))))))))
+    })
+
     # Steady-state note — shown in results area when SS is active
     output$ss_note <- renderUI({
       if (!isTRUE(input$is_ss) || is.null(be_result())) return(NULL)
@@ -993,6 +1056,8 @@ path_be_server <- function(id, shared) {
       # Profiles that could not enter a comparison are part of the result
       for (cc in c("Profiles missing (Test)", "Profiles missing (Reference)",
                    "Zero values (Test)", "Zero values (Reference)",
+                   "Profiles excluded (Test)", "Profiles excluded (Reference)",
+                   "Half-life flags (Test)", "Half-life flags (Reference)",
                    "Mostly BLQ (Test)", "Mostly BLQ (Reference)")) {
         v <- suppressWarnings(as.numeric(display_ci[[cc]]))
         if (!is.null(v) && any(v > 0, na.rm = TRUE))
@@ -1117,7 +1182,7 @@ path_be_server <- function(id, shared) {
     # NCA table
     output$nca_table <- renderDT({
       req(be_nca_result())
-      display_nca <- rename_nca_columns(be_nca_result())
+      display_nca <- rename_nca_columns(add_flag_text(be_nca_result(), lz_rules(be_nca_settings())))
       
       if (!isTRUE(input$nca_show_all)) {
         # AUCPEO included so >20% extrapolation is visible in default view
@@ -1128,14 +1193,15 @@ path_be_server <- function(id, shared) {
               "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
               "AUC Within Dosing Interval", "Average Concentration (Cavg)",
               "Minimum Concentration (Cmin)", "Concentration at Tau (Ctau)", "Half-Life",
-              "Apparent Clearance (CL/F)", "Clearance (CL)", "Adjusted R-squared")
+              "Apparent Clearance (CL/F)", "Clearance (CL)", "Adjusted R-squared", "Half-Life Flags")
           else
             c("Subject", "Treatment", "Period",
               "Peak Concentration (Cmax)", "Time of Peak (Tmax)",
               "AUC to Last Point", "AUC to Infinity (observed)",
               "AUC % Extrapolated (observed)",
               "Half-Life", "Apparent Clearance (CL/F)", "Clearance (CL)",
-              "Apparent Volume (Vz/F)", "Volume of Distribution (Vz)", "Adjusted R-squared"),
+              "Apparent Volume (Vz/F)", "Volume of Distribution (Vz)", "Adjusted R-squared",
+              "Half-Life Flags"),
           names(display_nca))
         key_cols <- c(key_cols, unname(friendly_name(partial_auc_cols(names(be_nca_result())))))
         display_nca <- display_nca[, key_cols, drop = FALSE]
@@ -1257,19 +1323,30 @@ path_be_server <- function(id, shared) {
     lz_state <- reactiveValues(override = NULL, overrides_log = list(), fits = list())
     # Overrides belong to one data set: clear them when new data are processed,
     # so they can never be applied to matching profiles of a different file.
-    observeEvent(shared$pk_data, {
+    observeEvent(shared$data_id, {
       lz_state$overrides_log <- list(); lz_state$fits <- list()
       lz_state$override <- NULL
       # Results of the previous file must not be shown or exported with the new one
       be_result(NULL); be_nca_result(NULL); be_run_settings(NULL); balance_result(NULL)
     }, ignoreNULL = FALSE)
+    observeEvent(shared$exclusions, {
+      gone <- prune_overrides(lz_state, shared$exclusions)
+      if (length(gone) > 0)
+        showNotification(paste0("Manual half-life fit removed for ", paste(gone, collapse = ", "),
+                                ": an exclusion changed that profile."), type = "message", duration = 8)
+      if (!is.null(be_result()) || !is.null(be_nca_result())) {
+        be_result(NULL); be_nca_result(NULL); be_run_settings(NULL); balance_result(NULL)
+        showNotification("Exclusions changed, so the results were cleared. Run the analysis again.",
+                         type = "message", duration = 6, id = "be_stale")
+      }
+    }, ignoreInit = TRUE)
     
     # Update profile selector after NCA runs
     observe({
       req(be_nca_result())
       r <- be_nca_result()
       # One entry per profile: subject | treatment | period (as mapped)
-      updateSelectInput(session, "lz_profile", choices = result_profile_labels(r))
+      updateSelectInput(session, "lz_profile", choices = lz_profile_choices(r))
     })
     
     # Reset override when profile changes
@@ -1299,7 +1376,13 @@ path_be_server <- function(id, shared) {
         tags$small(paste0("Half-life: ", signif(lz$half_life, 4), " ", input$time_unit, " | R\u00B2: ",
                           if (!is.na(lz$r2adj)) signif(lz$r2adj, 4) else "N/A",
                           " | ", lz$n_points, " points")),
-        badge)
+        badge,
+        {
+          res <- be_nca_result(); i <- if (is.null(res)) integer(0) else profile_result_row(res, input$lz_profile)
+          pe <- if (length(i) == 1 && "AUCPEO" %in% names(res)) suppressWarnings(as.numeric(res$AUCPEO[i])) else NA
+          tags$div(class = "small mt-1", "Rules: ",
+                   lz_checklist(lz, input$r2adj_be, lzr(), pe = pe, ss = isTRUE(input$is_ss)))
+        })
     })
     
     # Half-life plot
@@ -1458,9 +1541,13 @@ path_be_server <- function(id, shared) {
         wb <- createWorkbook()
         addWorksheet(wb, "Confidence_Intervals")
         writeData(wb, 1, rename_be_columns(be_result()$ci_table, ci_level = run_ci_level()))
+        if (!is.null(be_result()$sensitivity)) {
+          addWorksheet(wb, "Without_Exclusions")
+          writeData(wb, "Without_Exclusions", rename_be_columns(be_result()$sensitivity, ci_level = run_ci_level()))
+        }
         if (!is.null(be_nca_result())) {
           addWorksheet(wb, "NCA_Parameters")
-          writeData(wb, 2, rename_nca_columns(be_nca_result(),
+          writeData(wb, 2, rename_nca_columns(add_flag_text(be_nca_result(), lz_rules(be_nca_settings())),
                     units = list(dose = input$dose_unit, time = input$time_unit, conc = input$conc_unit)))
         }
         if (!is.null(be_nca_result())) {
@@ -1548,6 +1635,7 @@ path_be_server <- function(id, shared) {
             col_map        = shared$col_map,
             original_file_path = original_path,
             original_file_name = original_name,
+            data_source = shared$study_info$source,
             blq_rule       = si$blq_rule,
             lloq           = si$lloq,
             analyst        = gxp_analyst(input$record_analyst),

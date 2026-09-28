@@ -221,6 +221,7 @@ path_viz_ui <- function(id) {
 
           # Alerts
           uiOutput(ns("blq_note_log")),
+          exclusion_strip_ui(ns("strip")),
           uiOutput(ns("blq_note_geomean")),
           uiOutput(ns("arithmean_warning")),
 
@@ -435,6 +436,8 @@ path_viz_server <- function(id, shared) {
         out$.sequence  <- d[[cm$sequence]]
 
       out$.profile <- profile_group(d, cm)
+      # Profiles excluded by the analyst stay in the individual profiles, not in the means
+      out$.excl <- profile_key(d, cm)$key %in% resolve_exclusions(d, cm, shared$exclusions)$profiles
       out <- out[!is.na(out$.time), ]
       out[order(out$.subj, out$.time), ]
     })
@@ -469,7 +472,7 @@ path_viz_server <- function(id, shared) {
       if (!input$plot_type %in% c("summary", "both")) return(NULL)
       geo <- identical(input$summary_stat %||% "geomean", "geomean")
       d <- tryCatch(plot_data(), error = function(e) NULL)
-      summ <- if (is.null(d)) NULL else tryCatch(viz_summary_stats(d, if (geo) "geomean" else "arithmean"),
+      summ <- if (is.null(d)) NULL else tryCatch(viz_summary_stats(d[!d$.excl, , drop = FALSE], if (geo) "geomean" else "arithmean"),
                                                  error = function(e) NULL)
       n <- blq_n_summary()
       n_hidden <- if (is.null(summ) || !geo) 0 else sum(summ$.hidden)
@@ -605,8 +608,10 @@ path_viz_server <- function(id, shared) {
       )
     })
 
+    exclusion_strip_server("strip", shared)
+
     # ---- Summary computation (viz_summary_stats() in R/utils.R) ------------
-    compute_summary_df <- function(d, stat_type) viz_summary_stats(d, stat_type)
+    compute_summary_df <- function(d, stat_type) viz_summary_stats(d[!d$.excl, , drop = FALSE], stat_type)
 
     # ---- Build ggplot2: spaghetti ------------------------------------------
     build_spaghetti_gg <- reactive({
@@ -1002,6 +1007,7 @@ path_viz_server <- function(id, shared) {
             dpi               = as.integer(input$export_dpi    %||% 300),
             export_format     = input$export_format  %||% "png",
             blq_excluded_n    = blq_n_summary(),
+            exclusions        = shared$exclusions,
             shade_partial_aucs = shade_spec()
           )
 
@@ -1014,6 +1020,7 @@ path_viz_server <- function(id, shared) {
             col_map            = cm,
             original_file_path = original_path,
             original_file_name = original_name,
+            data_source = shared$study_info$source,
             blq_rule           = si$blq_rule %||% "none",
             lloq               = si$lloq %||% 0,
             analyst            = gxp_analyst(input$record_analyst),
@@ -1047,6 +1054,7 @@ path_viz_server <- function(id, shared) {
         dpi               = as.integer(input$export_dpi    %||% 300),
         export_format     = input$export_format  %||% "png",
         blq_excluded_n    = blq_n_summary(),
+        exclusions        = shared$exclusions,
         shade_partial_aucs = shade_spec()
       )
     })

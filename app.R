@@ -67,6 +67,8 @@ source("R/designs.R")
 source("R/be_analysis.R")
 source("R/help_system.R")
 source("R/mod_partial_auc.R")
+source("R/mod_lz_rules.R")
+source("R/mod_exclusions.R")
 source("R/mod_data_upload.R")
 source("R/mod_path_power.R")
 source("R/mod_path_data.R")
@@ -211,7 +213,16 @@ server <- function(input, output, session) {
     be_results   = NULL,
     
     # Visualization settings (written by viz module, read by export_record)
-    viz_settings = NULL
+    viz_settings = NULL,
+
+    # Exclusions made by the analyst (R/mod_exclusions.R), the options Process
+    # Data used (to prepare the data again when sample exclusions change), a
+    # counter that changes only when Process Data runs, and the half-life rules
+    exclusions   = NULL,
+    prepare_opts = NULL,
+    data_id      = 0,
+    lz_rules     = NULL,
+    exclusion_request = NULL
   )
 
   # === NCA ENGINE CHECK ======================================================
@@ -841,7 +852,10 @@ server <- function(input, output, session) {
               tags$li("These fixes come from an external adversarial audit of this release"),
               tags$li(tags$strong("Correctness fix: "), "a profile with one measurable concentration gets Cmax, Tmax and AUClast and stays in a bioequivalence comparison; a partial AUC past a profile's last measurable concentration gives no verdict, like a zero; in a decimal-comma file 0.250 is refused instead of read as 250; an ADNCA dataset without APERIOD converts"),
               tags$li(tags$strong("Changed: "), "negative pre-dose times and several analytes in one flat file stop the analysis; the mean profile leaves out time points that are mostly BLQ and says when sampling times differ; AUC\u03C4, Cavg, Cmin and C\u03C4 are dose-normalised; a byte-order mark in a CSV is ignored. From a review of data processing and statistics"),
-              tags$li("Validation: 503 automated and 62 manual tests (was 431 and 49), with sections for controlled mode and for the two reviews")
+              tags$li(tags$strong("New: "), "exclusions with a reason: leave out a sample or a whole profile from the Upload page or the Half-Life Review, restore it later, and see it in every path, the downloads and the Analysis Record. Bioequivalence then adds a sensitivity analysis without the exclusions"),
+              tags$li(tags$strong("New: "), "half-life flags for the span of the fitted points and the % of AUC extrapolated or back-extrapolated. The rules can be edited, only flag a fit and never change a value"),
+              tags$li(tags$strong("New: "), "load an example dataset with one click, or download it to see how the file is laid out"),
+              tags$li("Validation: 526 automated and 65 manual tests (was 431 and 49), with sections for controlled mode, the two reviews, exclusions, half-life flags and the example data")
             )
           ),
 
