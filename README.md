@@ -25,7 +25,7 @@ Six workflow paths, each usable on its own, from one hub screen:
 
 Designs: 2×2 crossover, 2×2×3 and 2×2×4 full replicate, 2×3×3 partial replicate, parallel groups, and the paired comparison for a fixed order, which yields a ratio but no verdict. For replicate designs the within-subject variability of Reference and Test, and the EMA limits it would imply, are shown for information only: this app does average bioequivalence, not reference-scaled (ABEL, RSABE) or NTID analyses. Partial AUCs and the maximum concentration within an interval can be compared too, with a verdict for the intervals you mark pivotal and a ratio with its confidence interval for the supportive ones. The app also checks a few ICH M13A points: a pre-dose concentration above 5% of Cmax, fewer than 12 subjects, low AUC coverage, a period without measurable concentrations (counted as missing, not dropped silently) and a period with very low exposure. When the data include a period M13A excludes, the app says the verdict is not the M13A primary analysis. For parallel groups a Welch interval is shown as a sensitivity analysis. In a 2×2 crossover, a subject without both treatments leaves the comparison under both models and is counted. When you have excluded data, the comparison is repeated without the exclusions and shown next to the primary result. Results agree with the replicateBE package on all 30 of its reference data sets.
 
-Alongside the paths: a **Statistical Methods** page with wording to adapt for a manuscript, a **Data Preparation Guide** of 12 tabs (one per study type, plus real laboratory data and common mistakes) with six example files, an **About** page with the package list and the version history, and the **User Manual** (PDF, in the navigation bar), with seven tutorials, the study types, how to read the results, and a chapter on regulated use.
+Alongside the paths: a **Statistical Methods** page with wording to adapt for a manuscript, a **Data Preparation Guide** of 12 tabs (one per study type, plus real laboratory data and common mistakes) with six example files, an **About** page with the package list and the version history, and the **User Manual** (PDF, in the navigation bar), with eight tutorials, the study types, how to read the results, a chapter on working in a regulated environment and a step-by-step chapter on installing the app for regulated use.
 
 ---
 
@@ -75,7 +75,7 @@ For regulated work, NCA Assistant can run in **controlled mode** on a server you
 - **Review.** The **Audit trail** page offers exceptions, filters, chain verification, CSV export, a users overview and a signed trail review.
 - **Administration.** `gxp/manage_users.R` adds, changes, resets and deactivates accounts, and archives the trail and records together with the software to restore them.
 
-Setting up a controlled installation, and what stays the organisation's responsibility, is described in the user manual (chapter *Working on a Controlled Installation*, and the appendix on setting up and administering a controlled installation). A local installation can run controlled mode for training, but is not a qualified setup.
+Setting up a controlled installation, and what stays the organisation's responsibility, is described in the user manual: the chapter *Working in a Regulated Environment* (roles, the audit trail, accounts, a study step by step, reviewing and signing, inspections), the chapter *Installing NCA Assistant for Regulated Use*, and Appendix E. A local installation can run controlled mode for training, but is not a qualified setup.
 
 ---
 
