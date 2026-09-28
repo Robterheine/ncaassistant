@@ -6152,18 +6152,19 @@ check("HLF-05", "Flags are counted in summaries and bioequivalence, and exclude 
 
 check("HLF-06", "Flags in words: tables, Half-Life Review checklist and profile list",
   tryCatch({
-    r <- data.frame(Subject = c("1", "2"), LZSPAN = c(1.4, 3), FLAG_SPAN = c(1, 0), AUCPEO = c(27, 5), FLAG_AUCPE = c(1, 0),
-                    FLAG_AUCPBE = NA)
+    r <- data.frame(Subject = c("1", "2", "3"), LAMZHL = c(5, 6, NA), LZSPAN = c(1.4, 3, NA), FLAG_SPAN = c(1, 0, NA),
+                    AUCPEO = c(27, 5, NA), FLAG_AUCPE = c(1, 0, NA), FLAG_AUCPBE = NA)
     tx <- lz_flag_text(r)
+    off <- lz_flag_text(r[2, ], list(span_min = NA, aucpext_max = NA, aucpbe_max = NA))
     ck <- lz_checklist(list(r2adj = 0.93, half_life = 5, time_used = c(8, 15)), 0.7, LZ_RULES_DEFAULT, pe = 27)
     ch <- lz_profile_choices(r)
-    tx[1] == "span 1.4 < 2; % extrapolated 27 > 20" && tx[2] == "" &&
+    tx[1] == "span 1.4 < 2; % extrapolated 27 > 20" && tx[2] == "none" && tx[3] == "no half-life" && off == "rules off" &&
       grepl("pass", ck) && grepl("span 1.4 < 2 flag", ck, fixed = TRUE) && grepl("27% > 20% flag", ck, fixed = TRUE) &&
       names(ch)[1] == "1 (flagged)" && unname(ch[1]) == "1" && names(ch)[2] == "2" &&
       grepl("span", lz_rules_summary(LZ_RULES_DEFAULT)) && grepl("all rules off", lz_rules_summary(list(span_min = NA, aucpext_max = NA, aucpbe_max = NA)))
   }, error = function(e) FALSE),
   "URS-UI-01, URS-NCA-04, URS-NCA-15", critical = FALSE, method = "lz_flag_text(), lz_checklist(), lz_profile_choices(), lz_rules_summary()",
-  expected = "Plain-text flags (not colour only); a checklist per fit; '(flagged)' in the profile list, values unchanged")
+  expected = "Plain-text flags (not colour only); a profile without flags says none, no half-life or rules off (never an empty cell); a checklist per fit; '(flagged)' in the profile list, values unchanged")
 
 end_section("HLF")
 

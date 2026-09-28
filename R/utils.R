@@ -779,13 +779,17 @@ example_path <- function(f) {
 
 
 #' The half-life flags of each profile in plain words, e.g.
-#' "span 1.4 < 2; % extrapolated 27 > 20"; "" when none is raised
+#' "span 1.4 < 2; % extrapolated 27 > 20". An empty cell would read as "all
+#' fine", so a profile without flags says why: "none" (every rule that applies
+#' passed), "no half-life" (nothing to check), "rules off"
 lz_flag_text <- function(r, rules = LZ_RULES_DEFAULT) {
   n <- nrow(r)
   col <- function(x) if (x %in% names(r)) suppressWarnings(as.numeric(r[[x]])) else rep(NA_real_, n)
   f <- function(v) trimws(formatC(v, digits = 3, format = "g"))
   span <- col("LZSPAN"); pe <- col("AUCPEO"); pbe <- col("AUCPBEO"); pe_ss <- col("AUCTAU_PCTEXT")
-  vapply(seq_len(n), function(i) paste(c(
+  hl <- col("LAMZHL")
+  all_off <- all(vapply(rules[c("span_min", "aucpext_max", "aucpbe_max")], function(v) is.null(v) || is.na(v), logical(1)))
+  txt <- vapply(seq_len(n), function(i) paste(c(
     if (isTRUE(col("FLAG_SPAN")[i] == 1)) paste0("span ", f(span[i]), " < ", rules$span_min),
     if (isTRUE(col("FLAG_AUCPE")[i] == 1)) {
       if (!is.na(pe_ss[i])) paste0("% of AUC\u03C4 extrapolated ", f(pe_ss[i]), " > ", rules$aucpext_max)
@@ -793,6 +797,7 @@ lz_flag_text <- function(r, rules = LZ_RULES_DEFAULT) {
     },
     if (isTRUE(col("FLAG_AUCPBE")[i] == 1)) paste0("% back-extrapolated ", f(pbe[i]), " > ", rules$aucpbe_max)),
     collapse = "; "), character(1))
+  ifelse(nzchar(txt), txt, if (all_off) "rules off" else ifelse(is.na(hl), "no half-life", "none"))
 }
 
 #' Flag columns that concern a parameter: the span rule for everything that
