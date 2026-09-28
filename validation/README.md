@@ -10,7 +10,7 @@ This folder contains the validation package for NCA Assistant v1.8.0. It follows
 |------|-------------|
 | `validation.R` | Consolidated validation script (Attachment A to the IQ/OQ/PQ protocol) |
 | `make_iqoqpq.py` | Regenerates the test tables, traceability matrix and counts of the IQ/OQ/PQ protocol from `validation_results.csv` (needs python-docx) |
-| `NCA_Assistant_URS.docx` | User Requirement Specification — 89 requirements across 9 categories, with a hazard-based FMEA |
+| `NCA_Assistant_URS.docx` | User Requirement Specification — 92 requirements across 9 categories, with a hazard-based FMEA |
 | `NCA_Assistant_IQOQPQ.docx` | IQ/OQ/PQ protocol — approval before execution, a checklist for adopting organisations, every test listed individually with method, expected result, URS cross-reference, and criticality, and a template for the user's own PQ |
 | `fixtures/` | Committed test data (crossover, replicate and ADNCA-shaped files, plus reference values from `replicateBE`) and the deterministic scripts that generate them |
 | `make_release_files.R` | Writes `renv.lock` and `release_manifest.csv` when a release is tagged |
@@ -72,7 +72,7 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **503 automated tests** in twenty-three sections, each mapped to a URS requirement:
+The script runs **526 automated tests** in twenty-six sections, each mapped to a URS requirement:
 
 | Section | Code | Tests | Tests cover |
 |---------|------|------:|-------------|
@@ -99,8 +99,11 @@ The script runs **503 automated tests** in twenty-three sections, each mapped to
 | Controlled mode | GXP | 47 | The audit trail (hash chain, triggers, tampering, truncation against an anchor and against a filed head in manage_users.R verify, three writers at once, fail-closed, clock warnings), manage_users.R (every command, refusals, archive and verification of an archived copy in a fresh R session, concurrent changes), login and roles (password rule, attempts logged, lockout alert, lockout and required password changes read from the audit trail, the required change made in the app's own dialog before the app starts), the audit hooks in every path, record storage with the data each record was made from, review signatures (every refusal, binding to the SHA-256 of the record shown in the dialog, a password change due or a reviewer role removed during the session, three failures end the session, a password changed during the session), signature sheet, signed bundle and validity, Verify a record file, the Exceptions queries, the users overview and manage_users.R list, the alerts for repeated failures, the signed trail review, role visibility, the password change, and the texts that depend on the mode |
 | Adversarial audit v1.8.0 | ADV | 12 | One or more regression tests per finding of the external adversarial audit that held up on verification, each built from the failing case: names from the data file escaped in record summaries, values set by a BLQ rule kept out of a manual half-life fit, different '<x' limits listed instead of the lowest suggested, record folders removed after an error, a profile without a dose, steady-state fluctuation and swing within 0–τ, password expiry in UTC, a validation run that installs nothing, removal of the sign-in token at sign-out, R and package versions in the reproduction scripts, fonts served by the app, and fixed seeds for scaled-method planning |
 | Data and statistics review | DSR | 9 | One test per finding of the review of data processing and statistics (D-1 to D-8), each built from the failing case: 0.250 in a decimal-comma file, a period with one measurable concentration, partial AUCs past the last measurable concentration in bioequivalence, negative pre-dose times, several analytes in one file, mostly-BLQ time points in the mean profile, dose-normalised steady-state metrics, a byte-order mark, and the profile-start rule of the ADNCA import (with a dataset without APERIOD) |
+| Example datasets | EXM | 6 | Every bundled example loads through the upload path and is recorded as an example (also in controlled mode, with its SHA-256); only bundled files can be loaded or downloaded by name; a record made from an example says so and reproduces; the download serves the file unchanged |
+| Half-life quality flags | HLF | 6 | The span ratio and the rule limits at their boundaries; flags blank where the half-life is blanked, off at steady state for extrapolation, back-extrapolation for IV bolus only; rules switched off, changed, recorded and reproduced; manual fits flagged; flags counted in summaries and bioequivalence, excluding nothing; flags in words |
+| Exclusions with a reason | EXC | 11 | An excluded sample equals deleting it from the file under every BLQ rule; matching by profile and time; an exclusion that no longer matches is reported; a profile exclusion keeps its NCA and leaves summaries and bioequivalence; records hold and reproduce the register; IV bolus, trough and partial AUC edge cases; ICH M13A checks on the data before exclusions; the sensitivity analysis; adding and restoring in the app; audit entries first; schema 1.3.0 settings still read |
 
-In addition, **62 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload (flat and CDISC ADNCA), column mapping, interlock messages, the half-life review and minimum-R² note, choosing the Reference treatment, the replicate variability table, planning with both CVs, CDISC parameter codes, partial AUC intervals in the batch and bioequivalence paths (including an invalid interval, a suppressed metric and the shaded figure), the Complete Analysis Record download and its reproduction check, and the Visualize Figure Record. They are included in the script for traceability but are marked SKIP in automated runs. The 13 MAN-GXP tests cover controlled mode: nothing runs before sign-in, the first sign-in, the header, the inactivity warning, the password change, sign-out, open mode unchanged, every path's audit entries, fail-closed behaviour, the Records page and signing dialog, the inspector account, the Audit trail page and restoring an archive on a clean machine. They need a test server set up as described in the user manual's appendix on controlled installations, not a laptop.
+In addition, **65 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload (flat and CDISC ADNCA), column mapping, interlock messages, the half-life review and minimum-R² note, choosing the Reference treatment, the replicate variability table, planning with both CVs, CDISC parameter codes, partial AUC intervals in the batch and bioequivalence paths (including an invalid interval, a suppressed metric and the shaded figure), the Complete Analysis Record download and its reproduction check, the Visualize Figure Record, loading and downloading an example, exclusions in the app and the half-life rules dialog. They are included in the script for traceability but are marked SKIP in automated runs. The 13 MAN-GXP tests cover controlled mode: nothing runs before sign-in, the first sign-in, the header, the inactivity warning, the password change, sign-out, open mode unchanged, every path's audit entries, fail-closed behaviour, the Records page and signing dialog, the inspector account, the Audit trail page and restoring an archive on a clean machine. They need a test server set up as described in the user manual's appendix on controlled installations, not a laptop.
 
 The test tables in `NCA_Assistant_IQOQPQ.docx` (IQ, automated OQ/PQ sections, manual tests, traceability matrix and totals) are generated from `validation_results.csv` of a passing reference run, so they list exactly the tests the script defines.
 
@@ -122,17 +125,17 @@ Visualisation tests (URS-VIZ) are classified SUPPORTIVE because graphical output
 A passing run produces:
 
 ```
-Total: 565 (auto: 503, manual: 62)
-  PASS: 503 | FAIL: 0 | ERROR: 0 | SKIP: 62
+Total: 591 (auto: 526, manual: 65)
+  PASS: 526 | FAIL: 0 | ERROR: 0 | SKIP: 65
 
 ALL CRITICAL TESTS PASSED
 
-URS: 89/89 covered (86 by automated tests; manual tests only: URS-BE-06, URS-BE-08, URS-PWR-04)
+URS: 92/92 covered (89 by automated tests; manual tests only: URS-BE-06, URS-BE-08, URS-PWR-04)
 
 Results: validation/validation_results.csv
 ```
 
-Of the 503 automated tests, 366 are CRITICAL and 137 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
+Of the 526 automated tests, 380 are CRITICAL and 146 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
 
 IQ-REL-01 and IQ-REL-02 pass only on an unchanged release: after any edit to a file listed in the manifest, IQ-REL-01 fails until `make_release_files.R` is run again for a new release. When IQ-REL-02 fails, its Detail column names each package whose version differs from `renv.lock`.
 
