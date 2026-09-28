@@ -275,11 +275,12 @@ path_multi_nca_server <- function(id, shared) {
     output$data_ok <- reactive({ shared$data_ready })
     outputOptions(output, "data_ok", suspendWhenHidden = FALSE)
     
-    # Auto-select "from_data" when a Dose column is mapped
+    # Dose information follows the data: from the Dose column when one is
+    # mapped, one dose for all when the new data have none
     observe({
-      if (shared$data_ready && !is.null(shared$col_map$dose)) {
-        updateRadioButtons(session, "dose_source", selected = "from_data")
-      }
+      if (shared$data_ready)
+        updateRadioButtons(session, "dose_source",
+                           selected = if (!is.null(shared$col_map$dose)) "from_data" else "single")
     })
     
     # Dose column status — shows summary when "from data" is selected
@@ -609,7 +610,8 @@ path_multi_nca_server <- function(id, shared) {
                 options = list(scrollX = TRUE, scrollY = "400px",
                                pageLength = 50, dom = "frtip"),
                 rownames = FALSE, class = "compact stripe hover") %>%
-        formatSignif(columns = which(sapply(display_df, is.numeric)), digits = 4)
+        formatSignif(columns = which(sapply(display_df, is.numeric) &
+                                     !names(display_df) %in% c("Subject", "Treatment", "Period")), digits = 4)
       
       # Highlight AUCPEO > 20% in amber. Values are on 0-100 scale (percentage).
       # Amber flag prompts lambda-z review but does not block analysis.
