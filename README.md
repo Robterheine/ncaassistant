@@ -161,6 +161,12 @@ See [`validation/README.md`](validation/README.md) for detailed instructions on 
 
 ## Citation
 
+If NCA Assistant helped with your work, please cite the article that describes it:
+
+> ter Heine R. NCA Assistant: An Open-source R/Shiny Interface for Non-compartmental Pharmacokinetic Analysis, Bioequivalence Testing and Study Planning. *The AAPS Journal*. 2026;28(6):163. [doi:10.1208/s12248-026-01316-w](https://doi.org/10.1208/s12248-026-01316-w)
+
+To cite the software itself, for example the exact version you ran, use:
+
 > ter Heine R. NCA Assistant (v1.8.0). Radboud Applied Pharmacometrics, Radboudumc, Nijmegen, The Netherlands. https://github.com/Robterheine/NCAassistant
 
 > Kim H, Han S, Cho YS, Yoon SK, Bae KS. Development of R packages: 'NonCompart' and 'ncar' for noncompartmental analysis (NCA). *Transl Clin Pharmacol*. 2018;26(1):10-15.
