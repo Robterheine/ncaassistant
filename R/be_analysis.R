@@ -157,7 +157,9 @@ BE_NO_VERDICT_PARAMS <- c("LAMZHL")
 #' @param verdict   FALSE for a supportive metric: ratio and CI without a verdict
 #' @return list(row      = one-row data frame for the CI table,
 #'              anova    = ANOVA table or NULL,
-#'              estimate = unrounded list(pe, ci_lo, ci_hi, dfe, mse) or NULL,
+#'              estimate = unrounded list(pe, ci_lo, ci_hi, dfe, mse) or NULL;
+#'                         parallel designs add welch = list(lo, hi, df),
+#'                         the unequal-variance interval (supplementary),
 #'              reason   = character explanation when no estimate, else NULL)
 fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
                              trt_col, subj_col, per_col = NULL, seq_col = NULL,
@@ -506,8 +508,19 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
     pe_status <- "not applicable"; verdict <- "no verdict"
   }
 
+  # Parallel groups: the unequal-variance (Welch) interval as supplementary
+  # information beside the pooled-variance interval, which stays the primary result
+  welch <- if (model_family == "parallel") tryCatch({
+    y <- be_data$.response; g <- be_data[[trt_col]]
+    tt <- stats::t.test(y[g == trt_levels[2]], y[g == trt_levels[1]],
+                        var.equal = FALSE, conf.level = 1 - alpha)
+    ci <- as.numeric(tt$conf.int)
+    if (is_ratio) ci <- exp(ci) * 100
+    list(lo = ci[1], hi = ci[2], df = unname(tt$parameter))
+  }, error = function(e) NULL)
+
   out$estimate <- list(pe = pe, ci_lo = ci_lo_p, ci_hi = ci_hi_p,
-                       dfe = unname(dfe), mse = unname(mse))
+                       dfe = unname(dfe), mse = unname(mse), welch = welch)
   out$row <- make_row(pe = round(pe, 2), lo = round(ci_lo_p, 2), hi = round(ci_hi_p, 2),
                       n_t = n2, n_r = n1, o_t = o2, o_r = o1,
                       pe_status = pe_status, verdict = verdict,

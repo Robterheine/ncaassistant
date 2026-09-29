@@ -681,6 +681,7 @@ path_be_server <- function(id, shared) {
         # -------------------------------------------------------------------
 
         ci_results <- list()
+        welch_results <- list()
         anova_results <- list()
         
         # Warn once if Tmax is among the selected parameters
@@ -758,9 +759,17 @@ path_be_server <- function(id, shared) {
           }
           if (!is.null(fit_out$anova)) anova_results[[param]] <- fit_out$anova
           ci_results[[param]] <- fit_out$row
+          welch_results[[param]] <- fit_out$estimate$welch
         }
         
         ci_df <- do.call(rbind, ci_results)
+        # Parallel groups: the Welch interval next to the pooled one (supplementary)
+        if (length(welch_results) > 0) {
+          wval <- function(f) vapply(as.character(ci_df$Parameter), function(p) {
+            w <- welch_results[[p]]; if (is.null(w)) NA_real_ else round(w[[f]], 2)
+          }, numeric(1), USE.NAMES = FALSE)
+          ci_df$Welch_Lower <- wval("lo"); ci_df$Welch_Upper <- wval("hi"); ci_df$Welch_DF <- wval("df")
+        }
 
         # Exclusions touch the comparison: the same analysis without any of
         # them, as a sensitivity result next to the primary one. The ICH M13A
@@ -1043,8 +1052,10 @@ path_be_server <- function(id, shared) {
       be_col <- if ("Bioequivalent?" %in% names(display_ci)) "Bioequivalent?" else "Bioequivalent"
       
       # Show only key columns — the rest are in the Excel export
+      welch_lab <- paste0("Welch ", run_ci_level(), "% CI ")
       key_cols <- intersect(c("PK Parameter", "Comparison", "Scale", "Estimate", paste0(ci_lab, "Lower"),
-                              paste0(ci_lab, "Upper"), "PE within 80\u2013125%", "Bioequivalent?"),
+                              paste0(ci_lab, "Upper"), paste0(welch_lab, "Lower (suppl.)"),
+                              paste0(welch_lab, "Upper (suppl.)"), "PE within 80\u2013125%", "Bioequivalent?"),
                             names(display_ci))
       # Profiles that could not enter a comparison are part of the result
       for (cc in c("Profiles missing (Test)", "Profiles missing (Reference)",
@@ -1060,7 +1071,8 @@ path_be_server <- function(id, shared) {
       display_ci <- display_ci[, key_cols, drop = FALSE]
       
       # Fixed 2 decimal places for ratio and CI columns (regulatory standard)
-      num_cols <- intersect(c("Estimate", paste0(ci_lab, "Lower"), paste0(ci_lab, "Upper")),
+      num_cols <- intersect(c("Estimate", paste0(ci_lab, "Lower"), paste0(ci_lab, "Upper"),
+                              paste0(welch_lab, "Lower (suppl.)"), paste0(welch_lab, "Upper (suppl.)")),
                             names(display_ci))
       dt <- datatable(display_ci,
                 options = list(scrollX = TRUE, dom = "t", ordering = FALSE),

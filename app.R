@@ -871,10 +871,11 @@ server <- function(input, output, session) {
               tags$li(tags$strong("New: "), "exclusions with a reason: leave out a sample or a whole profile from the Upload page or the Half-Life Review, restore it later, and see it in every path, the downloads and the Analysis Record. Bioequivalence then adds a sensitivity analysis without the exclusions"),
               tags$li(tags$strong("New: "), "half-life flags for the span of the fitted points and the % of AUC extrapolated or back-extrapolated. The rules can be edited, only flag a fit and never change a value"),
               tags$li(tags$strong("New: "), "load an example dataset with one click, or download it to see how the file is laid out"),
+              tags$li(tags$strong("New: "), "parallel-group bioequivalence shows the unequal-variance (Welch) interval and its degrees of freedom next to the pooled interval, as supplementary information; the verdict stays with the pooled interval. Both intervals match the 11 published reference datasets of Fuglsang et al. (2015)"),
               tags$li(tags$strong("Correctness fix: "), "a Dose column per kg can be multiplied by a body-weight column; the Dose panel says which unit it assumes and warns when doses look per kg (read as mg, theophylline's CL/F came out about 80 times too low)"),
               tags$li(tags$strong("Correctness fix: "), "C\u03C4 is the sample nearest to \u03C4 within a trough window, with its time; AUC\u03C4 extrapolated past the last sample is reported, noted and flagged; in a 2\u00D72 crossover a subject without both treatments leaves Method B as it leaves Method A"),
               tags$li(tags$strong("Changed: "), "one pre-dose sample at a small negative time is analysed at 0; the exclusion register can be downloaded and loaded again, and keeps its evidence of timing; errors stay on screen until closed and are read out by screen readers; the Half-Life Flags column is never empty; numeric subject IDs are shown without decimals, and the dose setting follows newly loaded data. From an adversarial review of the app"),
-              tags$li("Validation: 536 automated and 66 manual tests (was 431 and 49), with sections for controlled mode, the three reviews, exclusions, half-life flags and the example data")
+              tags$li("Validation: 541 automated and 66 manual tests (was 431 and 49), with sections for controlled mode, the three reviews, exclusions, half-life flags and the example data")
             )
           ),
 

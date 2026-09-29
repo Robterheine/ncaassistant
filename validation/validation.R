@@ -6636,17 +6636,16 @@ check("PAR-02", "Pooled-variance 90% CI and point estimate match the paper (Tabl
   "URS-BE-01", critical = TRUE, method = "fit_be_parameter(design = 'parallel') on each dataset, rounded to 2 decimals",
   expected = "Equal to the consensus of R, OpenOffice Calc, WinNonlin, EquivTest/PK, SAS (Kinetica differs on unbalanced sets)")
 
-check("PAR-03", "Welch 90% CI matches the paper (Table I), P1-P11",
+check("PAR-03", "The app's supplementary Welch 90% CI matches the paper (Table I), P1-P11",
   tryCatch({
     ok <- TRUE
     for (i in seq_len(nrow(par_ref))) {
-      x <- par_set(par_ref$dataset[i]); y <- log(x$Var); r <- par_ref[i, ]
-      w <- round(100 * exp(stats::t.test(y[x$Treat == "T"], y[x$Treat == "R"], var.equal = FALSE, conf.level = 0.90)$conf.int), 2)
-      ok <- ok && isTRUE(all.equal(as.numeric(w), c(r$welch_lo, r$welch_hi)))
+      w <- par_fit(par_ref$dataset[i])$welch; r <- par_ref[i, ]
+      ok <- ok && !is.null(w) && isTRUE(all.equal(round(c(w$lo, w$hi), 2), c(r$welch_lo, r$welch_hi)))
     }
     ok
   }, error = function(e) FALSE),
-  "URS-BE-01", critical = FALSE, method = "stats::t.test(var.equal = FALSE), the same call parallel_welch_notes() uses",
+  "URS-BE-01", critical = TRUE, method = "fit_be_parameter(design = 'parallel')$estimate$welch on each dataset, rounded to 2 decimals",
   expected = "Equal to the paper's Welch intervals (WinNonlin needs a workaround; EquivTest/PK and Kinetica cannot)")
 
 check("PAR-04", "The Welch note appears exactly where the pooled and Welch verdicts differ",
@@ -6666,6 +6665,22 @@ check("PAR-04", "The Welch note appears exactly where the pooled and Welch verdi
   }, error = function(e) FALSE),
   "URS-BE-01", critical = TRUE, method = "parallel_welch_notes() on P1-P11 at limits 80-125, 80-130 and 70-143; expected verdicts taken from the paper's two tables",
   expected = "A note exactly where the verdict of the pooled and the Welch interval differ, and at least one such case")
+
+check("PAR-05", "Welch interval: confidence level follows the analysis, unavailable for crossovers, columns named in the results",
+  tryCatch({
+    x <- par_set("P7")
+    e95 <- fit_be_parameter(x, "Var", "parallel", trt_col = "Treat", subj_col = "Subj", ci_level = 95)$estimate$welch
+    y <- log(x$Var)
+    t95 <- 100 * exp(as.numeric(stats::t.test(y[x$Treat == "T"], y[x$Treat == "R"], conf.level = 0.95)$conf.int))
+    rn <- names(rename_be_columns(data.frame(Welch_Lower = 1, Welch_Upper = 1, Welch_DF = 1), ci_level = 95))
+    d222 <- rep_222; b <- build_be_data(rep_nca(d222), d222, rep_cm)
+    xo <- fit_be_parameter(b$data, "CMAX", "2x2x2", trt_col = b$trt_col, subj_col = b$subj_col,
+                           per_col = b$per_col, seq_col = b$seq_col)$estimate
+    isTRUE(all.equal(c(e95$lo, e95$hi), t95)) && is.null(xo$welch) &&
+      identical(rn, c("Welch 95% CI Lower (suppl.)", "Welch 95% CI Upper (suppl.)", "Welch Degrees of Freedom"))
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = FALSE, method = "P7 at 95% against t.test; a 2x2x2 crossover; rename_be_columns()",
+  expected = "Welch at the chosen level; no Welch result for a crossover; labelled as supplementary")
 
 end_section("PAR")
 
