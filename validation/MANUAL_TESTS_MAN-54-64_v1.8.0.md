@@ -21,6 +21,10 @@ Evidence: the numbers below were read from the running app (tables, notes, downl
 
 Observation (not a defect): a typed acceptance limit stays in the field when new data are loaded, so the lower limit of 70 from MAN-57 was still there for the next study; the run then stopped with the clear message.
 
+## Repeated at the owner's request
+
+MAN-54, MAN-58, MAN-59 and MAN-61 were run a second time by the agent on 30 September 2026, in the browser pane with the owner's session open, from the same commit, following the tutorial steps. Every number above came out the same. MAN-61 on the local training server added audit entries 9 to 13; the last analysis entry carries FDA RSABE, theta 0.7967 and the switch 0.294, and the chain of 13 entries is intact. The initials below remain the owner's: a repeat by the agent does not replace them.
+
 ## Critical tests for the product owner
 
 The product owner runs these four personally and initials them (decision 7 of the plan):
