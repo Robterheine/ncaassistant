@@ -21,9 +21,17 @@
 #' @param reference The Reference treatment, as written in the data. When
 #'   NULL, a level named "Reference" is used if present, otherwise the first
 #'   level alphabetically (which may be the Test: callers should pass it).
-#' @return list(data, trt_col, subj_col, per_col, seq_col); Treatment is a
-#'   factor with the reference as its first level.
-build_be_data <- function(nca_res, pk_data, col_map, reference = NULL, exclusions = NULL) {
+#' @param covariates NULL, or the columns of pk_data to use as baseline
+#'   covariates in a parallel-group analysis: a character vector of column
+#'   names, or a data.frame(name, type, transform) with type "auto",
+#'   "numeric" or "categorical" and transform "none" or "log". See
+#'   be_covariate_prepare().
+#' @return list(data, trt_col, subj_col, per_col, seq_col, covariates);
+#'   Treatment is a factor with the reference as its first level. covariates
+#'   is the resolved specification (be_covariate_prepare()) or NULL; its
+#'   values sit in the .cov1, .cov2, ... columns of data.
+build_be_data <- function(nca_res, pk_data, col_map, reference = NULL, exclusions = NULL,
+                          covariates = NULL) {
   keys <- intersect(c("Subject", "Treatment", "Period"), names(nca_res))
   if (!all(c("Subject", "Treatment") %in% keys))
     stop("The NCA result has no Subject/Treatment columns; map the Treatment column.")
@@ -84,8 +92,180 @@ build_be_data <- function(nca_res, pk_data, col_map, reference = NULL, exclusion
     }, character(1))
     be$EXCLUDED[x] <- reason
   }
+  cov_spec <- NULL
+  if (!is.null(covariates) && NROW(covariates) > 0) {
+    cp <- be_covariate_prepare(pk_data, col_map, covariates)
+    cov_spec <- cp$spec
+    for (i in seq_len(nrow(cov_spec)))
+      be[[cov_spec$col[i]]] <- cp$values[[cov_spec$col[i]]][match(as.character(be$Subject), cp$subject)]
+  }
   list(data = be, trt_col = "Treatment", subj_col = "Subject",
-       per_col = if ("Period" %in% keys) "Period" else NULL, seq_col = seq_col)
+       per_col = if ("Period" %in% keys) "Period" else NULL, seq_col = seq_col,
+       covariates = cov_spec)
+}
+
+#' Read baseline covariates from the uploaded data, one value per subject
+#'
+#' Covariates are columns of the uploaded data that are not mapped to another
+#' role. Numeric ones are used as they are (or as ln, when transform is
+#' "log"); categorical ones become a factor. The function stops, in plain
+#' words, when a column cannot be used as it stands: a role column, a column
+#' that is missing, text that looks like numbers ("12 kg", "1,5"), two
+#' different values for one subject, or a log of a value at or below zero.
+#' Missing values are kept here and refused, per parameter, by
+#' be_covariate_checks(): only the subjects who enter the comparison count.
+#'
+#' @param pk_data,col_map The uploaded data and its column mapping
+#' @param covariates Character vector of column names, or data.frame(name,
+#'   type, transform)
+#' @return list(spec = data.frame(name, type, transform, col) with the
+#'   resolved type, subject = character subject IDs, values = named list of
+#'   per-subject vectors keyed by spec$col)
+be_covariate_prepare <- function(pk_data, col_map, covariates) {
+  spec <- if (is.data.frame(covariates)) covariates else data.frame(name = as.character(covariates))
+  if (!"type" %in% names(spec)) spec$type <- "auto"
+  if (!"transform" %in% names(spec)) spec$transform <- "none"
+  spec$name <- as.character(spec$name); spec$type <- as.character(spec$type)
+  spec$transform <- as.character(spec$transform)
+  if (anyDuplicated(spec$name)) stop("A covariate is listed twice: ", spec$name[anyDuplicated(spec$name)], ".")
+  if (is.null(col_map$subject) || !col_map$subject %in% names(pk_data))
+    stop("Covariates need the Subject column to be mapped.")
+  roles <- unlist(col_map[!vapply(col_map, is.null, logical(1))], use.names = FALSE)
+  subj <- as.character(pk_data[[col_map$subject]])
+  ids <- unique(subj)
+  values <- list()
+  for (i in seq_len(nrow(spec))) {
+    nm <- spec$name[i]
+    if (!nm %in% names(pk_data)) stop("The covariate column '", nm, "' is not in the data.")
+    if (nm %in% roles)
+      stop("The column '", nm, "' is mapped to another role (Subject, Treatment, Period, Sequence, time, ",
+           "concentration or dose) and cannot be a covariate.")
+    if (!spec$type[i] %in% c("auto", "numeric", "categorical"))
+      stop("The type of covariate '", nm, "' must be auto, numeric or categorical.")
+    if (!spec$transform[i] %in% c("none", "log"))
+      stop("The transform of covariate '", nm, "' must be none or log.")
+    x <- pk_data[[nm]]
+    chr <- trimws(as.character(x)); chr[!nzchar(chr) | toupper(chr) %in% c("NA", "NAN")] <- NA
+    type <- spec$type[i]
+    if (is.numeric(x)) {
+      if (type == "auto") type <- "numeric"
+    } else if (type != "categorical") {
+      nn <- chr[!is.na(chr)]
+      num <- suppressWarnings(as.numeric(nn))
+      if (any(grepl("^[-+]?[0-9]+,[0-9]+$", nn)))
+        stop("The covariate '", nm, "' uses a decimal comma (for example ", nn[grepl(",", nn)][1],
+             "). Write decimals with a point and upload again.")
+      if (length(nn) > 0 && all(!is.na(num))) {
+        if (type == "auto") type <- "numeric"
+      } else if (length(nn) > 0 && (type == "numeric" || (type == "auto" && any(!is.na(num)) ||
+                 type == "auto" && all(grepl("^[-+]?[0-9.]+ ?[A-Za-z%/]+", nn))))) {
+        bad <- nn[is.na(num)]
+        stop("The covariate '", nm, "' mixes numbers and text (for example '", bad[1], "'). ",
+             "Keep the number only, and put the unit in the column name. To use it as groups, ",
+             "set its type to categorical.")
+      } else if (type == "auto") type <- "categorical"
+    }
+    v <- if (type == "numeric") suppressWarnings(as.numeric(if (is.numeric(x)) x else chr)) else chr
+    if (type == "numeric" && any(is.infinite(v), na.rm = TRUE))
+      stop("The covariate '", nm, "' has infinite values.")
+    # One value per subject: a different value in another row is an error
+    per <- tapply(seq_along(v), subj, function(j) unique(v[j][!is.na(v[j])]))
+    multi <- names(per)[vapply(per, length, integer(1)) > 1]
+    if (length(multi) > 0)
+      stop("The covariate '", nm, "' has more than one value for subject(s) ", paste(head(multi, 5), collapse = ", "),
+           if (length(multi) > 5) paste0(" and ", length(multi) - 5, " more") else "",
+           ". A baseline covariate has one value per subject.")
+    one <- vapply(ids, function(id) { u <- per[[id]]; if (length(u)) u[[1]] else NA }, v[NA_integer_[1]][1])
+    if (type == "numeric" && spec$transform[i] == "log") {
+      if (any(one <= 0, na.rm = TRUE))
+        stop("The covariate '", nm, "' has values at or below zero, which have no logarithm. ",
+             "Use it as it is, or leave the log transform off.")
+      one <- log(one)
+    }
+    if (type == "categorical" && spec$transform[i] == "log")
+      stop("The covariate '", nm, "' is categorical; the log transform applies to numbers only.")
+    spec$type[i] <- type
+    values[[paste0(".cov", i)]] <- if (type == "categorical") factor(unname(one)) else unname(one)
+  }
+  spec$col <- paste0(".cov", seq_len(nrow(spec)))
+  list(spec = spec, subject = ids, values = values)
+}
+
+#' Limits on covariate adjustment
+BE_COVARIATE_MAX <- 5L
+BE_COVARIATE_MIN_DF <- 10L
+BE_COVARIATE_MIN_PER_GROUP <- 12L
+
+#' Can this covariate set be fitted for the subjects in the comparison?
+#'
+#' Run on the profiles that carry a value for the parameter (after
+#' exclusions). Errors stop the run; warnings are shown with the result.
+#' Rules: parallel design only; at most 5 covariates; no missing value (the
+#' subjects are named: nobody is dropped silently); no constant covariate; no
+#' covariate that is aliased with Treatment or with another covariate; at
+#' least 12 subjects per group and residual df of at least 10; a warning for a
+#' category with fewer than 3 subjects.
+#'
+#' @param be_data Data frame from build_be_data()$data
+#' @param spec The resolved covariate specification (build_be_data()$covariates)
+#' @param rows Logical vector: the profiles that enter the comparison
+#' @return list(errors = character(), warnings = character())
+be_covariate_checks <- function(be_data, spec, trt_col, subj_col, rows = rep(TRUE, nrow(be_data)),
+                                design = "parallel") {
+  errors <- character(0); warns <- character(0)
+  if (is.null(spec) || nrow(spec) == 0) return(list(errors = errors, warnings = warns))
+  if (be_design_model(design) != "parallel")
+    return(list(errors = "Covariates are for parallel-group studies only. In a crossover the Subject term already absorbs any characteristic of the subject.",
+                warnings = warns))
+  if (nrow(spec) > BE_COVARIATE_MAX)
+    errors <- c(errors, sprintf("At most %d covariates can be used (%d selected).", BE_COVARIATE_MAX, nrow(spec)))
+  d <- be_data[rows, , drop = FALSE]
+  trt <- droplevels(factor(d[[trt_col]]))
+  for (i in seq_len(nrow(spec))) {
+    nm <- spec$name[i]; v <- d[[spec$col[i]]]
+    miss <- is.na(v)
+    if (any(miss)) {
+      who <- unique(as.character(d[[subj_col]][miss]))
+      errors <- c(errors, paste0("The covariate '", nm, "' has no value for ", length(who), " subject(s): ",
+        paste(head(who, 10), collapse = ", "), if (length(who) > 10) paste0(" and ", length(who) - 10, " more") else "",
+        ". Complete the data or leave that covariate out. Nobody is dropped silently."))
+      next
+    }
+    if (length(unique(v)) < 2) {
+      errors <- c(errors, paste0("The covariate '", nm, "' has the same value for every subject, so it cannot adjust anything."))
+    } else if (spec$type[i] == "categorical") {
+      tab <- table(v)
+      small <- names(tab)[tab < 3]
+      if (length(small) > 0)
+        warns <- c(warns, paste0("The covariate '", nm, "' has category ", paste(small, collapse = ", "),
+                                 " with fewer than 3 subjects; its estimate is unstable."))
+    }
+  }
+  n_grp <- table(trt)
+  if (length(n_grp) == 2 && any(n_grp < BE_COVARIATE_MIN_PER_GROUP))
+    errors <- c(errors, sprintf("Covariate adjustment needs at least %d subjects per group (found %s).",
+                                BE_COVARIATE_MIN_PER_GROUP, paste(names(n_grp), n_grp, sep = ": ", collapse = ", ")))
+  if (length(errors) == 0) {
+    dd <- d[, spec$col, drop = FALSE]; dd$.trt <- trt
+    X <- tryCatch(stats::model.matrix(stats::as.formula(paste("~ .trt +", paste(spec$col, collapse = " + "))), dd),
+                  error = function(e) NULL)
+    if (is.null(X)) {
+      errors <- c(errors, "The covariates could not be turned into a model. Check for categories with a single subject.")
+    } else {
+      rk <- qr(X)$rank
+      if (rk < ncol(X)) {
+        no_trt <- X[, !grepl("^\\.trt", colnames(X)), drop = FALSE]
+        errors <- c(errors, if (qr(no_trt)$rank == rk)
+          "A covariate is identical to, or fully determined by, the treatment group. Remove it."
+          else "Two covariates carry the same information (one is determined by the others). Remove one.")
+      }
+      dfe <- nrow(X) - ncol(X)
+      if (rk == ncol(X) && dfe < BE_COVARIATE_MIN_DF)
+        errors <- c(errors, sprintf("Only %d residual degrees of freedom would remain (at least %d needed). Use fewer covariates.",
+                                    dfe, BE_COVARIATE_MIN_DF))
+    }
+  }
+  list(errors = errors, warnings = warns)
 }
 
 #' The widened-limit scope chosen in the app, as fit_be_parameter() takes it
@@ -155,6 +335,16 @@ BE_NO_VERDICT_PARAMS <- c("LAMZHL")
 #'                  drug-interaction no-effect boundaries)
 #' @param diff_unit Unit label for an untransformed difference, e.g. "h"
 #' @param verdict   FALSE for a supportive metric: ratio and CI without a verdict
+#' @param covariates Resolved covariate specification from build_be_data()
+#'                  (parallel groups only): the model becomes
+#'                  ln(PK) = Treatment + covariates, main effects, ordinary
+#'                  least squares, pooled variance. The adjusted interval is
+#'                  the primary result; the row gains Adjusted_for, Unadj_Lower
+#'                  and Unadj_Upper (the unadjusted pooled interval), and
+#'                  estimate gains unadjusted and covariate_coefs. A run the
+#'                  covariates cannot support stops with an error of class
+#'                  "be_covariate_error" (be_covariate_checks()). NULL leaves
+#'                  every result as it was without the feature.
 #' @return list(row      = one-row data frame for the CI table,
 #'              anova    = ANOVA table or NULL,
 #'              estimate = unrounded list(pe, ci_lo, ci_hi, dfe, mse) or NULL;
@@ -166,7 +356,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
                              log_transform = TRUE, ci_level = 90,
                              be_lower = 80, be_upper = 125,
                              pe_constraint = TRUE, widened_scope = "cmax",
-                             diff_unit = NULL, verdict = TRUE) {
+                             diff_unit = NULL, verdict = TRUE, covariates = NULL) {
 
   out <- list(row = NULL, anova = NULL, estimate = NULL, reason = NULL)
   trt_levels <- levels(be_data[[trt_col]])
@@ -187,6 +377,10 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   has_limits <- is_ratio && !is_paired && !param %in% BE_NO_VERDICT_PARAMS && isTRUE(verdict)
   scale_label <- if (is_ratio) "Ratio T/R (%)" else
     paste0("Difference T\u2212R", if (!is.null(diff_unit)) paste0(" (", diff_unit, ")") else "")
+  if (!is.null(covariates) && nrow(covariates) > 0 && model_family != "parallel")
+    stop(structure(class = c("be_covariate_error", "error", "condition"),
+                   list(message = be_covariate_checks(be_data, covariates, trt_col, subj_col, design = design)$errors[1],
+                        call = NULL)))
   widened <- be_lower < 80 || be_upper > 125
   widen_here <- identical(widened_scope, "all") || param == "CMAX" ||
     (identical(widened_scope, "cmax_pauc") && length(partial_auc_cols(param)) == 1)
@@ -202,9 +396,11 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   n_zero_t <- NA_integer_; n_zero_r <- NA_integer_
   n_miss_t <- NA_integer_; n_miss_r <- NA_integer_
   n_excl_t <- 0L; n_excl_r <- 0L; n_flag_t <- 0L; n_flag_r <- 0L; n_incomplete <- 0L
+  if (!is.null(covariates) && nrow(covariates) == 0) covariates <- NULL
+  unadj_lo <- NA_real_; unadj_hi <- NA_real_
   make_row <- function(pe = NA, lo = NA, hi = NA, n_t = NA, n_r = NA, o_t = NA, o_r = NA,
                        pe_status = NA, verdict = NA, mse = NA, dfe = NA) {
-    data.frame(
+    row <- data.frame(
       Parameter = param, Test = as.character(trt_levels[2]),
       Reference = as.character(trt_levels[1]),
       N_Test = n_t, N_Ref = n_r, Obs_Test = o_t, Obs_Ref = o_r, Scale = scale_label,
@@ -217,6 +413,11 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
       Excluded_Test = n_excl_t, Excluded_Ref = n_excl_r,
       Flagged_Test = n_flag_t, Flagged_Ref = n_flag_r, Incomplete_Subjects = n_incomplete,
       MSE = mse, DF = dfe, Model = model_label, stringsAsFactors = FALSE)
+    if (!is.null(covariates)) {
+      row$Adjusted_for <- paste(covariates$name, collapse = ", ")
+      row$Unadj_Lower <- unadj_lo; row$Unadj_Upper <- unadj_hi
+    }
+    row
   }
 
   # A crossover without its Period column loses the period term: a period
@@ -308,6 +509,16 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   }
   be_data$.response <- vals
 
+  cov_warnings <- character(0)
+  if (!is.null(covariates)) {
+    chk <- be_covariate_checks(be_data, covariates, trt_col, subj_col,
+                               rows = !is.na(be_data$.response), design = design)
+    if (length(chk$errors) > 0)
+      stop(structure(class = c("be_covariate_error", "error", "condition"),
+                     list(message = paste(chk$errors, collapse = " "), call = NULL)))
+    cov_warnings <- chk$warnings
+  }
+
   # In a two-period crossover (and the paired comparison) a subject without a
   # value under both treatments adds nothing to the within-subject contrast,
   # and the EMA guideline leaves such subjects out. The fixed-effects model
@@ -336,7 +547,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
 
   # Build and fit model
   if (model_family == "parallel") {
-    fit <- tryCatch(lm(as.formula(paste(".response ~", trt_col)),
+    fit <- tryCatch(lm(as.formula(paste(".response ~", paste(c(trt_col, covariates$col), collapse = " + "))),
                        data = be_data, na.action = na.exclude), error = function(e) NULL)
   } else if (is_paired) {
     # Paired comparison (fixed order): all subjects received the same sequence.
@@ -521,6 +732,19 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
 
   out$estimate <- list(pe = pe, ci_lo = ci_lo_p, ci_hi = ci_hi_p,
                        dfe = unname(dfe), mse = unname(mse), welch = welch)
+  if (!is.null(covariates)) {
+    # Supplementary: the same rows without covariates (pooled variance)
+    fit0 <- lm(as.formula(paste(".response ~", trt_col)), data = be_data)
+    ci0 <- confint(fit0, trt_coef_name, level = 1 - alpha)
+    d0 <- unname(coef(fit0)[trt_coef_name]); ci0 <- as.numeric(ci0)
+    if (is_ratio) { d0 <- exp(d0) * 100; ci0 <- exp(ci0) * 100 }
+    unadj_lo <- ci0[1]; unadj_hi <- ci0[2]
+    out$estimate$unadjusted <- list(pe = d0, ci_lo = unadj_lo, ci_hi = unadj_hi,
+                                    dfe = unname(fit0$df.residual))
+    out$estimate$covariate_coefs <- be_covariate_coefs(fit, covariates, trt_col, alpha)
+    out$warnings <- cov_warnings
+    unadj_lo <- round(unadj_lo, 2); unadj_hi <- round(unadj_hi, 2)
+  }
   out$row <- make_row(pe = round(pe, 2), lo = round(ci_lo_p, 2), hi = round(ci_hi_p, 2),
                       n_t = n2, n_r = n1, o_t = o2, o_r = o1,
                       pe_status = pe_status, verdict = verdict,
@@ -528,6 +752,32 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   out
 }
 
+
+#' Coefficients of the covariates in a fitted parallel-group model
+#'
+#' One row per model term (numeric covariate, or category against its
+#' reference), with the estimate on the log scale (the analysis scale), its
+#' standard error, the confidence interval at the analysis level and the
+#' p-value. Supplementary: the treatment effect is the primary result.
+be_covariate_coefs <- function(fit, spec, trt_col, alpha = 0.10) {
+  sm <- summary(fit)$coefficients
+  ci <- suppressWarnings(confint(fit, level = 1 - alpha))
+  rows <- list()
+  for (i in seq_len(nrow(spec))) {
+    col <- spec$col[i]
+    hit <- if (spec$type[i] == "numeric") intersect(col, rownames(sm)) else
+      rownames(sm)[startsWith(rownames(sm), col)]
+    for (h in hit) {
+      lab <- if (spec$type[i] == "numeric") spec$name[i] else {
+        lv <- levels(fit$model[[col]])
+        paste0(spec$name[i], ": ", substring(h, nchar(col) + 1), " vs ", lv[1])
+      }
+      rows[[length(rows) + 1]] <- data.frame(Term = lab, Estimate = sm[h, 1], SE = sm[h, 2],
+        CI_Lower = ci[h, 1], CI_Upper = ci[h, 2], P_Value = sm[h, 4], stringsAsFactors = FALSE)
+    }
+  }
+  do.call(rbind, rows)
+}
 
 #' Profiles per treatment whose partial AUC rests mainly on BLQ-derived values
 #'

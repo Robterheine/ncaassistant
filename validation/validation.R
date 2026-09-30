@@ -6685,6 +6685,207 @@ check("PAR-05", "Welch interval: confidence level follows the analysis, unavaila
 end_section("PAR")
 
 # =============================================================================
+# SECTION COV: Covariate adjustment in parallel-group bioequivalence
+# =============================================================================
+# Model: ln(PK) = Treatment + covariates (main effects, ordinary least squares,
+# pooled variance). Reference values come from a second tool, Python
+# statsmodels (validation/fixtures/make_covariate_reference.py), and from
+# matrix algebra written here without lm().
+start_section("COV")
+
+cov_dat <- read.csv(file.path("validation", "fixtures", "cov_parallel_data.csv"), stringsAsFactors = FALSE)
+cov_ref <- read.csv(file.path("validation", "fixtures", "cov_parallel_reference.csv"), stringsAsFactors = FALSE)
+cov_cm <- list(subject = "Subject", treatment = "Treat")
+# Same steps as build_be_data(): resolve the covariates, attach one value per subject
+cov_be <- function(d, spec) {
+  cp <- be_covariate_prepare(d, cov_cm, spec)
+  be <- d
+  be$Treat <- factor(be$Treat, levels = c("R", "T"))
+  for (cc in cp$spec$col) be[[cc]] <- cp$values[[cc]][match(as.character(be$Subject), cp$subject)]
+  list(data = be, spec = cp$spec)
+}
+cov_fit <- function(b, ...) fit_be_parameter(b$data, "Var", "parallel", trt_col = "Treat", subj_col = "Subject",
+                                             covariates = b$spec, ...)
+cov_sp <- function(...) data.frame(name = c(...), stringsAsFactors = FALSE)
+cov_stop <- function(expr) tryCatch({ force(expr); NA_character_ }, error = function(e) conditionMessage(e))
+
+check("COV-00", "Without covariates the output is unchanged: same columns, same values, no covariate element",
+  tryCatch({
+    x <- par_set("P5")
+    o <- fit_be_parameter(x, "Var", "parallel", trt_col = "Treat", subj_col = "Subj")
+    o2 <- fit_be_parameter(x, "Var", "parallel", trt_col = "Treat", subj_col = "Subj", covariates = NULL)
+    exp_cols <- c("Parameter", "Test", "Reference", "N_Test", "N_Ref", "Obs_Test", "Obs_Ref", "Scale", "Point_Est",
+                  "CI_Lower", "CI_Upper", "BE_Lower", "BE_Upper", "PE_Constraint", "Bioequivalent", "Missing_Test",
+                  "Missing_Ref", "Zeros_Test", "Zeros_Ref", "Excluded_Test", "Excluded_Ref", "Flagged_Test",
+                  "Flagged_Ref", "Incomplete_Subjects", "MSE", "DF", "Model")
+    r5 <- par_ref[par_ref$dataset == "P5", ]
+    identical(names(o$row), exp_cols) && identical(o, o2) &&
+      identical(names(o), c("row", "anova", "estimate", "reason")) &&
+      is.null(o$estimate$unadjusted) && is.null(o$estimate$covariate_coefs) &&
+      isTRUE(all.equal(c(o$row$CI_Lower, o$row$CI_Upper, o$row$Point_Est), c(r5$pooled_lo, r5$pooled_hi, r5$pe)))
+  }, error = function(e) FALSE),
+  "URS-BE-13, URS-BE-01", critical = TRUE,
+  method = "fit_be_parameter() on P5 with and without covariates = NULL; column set compared with the list of the previous release",
+  expected = "Identical output; the 27 known columns; no unadjusted or coefficient element; interval equal to the published one")
+
+check("COV-01", "Adjusted 90% CI, point estimate, df and MSE match Python statsmodels (numeric, categorical and log covariates)",
+  tryCatch({
+    ok <- TRUE
+    for (k in c("age_sex", "age_weight", "logage")) {
+      b <- switch(k, age_sex = cov_be(cov_dat, data.frame(name = c("age", "sex"), type = c("numeric", "categorical"))),
+                     age_weight = cov_be(cov_dat, cov_sp("age", "weight")),
+                     logage = cov_be(cov_dat, data.frame(name = "age", transform = "log")))
+      e <- cov_fit(b)$estimate; r <- cov_ref[cov_ref$model == k, ]
+      ok <- ok && isTRUE(all.equal(c(e$pe, e$ci_lo, e$ci_hi, e$dfe, e$mse), c(r$pe, r$lo, r$hi, r$df, r$mse), tolerance = 1e-7))
+    }
+    ok
+  }, error = function(e) FALSE),
+  "URS-BE-13", critical = TRUE,
+  method = "60-subject seeded dataset; three models fitted in the app and in statsmodels (tool versions in cov_parallel_reference.csv)",
+  expected = "Estimate, interval, residual df and MSE agree to 7 significant figures")
+
+check("COV-02", "Adjusted interval equals the matrix-algebra solution beta = (X'X)^-1 X'y written without lm()",
+  tryCatch({
+    b <- cov_be(cov_dat, cov_sp("age", "sex", "weight"))
+    e <- cov_fit(b)$estimate
+    d <- b$data; y <- log(d$Var)
+    X <- cbind(1, d$Treat == "T", d$age, d$sex == "M", d$weight)
+    XtXi <- solve(crossprod(X)); beta <- XtXi %*% crossprod(X, y)
+    res <- y - X %*% beta; dfe <- nrow(X) - ncol(X); s2 <- sum(res^2) / dfe
+    ci <- 100 * exp(beta[2] + c(-1, 1) * qt(0.95, dfe) * sqrt(s2 * XtXi[2, 2]))
+    isTRUE(all.equal(c(e$ci_lo, e$ci_hi, e$dfe), c(ci, dfe), tolerance = 1e-9))
+  }, error = function(e) FALSE),
+  "URS-BE-13", critical = TRUE, method = "solve(crossprod(X), crossprod(X, y)) on the same data",
+  expected = "Equal to 9 significant figures")
+
+check("COV-03", "The unadjusted pooled interval beside the adjusted one equals statsmodels without covariates; adjustment narrows the interval here",
+  tryCatch({
+    b <- cov_be(cov_dat, cov_sp("age", "weight")); o <- cov_fit(b)
+    r <- cov_ref[cov_ref$model == "none", ]; u <- o$estimate$unadjusted
+    isTRUE(all.equal(c(u$pe, u$ci_lo, u$ci_hi, u$dfe), c(r$pe, r$lo, r$hi, r$df), tolerance = 1e-7)) &&
+      isTRUE(all.equal(c(o$row$Unadj_Lower, o$row$Unadj_Upper), round(c(u$ci_lo, u$ci_hi), 2))) &&
+      identical(o$row$Adjusted_for, "age, weight") &&
+      (o$estimate$ci_hi - o$estimate$ci_lo) < (u$ci_hi - u$ci_lo)
+  }, error = function(e) FALSE),
+  "URS-BE-13", critical = TRUE, method = "Unadj_Lower/Unadj_Upper and estimate$unadjusted against statsmodels; interval widths",
+  expected = "Unadjusted interval equal to the reference; the row names the covariates; the adjusted interval is narrower for prognostic covariates")
+
+check("COV-04", "The treatment estimate is invariant to centering, rescaling, row order and factor-level order or labels",
+  tryCatch({
+    base <- cov_fit(cov_be(cov_dat, data.frame(name = c("age", "sex"), type = c("numeric", "categorical"))))$estimate
+    key <- function(e) c(e$pe, e$ci_lo, e$ci_hi, e$dfe)
+    d2 <- cov_dat; d2$age <- (d2$age - 42) / 10; d2$sex <- ifelse(d2$sex == "F", "Z_female", "A_male")
+    d3 <- cov_dat[sample(nrow(cov_dat)), ]
+    sp <- data.frame(name = c("age", "sex"), type = c("numeric", "categorical"))
+    e2 <- cov_fit(cov_be(d2, sp))$estimate; e3 <- cov_fit(cov_be(d3, sp))$estimate
+    isTRUE(all.equal(key(base), key(e2), tolerance = 1e-9)) && isTRUE(all.equal(key(base), key(e3), tolerance = 1e-9))
+  }, error = function(e) FALSE),
+  "URS-BE-13", critical = TRUE, method = "Same model on centred and rescaled age, recoded and re-ordered sex levels, shuffled rows",
+  expected = "Same estimate, interval and df to 9 significant figures")
+
+check("COV-05", "A covariate unrelated to the response moves the estimate only slightly and costs one degree of freedom",
+  tryCatch({
+    set.seed(7); d <- cov_dat; d$noise <- rnorm(nrow(d))
+    e0 <- fit_be_parameter(transform(d, Treat = factor(Treat, levels = c("R", "T"))), "Var", "parallel",
+                           trt_col = "Treat", subj_col = "Subject")$estimate
+    e1 <- cov_fit(cov_be(d, cov_sp("noise")))$estimate
+    abs(log(e1$pe / e0$pe)) < 0.05 && e1$dfe == e0$dfe - 1
+  }, error = function(e) FALSE),
+  "URS-BE-13", critical = FALSE, method = "Seeded pure-noise covariate added to the 60-subject dataset",
+  expected = "Point estimate within 5% of the unadjusted one; residual df one lower")
+
+check("COV-06", "Stop conditions in the data: text with a unit, decimal comma, two values for a subject, role column, log of zero, unknown column",
+  tryCatch({
+    d <- cov_dat
+    d$kg <- paste(d$weight, "kg"); d$comma <- sub("\\.", ",", format(d$weight, nsmall = 1)); d$two <- d$age
+    dd <- rbind(d, d[d$Subject == 3, ]); dd$two[nrow(dd)] <- 99
+    d$zero <- d$age - min(d$age)
+    m <- c(kg = cov_stop(be_covariate_prepare(d, cov_cm, cov_sp("kg"))),
+           comma = cov_stop(be_covariate_prepare(d, cov_cm, cov_sp("comma"))),
+           two = cov_stop(be_covariate_prepare(dd, cov_cm, cov_sp("two"))),
+           role = cov_stop(be_covariate_prepare(d, cov_cm, cov_sp("Treat"))),
+           zero = cov_stop(be_covariate_prepare(d, cov_cm, data.frame(name = "zero", transform = "log"))),
+           none = cov_stop(be_covariate_prepare(d, cov_cm, cov_sp("nothere"))))
+    all(!is.na(m)) && grepl("mixes numbers and text", m["kg"]) && grepl("decimal comma", m["comma"]) &&
+      grepl("more than one value for subject", m["two"]) && grepl("another role", m["role"]) &&
+      grepl("no logarithm", m["zero"]) && grepl("not in the data", m["none"])
+  }, error = function(e) FALSE),
+  "URS-BE-13", critical = TRUE, method = "be_covariate_prepare() on data with each fault",
+  expected = "Each fault stops with a plain message naming the column")
+
+check("COV-07", "Stop conditions in the model: missing value (subjects named), constant, equal to treatment, duplicate information, too many, too few subjects, too few residual df",
+  tryCatch({
+    d <- cov_dat; d$const <- 5; d$trtnum <- as.numeric(d$Treat == "T"); d$age2 <- d$age * 2
+    d$miss <- d$weight; d$miss[c(2, 31)] <- NA
+    for (i in 1:5) d[[paste0("z", i)]] <- rnorm(nrow(d))
+    msg <- function(names, dat = d, ...) cov_stop(cov_fit(cov_be(dat, cov_sp(names)), ...))
+    m_miss <- msg("miss")
+    small <- d[d$Subject %in% c(1:8, 31:38), ]
+    few <- d[d$Subject %in% c(1:12, 31:42), ]
+    # Three 6-level categorical covariates use 15 of the 24 df: 7 remain
+    set.seed(11); few$g1 <- sample(rep(1:6, 5), nrow(few), replace = FALSE)[seq_len(nrow(few))]
+    few$g2 <- sample(rep(1:6, 5), nrow(few)); few$g3 <- sample(rep(1:6, 5), nrow(few))
+    m_df <- cov_stop(cov_fit(cov_be(few, data.frame(name = c("g1", "g2", "g3"), type = "categorical"))))
+    c(grepl("no value for 2 subject", m_miss), grepl("2, 31", m_miss),
+      grepl("same value for every subject", msg("const")),
+      grepl("identical to, or fully determined by, the treatment", msg("trtnum")),
+      grepl("same information", msg(c("age", "age2"))),
+      grepl("At most 5", msg(c("age", "weight", paste0("z", 1:5)))),
+      grepl("at least 12 subjects per group", msg("age", small)),
+      grepl("Only 7 residual degrees of freedom", m_df)) |> all()
+  }, error = function(e) FALSE),
+  "URS-BE-13", critical = TRUE, method = "fit_be_parameter() with covariates that break each rule; class be_covariate_error",
+  expected = "Each case stops; the missing-value message lists subjects 2 and 31; nobody is dropped silently")
+
+check("COV-08", "A category with fewer than 3 subjects gives a warning, and only crossover-free designs accept covariates",
+  tryCatch({
+    d <- cov_dat; d$grp <- ifelse(d$Subject %in% c(1, 2), "rare", ifelse(d$age > 42, "hi", "lo"))
+    o <- cov_fit(cov_be(d, data.frame(name = "grp", type = "categorical")))
+    b <- build_be_data(rep_nca(rep_222), rep_222, rep_cm)
+    sp <- data.frame(name = "x", type = "numeric", transform = "none", col = ".cov1")
+    b$data$.cov1 <- 1
+    err <- tryCatch(fit_be_parameter(b$data, "CMAX", "2x2x2", trt_col = b$trt_col, subj_col = b$subj_col,
+                                     per_col = b$per_col, seq_col = b$seq_col, covariates = sp),
+                    error = function(e) e)
+    any(grepl("fewer than 3 subjects", o$warnings)) && inherits(err, "be_covariate_error") &&
+      grepl("parallel-group studies only", conditionMessage(err))
+  }, error = function(e) FALSE),
+  "URS-BE-13", critical = TRUE, method = "Category of two subjects; a 2x2x2 crossover called with a covariate",
+  expected = "Warning on the small category; crossover refused with a plain message")
+
+check("COV-09", "Coefficient table: one row per numeric covariate and per category against its reference, equal to lm()",
+  tryCatch({
+    b <- cov_be(cov_dat, data.frame(name = c("age", "sex"), type = c("numeric", "categorical")))
+    cc <- cov_fit(b)$estimate$covariate_coefs
+    m <- lm(log(Var) ~ Treat + age + sex, cov_dat); s <- summary(m)$coefficients; ci <- confint(m, level = 0.90)
+    identical(cc$Term, c("age", "sex: M vs F")) &&
+      isTRUE(all.equal(cc$Estimate, unname(s[c("age", "sexM"), 1]))) &&
+      isTRUE(all.equal(cc$CI_Lower, unname(ci[c("age", "sexM"), 1]))) &&
+      isTRUE(all.equal(cc$P_Value, unname(s[c("age", "sexM"), 4])))
+  }, error = function(e) FALSE),
+  "URS-BE-13", critical = FALSE, method = "covariate_coefs against summary(lm) and confint(lm)",
+  expected = "Same estimates, 90% limits and p-values, labelled by name and category")
+
+check("COV-10", "Seeded simulation: with a prognostic covariate the 90% interval covers the true ratio about 90% of the time and is narrower",
+  tryCatch({
+    set.seed(20260930); n <- 30; cover <- 0; wa <- wu <- numeric(0); sims <- 500
+    for (s in seq_len(sims)) {
+      d <- data.frame(Subject = 1:(2 * n), Treat = factor(rep(c("R", "T"), each = n), levels = c("R", "T")),
+                      x = rnorm(2 * n))
+      d$Var <- exp(1 + 0.6 * d$x + rnorm(2 * n, 0, 0.25))
+      b <- list(data = d, spec = data.frame(name = "x", type = "numeric", transform = "none", col = "x"))
+      e <- cov_fit(b)$estimate
+      cover <- cover + (e$ci_lo <= 100 && e$ci_hi >= 100)
+      wa <- c(wa, e$ci_hi - e$ci_lo); wu <- c(wu, e$unadjusted$ci_hi - e$unadjusted$ci_lo)
+    }
+    cover / sims > 0.86 && cover / sims < 0.94 && mean(wa) < 0.8 * mean(wu)
+  }, error = function(e) FALSE),
+  "URS-BE-13", critical = FALSE, method = "500 seeded studies, 30 per group, true ratio 1, covariate with slope 0.6",
+  expected = "Coverage between 86% and 94%; adjusted interval at least 20% narrower on average (supportive)")
+
+end_section("COV")
+
+# =============================================================================
 # Post-execution
 # =============================================================================
 cat("\n", paste(rep("=",72),collapse=""), "\n")
@@ -6710,7 +6911,7 @@ if (nrow(cf)>0) {
 }
 
 all_urs <- c(paste0("URS-GEN-0",c(1,3:9)),paste0("URS-DAT-0",1:9),paste0("URS-NCA-",sprintf("%02d",1:15)),
-             paste0("URS-BE-0",1:9),"URS-BE-10","URS-BE-11","URS-BE-12",paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:8),paste0("URS-UI-0",1:5),
+             paste0("URS-BE-0",1:9),"URS-BE-10","URS-BE-11","URS-BE-12","URS-BE-13",paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:8),paste0("URS-UI-0",1:5),
              paste0("URS-VIZ-0",1:9),paste0("URS-GXP-",sprintf("%02d",1:20)))
 covered <- unique(unlist(strsplit(results_df$URS_Ref,",\\s*")))
 # Coverage by executed tests only: a requirement whose only tests are manual
