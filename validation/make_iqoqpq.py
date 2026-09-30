@@ -86,7 +86,9 @@ sections = [("DAT", "Data Handling (OQ)"), ("NCA", "NCA (OQ/PQ)"), ("BE", "Bioeq
             ("DSR", "Data and Statistics Review (OQ/PQ)"),
             ("EXM", "Example Datasets (OQ)"), ("HLF", "Half-Life Quality Flags (OQ/PQ)"),
             ("EXC", "Exclusions with a Reason (OQ/PQ)"), ("ARV", "Adversarial Review of the App (OQ/PQ)"),
-            ("PAR", "Parallel-Group Bioequivalence (OQ/PQ)")]
+            ("PAR", "Parallel-Group Bioequivalence (OQ/PQ)"), ("COV", "Covariate Adjustment (OQ/PQ)"),
+            ("RSA", "FDA Reference-Scaled Bioequivalence (OQ/PQ)"), ("ABL", "EMA Expanding Limits (OQ/PQ)"),
+            ("DOC", "Text Matches the Code (OQ)")]
 known = {s for s, _ in sections} | {"IQ", "MAN"}
 assert {r["Section"] for r in rows} <= known, {r["Section"] for r in rows} - known
 
@@ -115,7 +117,7 @@ fill(man_t, [[r["ID"], r["Test"], r["Method"], r["Expected"], r["URS_Ref"], "", 
 
 src = open("validation/validation.R", encoding="utf-8").read()
 urs_all = (["URS-GEN-01"] + [f"URS-GEN-0{i}" for i in range(3,10)] + [f"URS-DAT-0{i}" for i in range(1,10)] +
-           [f"URS-NCA-{i:02d}" for i in range(1,16)] + [f"URS-BE-{i:02d}" for i in range(1,13)] +
+           [f"URS-NCA-{i:02d}" for i in range(1,16)] + [f"URS-BE-{i:02d}" for i in range(1,16)] +
            [f"URS-PWR-0{i}" for i in range(1,7)] + [f"URS-EXP-0{i}" for i in range(1,9)] +
            [f"URS-UI-0{i}" for i in range(1,6)] + [f"URS-VIZ-0{i}" for i in range(1,10)] +
            [f"URS-GXP-{i:02d}" for i in range(1,21)])

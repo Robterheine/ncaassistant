@@ -1190,6 +1190,18 @@ skip_manual("MAN-51","Exclusions in the app","After MAN-50 on example_be_crossov
 skip_manual("MAN-52","Half-life rules dialog","Batch path: Edit half-life rules, set the span to 5 and Apply; run; open All Parameters and Half-Life Review","The summary line shows the new rule; the Half-Life Flags column and the (flagged) profiles appear; no value changes compared with the default rules","URS-NCA-15")
 skip_manual("MAN-53","Dose per kg","Load example_theoph.csv, keep the Dose column mapped and process; open All Subjects; then choose Wt under Dose per kg: weight column, process again, set Conc unit mg/L and run","First a blue panel that reads the doses as mg per subject and a warning that they look per kg, no green check; with Wt mapped the panel lists amounts (about 320 mg) and CL/F for subject 1 is 1.49 L/h","URS-NCA-09")
 
+skip_manual("MAN-54","Covariates in a parallel-group study (Tutorial 4b)","Load example_be_parallel_covariates.csv; map Subject, Time, Conc, Treatment and Dose (leave Dose per kg empty); Bioequivalence: Parallel groups, open Covariates (optional), choose Weight only; run","A badge reads 1 selected and the line under the box reads Weight : numeric; the line Adjusted for: Weight appears; Cmax 95.04% (90.12-100.22%) with the unadjusted columns 77.76 and 92.12; AUC to last point 98.13% (93.51-102.99%); the balance card shows 68.16 (9.5) and 77.69 (12), standardized difference 0.88","URS-BE-13")
+skip_manual("MAN-55","Covariate stop messages","Upload a copy of the example in which Weight is written as '67.3 kg', one with a decimal comma in Weight, one with two different Age values for subject 5, and one with Age 0 for subject 7 (log transform ticked under Advanced options); choose the column as covariate","Each message appears under the selector before the run, names the column, and the run stops with the same message; no result is shown","URS-BE-13")
+skip_manual("MAN-56","Covariate downloads and record","After MAN-54: Download Complete BE Report (Excel), Download CI Table (CSV) and Generate Analysis Record","The workbook has the sheets BE_Covariates (Weight coefficient -0.0122) and Covariate_Balance; the CSV has Adjusted for and the unadjusted columns; analysis_settings.json lists the covariate with its type and transform","URS-BE-13, URS-EXP-05")
+skip_manual("MAN-57","Acceptance approach selector","Load example_be_replicate_hvd.csv and open the selector; then switch the design to 2x2x3, 2x3x3, 2x2x2 and parallel groups; type 70 as the lower limit with RSABE chosen and click Run","Standard, EMA ABEL and FDA RSABE for 2x2x4 and 2x3x3; Standard and EMA ABEL for 2x2x3 (selection returns to Standard if it was RSABE); no selector for 2x2x2 and parallel groups; the run stops at once with a message to reset the limits to 80 and 125","URS-BE-14, URS-BE-15")
+skip_manual("MAN-58","Reference-scaled analysis with FDA RSABE (Tutorial 4c)","example_be_replicate_hvd.csv, Acceptance approach FDA RSABE, defaults otherwise; run","Cmax: Scaled, s_WR 0.399, limits 70.04-142.78%, criterion bound -0.0446, YES; AUC to last point: Standard, s_WR 0.251, YES; the lines under the table say so in words; the forest plot shows different limits for the two rows","URS-BE-14")
+skip_manual("MAN-59","Reference-scaled analysis with EMA ABEL (Tutorial 4c)","Same file, Acceptance approach EMA ABEL; run; then Standard; run","ABEL: Cmax CVwR 41.5%, limits 73.84-135.43%, 90% CI 77.52-100.69%, YES; AUC limits 80-125%, YES. Standard: Cmax 88.35% (77.52-100.69%), NO","URS-BE-15")
+skip_manual("MAN-60","Fewer than 24 subjects and a missing period","Use a copy of example_be_replicate_hvd.csv with 20 subjects, and one with subject 4 period 2 removed; RSABE","A note that the FDA recommends at least 24 subjects (20 found), still computed; a note that subjects who lack a period are left out of the contrasts","URS-BE-14")
+skip_manual("MAN-61","Record and audit trail of a scaled run","After MAN-58: Download Complete BE Report (Excel) and the Analysis Record; on a controlled test server repeat the run and open the audit trail","A sheet BE_Scaled with the steps; analysis_settings.json with analysis_approach, theta 0.7967 and the switch 0.294; the audit entry of the run names the approach and its constants","URS-BE-14, URS-BE-15, URS-GXP-07")
+skip_manual("MAN-62","Phone width","Set the browser to 375 px wide; repeat MAN-54 and MAN-58","No sideways scrolling of the page; the tables scroll inside their frame","URS-UI-01")
+skip_manual("MAN-63","Help, Methods page and Data Guide","Open the help buttons Which acceptance approach? and Adjusting for baseline characteristics?; the Statistical Methods page (Reference-scaled approaches, examples, references); the Data Guide (Parallel Groups, 2x2x4 replicate, example downloads)","The text matches the settings: RSABE not for 2x2x3, covariates for parallel groups only, 24 subjects, switch 0.294; both new example files download","URS-GEN-03, URS-UI-02")
+skip_manual("MAN-64","Settings that must not stay active unseen","Tick Advanced options, choose a log covariate, untick Advanced options; use RSABE on a replicate study, then load a parallel study and run; untick the point-estimate box with widened limits, reset the limits to 80 and 125 and run ABEL on Cmax with a point estimate outside 80-125%","The advanced choices clear; no warning about an approach on the parallel study; ABEL gives NO because the point estimate is outside 80-125%","URS-BE-13, URS-BE-15")
+
 end_section("MAN")
 
 # =============================================================================
@@ -7549,6 +7561,45 @@ cat("\n", paste(rep("=",72),collapse=""), "\n")
 cat("RESULTS SUMMARY\n")
 cat(paste(rep("=",72),collapse=""), "\n")
 
+# The counts in the documents are the counts of this run (this check included)
+all_urs <- c(paste0("URS-GEN-0",c(1,3:9)),paste0("URS-DAT-0",1:9),paste0("URS-NCA-",sprintf("%02d",1:15)),
+             paste0("URS-BE-0",1:9),"URS-BE-10","URS-BE-11","URS-BE-12","URS-BE-13","URS-BE-14","URS-BE-15",paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:8),paste0("URS-UI-0",1:5),
+             paste0("URS-VIZ-0",1:9),paste0("URS-GXP-",sprintf("%02d",1:20)))
+start_section("DOC")
+check("DOC-05", "The counts in the READMEs, the version history and the protocol equal the counts of this run",
+  tryCatch({
+    rs <- do.call(rbind, results)
+    n_auto <- as.integer(sum(rs$Result != "SKIP") + 1); n_man <- as.integer(sum(rs$Result == "SKIP"))
+    n_crit <- as.integer(sum(rs$Class == "CRITICAL" & rs$Result != "SKIP")); n_supp <- as.integer(sum(rs$Class == "SUPPORTIVE" & rs$Result != "SKIP") + 1)
+    refs <- unique(unlist(strsplit(c(rs$URS_Ref[rs$Result != "SKIP"], "URS-GEN-03"), ",\\s*")))
+    n_auto_urs <- as.integer(length(intersect(all_urs, refs)))
+    rd <- function(f) paste(readLines(f, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+    num <- function(txt, pat) as.integer(regmatches(txt, regexec(pat, txt))[[1]][-1])
+    r1 <- rd("README.md"); r2 <- rd("validation/README.md"); ap <- rd("app.R")
+    zip_txt <- function(f) { td <- tempfile(); dir.create(td); utils::unzip(f, "word/document.xml", exdir = td)
+      gsub("<[^>]+>", "", paste(readLines(file.path(td, "word", "document.xml"), warn = FALSE, encoding = "UTF-8"), collapse = "")) }
+    iq <- zip_txt("validation/NCA_Assistant_IQOQPQ.docx"); urs <- zip_txt("validation/NCA_Assistant_URS.docx")
+    man <- zip_txt("NCA_Assistant_User_Manual_v1.9.docx")
+    ok <- c(
+      identical(num(r1, "executes (\\d+) automated tests \\(plus (\\d+) manual"), c(n_auto, n_man)),
+      identical(num(r2, "runs \\*\\*(\\d+) automated tests\\*\\*"), n_auto),
+      identical(num(r2, "\\*\\*(\\d+) manual tests\\*\\*"), n_man),
+      identical(num(r2, "Total: (\\d+) \\(auto: (\\d+), manual: (\\d+)\\)"), as.integer(c(n_auto + n_man, n_auto, n_man))),
+      identical(num(r2, "PASS: (\\d+) \\| FAIL: 0 \\| ERROR: 0 \\| SKIP: (\\d+)"), c(n_auto, n_man)),
+      identical(num(r2, "Of the (\\d+) automated tests, (\\d+) are CRITICAL and (\\d+) SUPPORTIVE"), c(n_auto, n_crit, n_supp)),
+      identical(num(r2, "URS: (\\d+)/(\\d+) covered \\((\\d+) by automated"), as.integer(c(length(all_urs), length(all_urs), n_auto_urs))),
+      identical(num(ap, "Validation: (\\d+) automated and (\\d+) manual tests"), c(n_auto, n_man)),
+      identical(num(iq, "\\((\\d+) automated, (\\d+) manual\\)"), c(n_auto, n_man)),
+      identical(num(urs, "covers (\\d+) requirements"), as.integer(length(all_urs))),
+      identical(num(man, "test script with (\\d+) automated and (\\d+) manual tests"), c(n_auto, n_man)))
+    if (!all(ok)) cat("  DOC-05 mismatch in items:", which(!ok), "of", length(ok), "- expected auto", n_auto, "manual", n_man, "\n")
+    all(ok)
+  }, error = function(e) { cat("  DOC-05 error:", conditionMessage(e), "\n"); FALSE }),
+  "URS-GEN-03", critical = FALSE,
+  method = "Counts parsed from README.md, validation/README.md, the version history in app.R, the IQ/OQ/PQ protocol, the URS and the manual, against the results list of this run",
+  expected = "Every count equals this run's: automated, manual, critical, supportive, requirements and requirements covered")
+end_section("DOC")
+
 results_df <- do.call(rbind, results)
 for (s in setdiff(names(section_times),"MAN")) cat(sprintf("  %s: %.1f s\n",s,section_times[[s]]))
 
@@ -7567,9 +7618,6 @@ if (nrow(cf)>0) {
   if(n_fail>0) cat(sprintf("  (%d supportive failures need risk assessment)\n",n_fail))
 }
 
-all_urs <- c(paste0("URS-GEN-0",c(1,3:9)),paste0("URS-DAT-0",1:9),paste0("URS-NCA-",sprintf("%02d",1:15)),
-             paste0("URS-BE-0",1:9),"URS-BE-10","URS-BE-11","URS-BE-12","URS-BE-13","URS-BE-14","URS-BE-15",paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:8),paste0("URS-UI-0",1:5),
-             paste0("URS-VIZ-0",1:9),paste0("URS-GXP-",sprintf("%02d",1:20)))
 covered <- unique(unlist(strsplit(results_df$URS_Ref,",\\s*")))
 # Coverage by executed tests only: a requirement whose only tests are manual
 # (SKIP in this run) is reported as such, not as covered by this run
