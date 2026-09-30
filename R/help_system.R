@@ -392,6 +392,22 @@ help_mixed_effects <- info_btn("help_mixed_effects", "Fixed vs. Mixed effects?",
   <br><br>
   <em>Use the model your protocol or statistical analysis plan specifies.</em>")
 
+help_be_covariates <- info_btn("help_be_covariates", "Adjusting for baseline characteristics?",
+  "A <b>covariate</b> is a characteristic of each subject, such as age or weight, that may
+  influence the PK parameter. In a parallel-group study the two groups are different
+  people, so adjusting for such a characteristic can make the comparison more precise.
+  <br><br>
+  Use <b>baseline</b> characteristics only: values known before the first dose. A value
+  measured after dosing can itself be changed by the treatment, and adjusting for it
+  distorts the ratio.
+  <br><br>
+  Choosing the covariates is the declaration. Decide before you look at the results, and
+  state them in the protocol or analysis plan. The adjusted interval is the primary result;
+  the unadjusted interval is shown beside it.
+  <br><br>
+  In a crossover design each subject is compared with themselves, so a characteristic of
+  the subject cancels out and this section is not offered.")
+
 # --- POWER & SAMPLE SIZE ---------------------------------------------------
 
 help_what_is_power <- info_btn("help_what_is_power", "What is power & sample size?",

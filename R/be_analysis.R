@@ -753,6 +753,46 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
 }
 
 
+#' Baseline balance of the covariates between the two groups
+#'
+#' One row per numeric covariate (mean and SD per group) and per category
+#' (n and % per group), with the standardized difference: the difference in
+#' means over the pooled SD, or the difference in proportions over the pooled
+#' binomial SD. It describes the groups; it is not a test, and covariates are
+#' not to be chosen after looking at it. Excluded profiles are left out.
+#' @return data.frame(Covariate, Level, <reference>, <test>, Std_Diff) or NULL
+be_covariate_balance <- function(be_data, spec, trt_col, subj_col) {
+  if (is.null(spec) || nrow(spec) == 0) return(NULL)
+  keep <- if ("EXCLUDED" %in% names(be_data)) is.na(be_data$EXCLUDED) | !nzchar(be_data$EXCLUDED) else rep(TRUE, nrow(be_data))
+  d <- be_data[keep, , drop = FALSE]
+  d <- d[!duplicated(as.character(d[[subj_col]])), , drop = FALSE]
+  lv <- levels(factor(d[[trt_col]])); if (length(lv) != 2) return(NULL)
+  g <- as.character(d[[trt_col]])
+  sd_diff <- function(a, b, den) if (is.finite(den) && den > 0) (a - b) / den else NA_real_
+  rows <- list()
+  for (i in seq_len(nrow(spec))) {
+    v <- d[[spec$col[i]]]
+    if (spec$type[i] == "numeric") {
+      m <- tapply(v, g, mean, na.rm = TRUE)[lv]; sdv <- tapply(v, g, stats::sd, na.rm = TRUE)[lv]
+      rows[[length(rows) + 1]] <- data.frame(Covariate = spec$name[i], Level = NA_character_,
+        A = sprintf("%s (%s)", signif(m[1], 4), signif(sdv[1], 3)), B = sprintf("%s (%s)", signif(m[2], 4), signif(sdv[2], 3)),
+        Std_Diff = sd_diff(m[2], m[1], sqrt((sdv[1]^2 + sdv[2]^2) / 2)), stringsAsFactors = FALSE)
+    } else {
+      for (l in levels(factor(v))) {
+        n <- vapply(lv, function(x) sum(g == x & v %in% l, na.rm = TRUE), numeric(1))
+        tot <- vapply(lv, function(x) sum(g == x & !is.na(v)), numeric(1))
+        p <- n / tot
+        rows[[length(rows) + 1]] <- data.frame(Covariate = spec$name[i], Level = l,
+          A = sprintf("%d (%.0f%%)", n[1], 100 * p[1]), B = sprintf("%d (%.0f%%)", n[2], 100 * p[2]),
+          Std_Diff = sd_diff(p[2], p[1], sqrt((p[1] * (1 - p[1]) + p[2] * (1 - p[2])) / 2)), stringsAsFactors = FALSE)
+      }
+    }
+  }
+  out <- do.call(rbind, rows)
+  names(out)[3:4] <- lv
+  out
+}
+
 #' Coefficients of the covariates in a fitted parallel-group model
 #'
 #' One row per model term (numeric covariate, or category against its

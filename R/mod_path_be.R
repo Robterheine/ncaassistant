@@ -107,6 +107,28 @@ path_be_ui <- function(id) {
                 )
               ),
               
+              # Covariates: parallel groups only
+              conditionalPanel(
+                condition = sprintf("input['%s'] == 'parallel'", ns("be_design")),
+                tags$details(
+                  class = "mb-2",
+                  tags$summary(class = "fw-semibold", "Covariates (optional)"),
+                  tags$div(
+                    class = "pt-2",
+                    selectizeInput(ns("be_covariates"), tagList("Baseline characteristics to adjust for", help_be_covariates),
+                                   choices = NULL, multiple = TRUE, options = list(placeholder = "None")),
+                    tags$p(class = "text-muted small",
+                           "Baseline characteristics only, chosen before you see the results."),
+                    uiOutput(ns("cov_types")),
+                    checkboxInput(ns("cov_advanced"), "Advanced options", FALSE),
+                    conditionalPanel(
+                      condition = sprintf("input['%s'] == true", ns("cov_advanced")),
+                      selectizeInput(ns("cov_categorical"), "Treat as categories (for numeric codes such as 0 and 1)",
+                                     choices = NULL, multiple = TRUE),
+                      selectizeInput(ns("cov_log"), "Use the natural log of", choices = NULL, multiple = TRUE)))
+                )
+              ),
+
               # Shown for every design the planner offers scaled methods for
               conditionalPanel(
                 condition = sprintf("[%s].indexOf(input['%s']) >= 0",
@@ -195,6 +217,7 @@ path_be_ui <- function(id) {
           uiOutput(ns("pauc_note")),
           uiOutput(ns("balance_note")),
           uiOutput(ns("design_summary")),
+          uiOutput(ns("cov_balance")),
           
           navset_card_tab(
             title = "Bioequivalence Results",
@@ -211,6 +234,7 @@ path_be_ui <- function(id) {
                      "with its confidence interval but has no verdict, because it is not a ",
                      "bioequivalence endpoint. A partial AUC marked as supportive is shown the same way. Tmax, and any parameter analysed without ",
                      "log-transformation, is shown as a difference in its own units and has no verdict."),
+              uiOutput(ns("cov_caption")),
               DTOutput(ns("ci_table")),
               uiOutput(ns("sensitivity_ui")),
               tags$p(class = "text-muted small mt-2",
@@ -330,6 +354,46 @@ path_be_server <- function(id, shared) {
       }
     })
     
+    # Covariates: columns of the uploaded data that hold no other role
+    cov_candidates <- reactive({
+      req(shared$data_ready)
+      roles <- unlist(shared$col_map[!vapply(shared$col_map, is.null, logical(1))], use.names = FALSE)
+      setdiff(names(shared$pk_data), roles)
+    })
+    observe({
+      ch <- cov_candidates()
+      updateSelectizeInput(session, "be_covariates", choices = ch, selected = intersect(isolate(input$be_covariates), ch))
+    })
+    observe({
+      sel <- input$be_covariates
+      updateSelectizeInput(session, "cov_categorical", choices = sel, selected = intersect(isolate(input$cov_categorical), sel))
+      updateSelectizeInput(session, "cov_log", choices = sel, selected = intersect(isolate(input$cov_log), sel))
+    })
+    # The covariate specification the inputs describe (parallel groups only)
+    cov_spec_input <- reactive({
+      sel <- input$be_covariates
+      if (!identical(input$be_design, "parallel") || length(sel) == 0) return(NULL)
+      data.frame(name = sel,
+                 type = ifelse(sel %in% input$cov_categorical, "categorical", "auto"),
+                 transform = ifelse(sel %in% input$cov_log, "log", "none"),
+                 stringsAsFactors = FALSE)
+    })
+    # What the app made of each chosen column, and any problem with it, before the run
+    output$cov_types <- renderUI({
+      sp <- cov_spec_input()
+      if (is.null(sp)) return(NULL)
+      cp <- tryCatch(be_covariate_prepare(shared$pk_data, shared$col_map, sp), error = function(e) e)
+      if (inherits(cp, "error"))
+        return(tags$p(class = "text-danger small", icon("triangle-exclamation", class = "me-1"), conditionMessage(cp)))
+      tags$ul(class = "small text-muted ps-3", lapply(seq_len(nrow(cp$spec)), function(i) {
+        v <- cp$values[[cp$spec$col[i]]]
+        tags$li(cp$spec$name[i], ": ",
+                if (cp$spec$type[i] == "numeric") paste0("numeric", if (cp$spec$transform[i] == "log") ", natural log" else "")
+                else paste0("categorical, ", nlevels(v), " groups"),
+                if (anyNA(v)) paste0("; ", sum(is.na(v)), " subject(s) without a value"))
+      }))
+    })
+
     output$data_ok <- reactive({ shared$data_ready })
     outputOptions(output, "data_ok", suspendWhenHidden = FALSE)
     
@@ -417,7 +481,8 @@ path_be_server <- function(id, shared) {
                     input$dose_unit, input$time_unit, input$conc_unit, input$trap_method,
                     input$r2adj_be, input$mw, input$be_design, input$be_reference, input$model_type,
                     input$log_transform, input$ci_level, input$be_lower, input$be_upper,
-                    input$pe_constraint, input$widened_scope, pauc_spec(), lzr())),
+                    input$pe_constraint, input$widened_scope, pauc_spec(), lzr(),
+                    input$be_covariates, input$cov_categorical, input$cov_log)),
       has_result = function() !is.null(be_result()) || !is.null(be_nca_result()),
       clear = function() { be_result(NULL); be_nca_result(NULL); be_run_settings(NULL); balance_result(NULL) },
       id = "be_stale")
@@ -582,8 +647,9 @@ path_be_server <- function(id, shared) {
         
         # Merge with design info: one row per NCA profile (subject x treatment
         # x period), with the Sequence column attached. See build_be_data().
+        cov_in <- cov_spec_input()
         bd <- tryCatch(build_be_data(nca_res, shared$pk_data, cm, reference = input$be_reference,
-                                     exclusions = shared$exclusions),
+                                     exclusions = shared$exclusions, covariates = cov_in),
                        error = function(e) {
                          showNotification(conditionMessage(e), type = "error", duration = NULL)
                          NULL
@@ -681,6 +747,7 @@ path_be_server <- function(id, shared) {
         # -------------------------------------------------------------------
 
         ci_results <- list()
+        cov_coefs <- list(); cov_warns <- character(0)
         welch_results <- list()
         anova_results <- list()
         
@@ -729,9 +796,11 @@ path_be_server <- function(id, shared) {
             pe_constraint = !identical(input$pe_constraint, FALSE),
             widened_scope = widened_scope_value(input$widened_scope),
             diff_unit     = diff_unit_for(param),
-            verdict       = !param %in% supportive)
+            verdict       = !param %in% supportive,
+            covariates    = bd$covariates)
+        cov_stopped <- FALSE
         for (param in params) {
-          fit_out <- fit_be_parameter(
+          fit_out <- tryCatch(fit_be_parameter(
             be_data, param,
             design        = design_used$design,
             model_type    = input$model_type,
@@ -746,7 +815,13 @@ path_be_server <- function(id, shared) {
             pe_constraint = !identical(input$pe_constraint, FALSE),
             widened_scope = widened_scope_value(input$widened_scope),
             diff_unit     = diff_unit_for(param),
-            verdict       = !param %in% supportive)
+            verdict       = !param %in% supportive,
+            covariates    = bd$covariates),
+            be_covariate_error = function(e) {
+              showNotification(conditionMessage(e), type = "error", duration = NULL)
+              NULL
+            })
+          if (is.null(fit_out)) { cov_stopped <- TRUE; break }
           if (!is.na(fit_out$row$Model) && grepl("mixed model failed", fit_out$row$Model)) {
             showNotification(paste0(friendly_name(param), ": the mixed model could not be fitted; ",
                                     "fixed effects were used instead. See the Model column in the downloads."),
@@ -760,7 +835,10 @@ path_be_server <- function(id, shared) {
           if (!is.null(fit_out$anova)) anova_results[[param]] <- fit_out$anova
           ci_results[[param]] <- fit_out$row
           welch_results[[param]] <- fit_out$estimate$welch
+          cov_coefs[[param]] <- fit_out$estimate$covariate_coefs
+          cov_warns <- c(cov_warns, fit_out$warnings)
         }
+        if (cov_stopped) return()
         
         ci_df <- do.call(rbind, ci_results)
         # Parallel groups: the Welch interval next to the pooled one (supplementary)
@@ -782,8 +860,13 @@ path_be_server <- function(id, shared) {
           if (use_data_dose) s0$dose <- suppressWarnings(dose_by_profile(d_unexcl, cm))
           nca0 <- suppressWarnings(run_nca(d_unexcl, cm, s0, lz_overrides = lz_state$overrides_log))
           bd0 <- if (is.null(nca0)) NULL else
-            tryCatch(build_be_data(nca0, d_unexcl, cm, reference = input$be_reference), error = function(e) NULL)
-          if (!is.null(bd0)) sens_df <- do.call(rbind, lapply(params, function(p) fit_one(bd0$data, p)$row))
+            tryCatch(build_be_data(nca0, d_unexcl, cm, reference = input$be_reference, covariates = cov_in), error = function(e) NULL)
+          if (!is.null(bd0)) sens_df <- tryCatch(do.call(rbind, lapply(params, function(p) fit_one(bd0$data, p)$row)),
+                                                 be_covariate_error = function(e) {
+                                                   showNotification(paste0("The sensitivity analysis without your exclusions could not be run with the covariates. ",
+                                                                           conditionMessage(e)), type = "warning", duration = NULL)
+                                                   NULL
+                                                 })
         }
 
         # How many profiles of each treatment rest mainly on BLQ-derived values
@@ -830,7 +913,9 @@ path_be_server <- function(id, shared) {
                                                          parameters = params)))) return()
         be_result(list(ci_table = ci_df, anova = anova_results, cv_table = cv_df, design = design_used$design,
                        sensitivity = sens_df,
-                       m13a = c(be_m13a_checks(d_unexcl, shared$col_map, nca_res,
+                       covariates = bd$covariates, covariate_coefs = cov_coefs,
+                       covariate_balance = be_covariate_balance(be_data, bd$covariates, trt_col_be, subj_col_be),
+                       m13a = c(unique(cov_warns), be_m13a_checks(d_unexcl, shared$col_map, nca_res,
                                                ci_df[ci_df$Parameter %in% setdiff(params, c(supportive, BE_NO_VERDICT_PARAMS)), ],
                                                isTRUE(input$is_ss)),
                                 if (has_excl && !setequal(
@@ -838,7 +923,7 @@ path_be_server <- function(id, shared) {
                                   be_m13a_checks(shared$pk_data, shared$col_map, nca_res, NULL, isTRUE(input$is_ss))))
                                   paste0("These checks use the data before your exclusions; with the exclusions ",
                                          "applied their outcome would differ."),
-                                if (identical(be_design_model(design_used$design), "parallel"))
+                                if (identical(be_design_model(design_used$design), "parallel") && is.null(bd$covariates))
                                   parallel_welch_notes(be_data, setdiff(params, c("TMAX", BE_NO_VERDICT_PARAMS)), trt_col_be,
                                                        input$be_lower, input$be_upper))))
         be_run_settings(list(
@@ -854,6 +939,11 @@ path_be_server <- function(id, shared) {
             pe_constraint     = !identical(input$pe_constraint, FALSE),
             widened_scope     = widened_scope_value(input$widened_scope),
             parameters        = params)))
+        if (!is.null(bd$covariates)) {
+          rs <- be_run_settings()
+          rs$be$covariates <- bd$covariates[, c("name", "type", "transform")]
+          be_run_settings(rs)
+        }
         shared$be_results <- be_result()
         balance_result(balance_info)  # persist for the alert panel
         
@@ -1041,6 +1131,34 @@ path_be_server <- function(id, shared) {
                tags$ul(class = "mb-0", lapply(msgs, tags$li)))
     })
 
+    # Which covariates the primary interval is adjusted for
+    output$cov_caption <- renderUI({
+      cv <- be_result()$covariates
+      if (is.null(cv)) return(NULL)
+      tags$p(class = "fw-semibold small mb-1",
+             paste0("Adjusted for: ", paste(cv$name, collapse = ", "), "."),
+             tags$span(class = "fw-normal text-muted",
+                       " The unadjusted interval is shown beside it."))
+    })
+
+    # Baseline balance of the covariates (collapsed; it describes the groups, it is not a test)
+    output$cov_balance <- renderUI({
+      bal <- be_result()$covariate_balance
+      if (is.null(bal)) return(NULL)
+      fmt <- ifelse(is.na(bal$Std_Diff), "n/a", formatC(bal$Std_Diff, format = "f", digits = 2))
+      tags$details(
+        class = "alert alert-light py-2 small mb-2",
+        tags$summary(class = "fw-semibold", "Group balance on the covariates"),
+        tags$p(class = "text-muted mt-2 mb-1",
+               "Mean (SD) or n (%) per group, and the standardized difference. This describes the groups; ",
+               "it is not a test. Choosing covariates after seeing it is not allowed."),
+        tags$table(class = "table table-sm small mb-0",
+          tags$thead(tags$tr(tags$th("Covariate"), tags$th(names(bal)[3]), tags$th(names(bal)[4]), tags$th("Standardized difference"))),
+          tags$tbody(lapply(seq_len(nrow(bal)), function(i) tags$tr(
+            tags$td(if (is.na(bal$Level[i])) bal$Covariate[i] else paste0(bal$Covariate[i], ": ", bal$Level[i])),
+            tags$td(bal[[3]][i]), tags$td(bal[[4]][i]), tags$td(fmt[i]))))))
+    })
+
     # CI table
     output$ci_table <- renderDT({
       req(be_result())
@@ -1053,9 +1171,14 @@ path_be_server <- function(id, shared) {
       
       # Show only key columns — the rest are in the Excel export
       welch_lab <- paste0("Welch ", run_ci_level(), "% CI ")
+      # With covariates the pair beside the adjusted interval is the unadjusted pooled one;
+      # the Welch interval stays in the downloads
+      unadj_lab <- paste0("Unadjusted ", run_ci_level(), "% CI ")
       key_cols <- intersect(c("PK Parameter", "Comparison", "Scale", "Estimate", paste0(ci_lab, "Lower"),
-                              paste0(ci_lab, "Upper"), paste0(welch_lab, "Lower (suppl.)"),
-                              paste0(welch_lab, "Upper (suppl.)"), "PE within 80\u2013125%", "Bioequivalent?"),
+                              paste0(ci_lab, "Upper"),
+                              if (is.null(be_result()$covariates)) c(paste0(welch_lab, "Lower (suppl.)"), paste0(welch_lab, "Upper (suppl.)"))
+                              else c(paste0(unadj_lab, "Lower (suppl.)"), paste0(unadj_lab, "Upper (suppl.)")),
+                              "PE within 80\u2013125%", "Bioequivalent?"),
                             names(display_ci))
       # Profiles that could not enter a comparison are part of the result
       for (cc in c("Profiles missing (Test)", "Profiles missing (Reference)",
@@ -1072,7 +1195,8 @@ path_be_server <- function(id, shared) {
       
       # Fixed 2 decimal places for ratio and CI columns (regulatory standard)
       num_cols <- intersect(c("Estimate", paste0(ci_lab, "Lower"), paste0(ci_lab, "Upper"),
-                              paste0(welch_lab, "Lower (suppl.)"), paste0(welch_lab, "Upper (suppl.)")),
+                              paste0(welch_lab, "Lower (suppl.)"), paste0(welch_lab, "Upper (suppl.)"),
+                              paste0(unadj_lab, "Lower (suppl.)"), paste0(unadj_lab, "Upper (suppl.)")),
                             names(display_ci))
       dt <- datatable(display_ci,
                 options = list(scrollX = TRUE, dom = "t", ordering = FALSE),

@@ -6312,7 +6312,7 @@ check("EXC-07", "The ICH M13A checks use the data before exclusions, so excludin
     m_all <- be_m13a_checks(without, exc_cm, r, NULL); m_ex <- be_m13a_checks(with_ex, exc_cm, r, NULL)
     be <- paste(readLines("R/mod_path_be.R"), collapse = "\n")
     any(grepl("Pre-dose concentration above 5% of Cmax", m_all)) && !any(grepl("Pre-dose concentration above 5% of Cmax", m_ex)) &&
-      grepl("m13a = c(be_m13a_checks(d_unexcl,", be, fixed = TRUE) &&
+      grepl("be_m13a_checks(d_unexcl, shared$col_map, nca_res,", be, fixed = TRUE) &&
       grepl("data_without_exclusions(shared)", be, fixed = TRUE)
   }, error = function(e) FALSE),
   "URS-BE-11, URS-DAT-09", critical = TRUE,
@@ -6330,7 +6330,7 @@ check("EXC-08", "A sensitivity analysis without the exclusions is computed, show
     create_analysis_record(zf, r, exc_st(), exc_cm, f, "crossover.csv", blq_rule = "rule1", lloq = 0,
                            be_results = list(ci_table = ci, sensitivity = ci), be_settings = list(ci_level = 90))
     utils::unzip(zf, exdir = td)
-    grepl("sens_df <- do.call(rbind, lapply(params, function(p) fit_one(bd0$data, p)$row))", be, fixed = TRUE) &&
+    grepl("sens_df <- tryCatch(do.call(rbind, lapply(params, function(p) fit_one(bd0$data, p)$row)),", be, fixed = TRUE) &&
       grepl("sensitivity = sens_df", be, fixed = TRUE) && grepl("Sensitivity analysis: without your exclusions", be, fixed = TRUE) &&
       "BE_Without_Exclusions" %in% openxlsx::getSheetNames(file.path(td, "results.xlsx"))
   }, error = function(e) FALSE),
@@ -6882,6 +6882,25 @@ check("COV-10", "Seeded simulation: with a prognostic covariate the 90% interval
   }, error = function(e) FALSE),
   "URS-BE-13", critical = FALSE, method = "500 seeded studies, 30 per group, true ratio 1, covariate with slope 0.6",
   expected = "Coverage between 86% and 94%; adjusted interval at least 20% narrower on average (supportive)")
+
+check("COV-11", "Group balance: means, SDs, category shares and standardized differences match a direct computation; excluded profiles are left out",
+  tryCatch({
+    b <- cov_be(cov_dat, data.frame(name = c("age", "sex"), type = c("numeric", "categorical")))
+    bal <- be_covariate_balance(b$data, b$spec, "Treat", "Subject")
+    r <- cov_dat$Treat == "R"; t <- !r
+    sdp <- sqrt((sd(cov_dat$age[r])^2 + sd(cov_dat$age[t])^2) / 2)
+    pm <- c(mean(cov_dat$sex[r] == "M"), mean(cov_dat$sex[t] == "M"))
+    sdm <- (pm[2] - pm[1]) / sqrt((pm[1] * (1 - pm[1]) + pm[2] * (1 - pm[2])) / 2)
+    b$data$EXCLUDED <- NA_character_; b$data$EXCLUDED[b$data$Subject == 1] <- "Vomiting"
+    bal2 <- be_covariate_balance(b$data, b$spec, "Treat", "Subject")
+    identical(names(bal)[3:4], c("R", "T")) && identical(bal$Level, c(NA, "F", "M")) &&
+      isTRUE(all.equal(bal$Std_Diff[bal$Covariate == "age"], (mean(cov_dat$age[t]) - mean(cov_dat$age[r])) / sdp)) &&
+      isTRUE(all.equal(bal$Std_Diff[bal$Level %in% "M"], sdm)) &&
+      identical(bal$R[bal$Covariate == "age"], sprintf("%s (%s)", signif(mean(cov_dat$age[r]), 4), signif(sd(cov_dat$age[r]), 3))) &&
+      !identical(bal$R, bal2$R) && is.null(be_covariate_balance(b$data, NULL, "Treat", "Subject"))
+  }, error = function(e) FALSE),
+  "URS-BE-13", critical = FALSE, method = "be_covariate_balance() against mean(), sd() and proportions; one profile marked excluded",
+  expected = "Same values; the excluded subject leaves the summary; NULL without covariates")
 
 end_section("COV")
 
