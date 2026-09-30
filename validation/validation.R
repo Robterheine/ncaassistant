@@ -7591,12 +7591,15 @@ check("DOC-05", "The counts in the READMEs, the version history and the protocol
       identical(num(ap, "Validation: (\\d+) automated and (\\d+) manual tests"), c(n_auto, n_man)),
       identical(num(iq, "\\((\\d+) automated, (\\d+) manual\\)"), c(n_auto, n_man)),
       identical(num(urs, "covers (\\d+) requirements"), as.integer(length(all_urs))),
-      identical(num(man, "test script with (\\d+) automated and (\\d+) manual tests"), c(n_auto, n_man)))
+      identical(num(man, "test script with (\\d+) automated and (\\d+) manual tests"), c(n_auto, n_man)),
+      identical(num(r1, "(\\d+) requirements across 9 categories"), as.integer(length(all_urs))),
+      identical(num(r2, "(\\d+) requirements across 9 categories"), as.integer(length(all_urs))),
+      identical(num(r1, "`R/`\\]\\(R/\\) \\| (\\d+) files"), as.integer(length(list.files("R", "\\.R$")))))
     if (!all(ok)) cat("  DOC-05 mismatch in items:", which(!ok), "of", length(ok), "- expected auto", n_auto, "manual", n_man, "\n")
     all(ok)
   }, error = function(e) { cat("  DOC-05 error:", conditionMessage(e), "\n"); FALSE }),
   "URS-GEN-03", critical = FALSE,
-  method = "Counts parsed from README.md, validation/README.md, the version history in app.R, the IQ/OQ/PQ protocol, the URS and the manual, against the results list of this run",
+  method = "Counts parsed from README.md, validation/README.md, the version history in app.R, the IQ/OQ/PQ protocol, the URS, the manual, and the requirement and file counts in the READMEs, against the results list of this run",
   expected = "Every count equals this run's: automated, manual, critical, supportive, requirements and requirements covered")
 end_section("DOC")
 
