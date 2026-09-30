@@ -520,7 +520,9 @@ data_guide_ui <- function() {
           tags$strong("In the app: "),
           "select '2×2×3 full replicate' or '2×3×3 partial replicate'. Besides the ",
           "average bioequivalence result, the app shows the within-subject variability of the Reference ",
-          "(and of Test when it was given twice) for information. It does not give a scaled verdict."
+          "(and of Test when it was given twice) for information. Under Acceptance approach you can choose ",
+          "EMA ABEL (both designs) or FDA RSABE (2×3×3 only: the FDA text has no steps for the 2×2×3 design). ",
+          "Choose before you look at the results, and state the choice in the protocol."
         ),
         checklist(c(
           "Columns as for a 2×2 crossover",
@@ -555,10 +557,10 @@ data_guide_ui <- function() {
         tags$div(
           class = "alert alert-info py-2 small",
           tags$strong("In the app: "),
-          "select '2×2×4 full replicate'. The app reports average bioequivalence and, for ",
+          "select '2×2×4 full replicate'. The app reports average bioequivalence by default and, for ",
           "information, the within-subject variability of Test and Reference with the EMA widened limits ",
-          "they would imply. It does not perform a reference-scaled (ABEL or RSABE) analysis. ",
-          "Download example_be_replicate_2x2x4.csv above to try it."
+          "they would imply. Under Acceptance approach you can choose EMA ABEL or FDA RSABE; the protocol ",
+          "states the choice before the study. Download example_be_replicate_2x2x4.csv above to try it."
         ),
         checklist(c(
           "Columns as for a 2×2 crossover",
@@ -580,7 +582,8 @@ data_guide_ui <- function() {
         tags$h6(class = "fw-semibold", "What you need"),
         tags$p(class = "small",
                "Four columns: Subject, Treatment, Time and Concentration. No Period or Sequence. ",
-               "Subject IDs must be unique across both groups."),
+               "Subject IDs must be unique across both groups. Baseline characteristics can be added as extra ",
+               "columns (see the covariates note below)."),
         ex_table(data.frame(
           Subject   = c("S01","S01","S01","S02","S02","S02","S03","S03","S03","S04","S04","S04"),
           Treatment = c(rep("Test", 6), rep("Reference", 6)),
@@ -594,12 +597,22 @@ data_guide_ui <- function() {
           "A parallel study therefore needs more subjects than a crossover for the same power. ",
           "In the app, select 'Parallel groups'."
         ),
+        tags$div(
+          class = "alert alert-info py-2 small",
+          tags$strong("Covariates (optional): "),
+          "add columns such as Age, Weight or Sex, with the same value in every row of a subject, measured ",
+          "before the first dose. In the app, choose them under Covariates before you run. Decide which ones ",
+          "before you see the results. The analysis needs at least 12 subjects per group, and a missing value ",
+          "stops the run with the subjects named. Text such as '72 kg' or a decimal comma in a numeric column ",
+          "is refused: keep the number only and write the unit in the column name."
+        ),
         checklist(c(
           "Each subject appears under one treatment only",
           "Treatment column with two values",
           "No Period or Sequence column needed",
           "Unique subject IDs across groups",
-          "Dose column if doses differ between subjects"
+          "Dose column if doses differ between subjects",
+          "Covariate columns (optional): one value per subject, known before dosing"
         ))
       ),
 

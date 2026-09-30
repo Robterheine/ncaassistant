@@ -732,9 +732,7 @@ server <- function(input, output, session) {
         card_body(
           tags$p(class = "text-muted small",
                  "Designs offered by Plan a Study and accepted by Bioequivalence Testing. ",
-                 "Scaled methods (ABEL, RSABE, NTID) are available for planning only: the ",
-                 "analysis reports within-subject variability for replicate designs but ",
-                 "never a scaled bioequivalence verdict."),
+                 BE_SCOPE_STATEMENT),
           tags$table(
             class = "table table-sm table-hover small",
             tags$thead(class = "table-light", tags$tr(
@@ -843,9 +841,8 @@ server <- function(input, output, session) {
                         "doi:10.1208/s12248-026-01316-w")),
           tags$h6(class = "fw-bold mt-3", "Intended use"),
           tags$p(class = "small",
-                 "NCA Assistant is for pharmacokineticists doing non-compartmental analysis, average ",
-                 "bioequivalence testing and study planning. It gives no reference-scaled bioequivalence ",
-                 "verdict (ABEL, RSABE). On the public app and in a standard installation it has no audit trail, ",
+                 "NCA Assistant is for pharmacokineticists doing non-compartmental analysis, bioequivalence ",
+                 "testing and study planning. ", BE_SCOPE_STATEMENT, " On the public app and in a standard installation it has no audit trail, ",
                  "electronic signature or access control; a controlled installation adds them (see the user manual). ",
                  "The public instance on shinyapps.io is for evaluation and training, with synthetic or ",
                  "pseudonymised data. For regulated work, install a tagged release on your own system and ",

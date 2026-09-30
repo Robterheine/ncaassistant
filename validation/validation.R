@@ -7354,6 +7354,90 @@ check("ABL-04", "Sensitivity after an exclusion works for both approaches: the p
 end_section("ABL")
 
 # =============================================================================
+# SECTION DOC: The statistics text says what the code does
+# =============================================================================
+# The Statistical Methods page, the help topics and the scope statement are
+# checked against the code they describe: constants, limits, references, the
+# wording of the scope in every copy, and stale sentences that must be gone.
+start_section("DOC")
+
+doc_methods <- function() {
+  suppressPackageStartupMessages({ library(shiny); library(bslib) })
+  source("R/mod_methods.R", local = TRUE)
+  h <- htmltools::renderTags(methods_ui())$html
+  gsub("\\s+", " ", htmltools::htmlEscape(gsub("<[^>]+>", "", h), attribute = FALSE))
+}
+doc_rd <- function(f) paste(readLines(f, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+doc_em <- intToUtf8(8212)
+
+check("DOC-01", "One scope statement everywhere: the registry sentence appears in the intended-use text, the design card, the Methods page and the README; the old sentences are gone",
+  tryCatch({
+    m <- doc_methods(); app <- doc_rd("app.R"); rd <- doc_rd("README.md")
+    scope <- BE_SCOPE_STATEMENT
+    stale <- c("gives no reference-scaled bioequivalence", "It does not scale limits", "This application does not scale limits",
+               "does not perform a reference-scaled", "never a scaled bioequivalence verdict", "not reference-scaled (ABEL, RSABE) or NTID analyses",
+               "This app does not calculate scaled limits", "This application performs Average Bioequivalence (ABE) only",
+               "shown but not applied", "but were not applied in this analysis")
+    all_txt <- paste(doc_rd("app.R"), doc_rd("README.md"), doc_rd("R/mod_methods.R"), doc_rd("R/mod_data_guide.R"),
+                     doc_rd("R/help_system.R"), doc_rd("R/mod_path_be.R"), doc_rd("R/be_analysis.R"))
+    grepl("Average bioequivalence for every design, plus EMA ABEL and FDA RSABE for replicate designs.", scope, fixed = TRUE) &&
+      grepl("for planning only", scope, fixed = TRUE) &&
+      grepl("BE_SCOPE_STATEMENT", app, fixed = TRUE) && length(gregexpr("BE_SCOPE_STATEMENT", app, fixed = TRUE)[[1]]) >= 2 &&
+      grepl(scope, gsub("\\s+", " ", m), fixed = TRUE) && grepl(scope, rd, fixed = TRUE) &&
+      !any(vapply(stale, function(x) grepl(x, all_txt, fixed = TRUE), logical(1)))
+  }, error = function(e) FALSE),
+  "URS-GEN-07, URS-BE-14, URS-BE-15", critical = TRUE,
+  method = "BE_SCOPE_STATEMENT in R/designs.R against app.R, the rendered Methods page and README.md; search for the sentences it replaced",
+  expected = "The same sentence in every copy; none of the old sentences left in the app text")
+
+check("DOC-02", "The Methods page states the constants and limits the code uses, and cites the sources",
+  tryCatch({
+    m <- doc_methods()
+    has <- function(x) grepl(x, m, fixed = TRUE, useBytes = TRUE)
+    abel50 <- sprintf("%.2f–%.2f%%", abel_limits(50)[1], abel_limits(50)[2])
+    has(sprintf("%.4f", RSABE_THETA)) && has(as.character(RSABE_SWITCH)) && has(abel50) &&
+      has("0.760") && has("0.25") && has("at least 24 evaluable subjects") && RSABE_MIN_SUBJECTS == 24L &&
+      has("Reference-scaled approaches (EMA ABEL and FDA RSABE)") && has("s wR (EMA model)") && has("s WR (FDA contrasts)") &&
+      has("Route column") && has("Davit BM") && has("Howe WG") && has("Tsiatis AA") && has("Tothfalusi L") &&
+      has("Appendix G") && has("section 4.1.10") && has("Parallel-group study with baseline covariates") &&
+      has("Bioequivalence with expanding limits (EMA ABEL)") && has("Reference-scaled bioequivalence (FDA RSABE)") &&
+      has("fewer than 12 subjects per group") && has("N − 2 − p residual degrees of freedom") &&
+      has("2×2×3 design supports EMA ABEL only")
+  }, error = function(e) FALSE),
+  "URS-GEN-03, URS-BE-14, URS-BE-15", critical = FALSE,
+  method = "Rendered Methods page searched for the constants of R/be_scaled.R (theta, switch, 24 subjects), abel_limits(50) and the references",
+  expected = "Every constant and limit in the text equals the code's; the sections, examples and references are present")
+
+check("DOC-03", "No em dashes in the rendered Methods page, and the two sections of the s_WR estimators are labelled apart",
+  tryCatch({
+    m <- doc_methods()
+    !grepl(doc_em, m, fixed = TRUE, useBytes = TRUE) && !grepl("\\u2014", doc_rd("R/mod_methods.R"), fixed = TRUE) &&
+      !grepl(doc_em, doc_rd("R/mod_data_guide.R"), fixed = TRUE, useBytes = TRUE) &&
+      grepl("(EMA model)", m, fixed = TRUE, useBytes = TRUE) && grepl("(FDA contrasts)", m, fixed = TRUE, useBytes = TRUE)
+  }, error = function(e) FALSE),
+  "URS-GEN-03", critical = FALSE, method = "Rendered Methods page and the source of the Data Guide searched for the em dash",
+  expected = "None left; both s_WR estimators named")
+
+check("DOC-04", "Help, Data Guide and design table describe the same options: approach help, covariate help, per-design approaches, covariate columns",
+  tryCatch({
+    h <- doc_rd("R/help_system.R"); g <- doc_rd("R/mod_data_guide.R")
+    grepl('help_be_approach <- info_btn("help_be_approach"', h, fixed = TRUE) &&
+      grepl('help_be_covariates <- info_btn("help_be_covariates"', h, fixed = TRUE) &&
+      grepl("Acceptance approach", h, fixed = TRUE) && grepl("0.294", h, fixed = TRUE) && grepl("69.84 to 143.19%", h, fixed = TRUE) &&
+      grepl("RSABE for\n  2x3x3 and 2x2x4 only", h, fixed = TRUE) &&
+      grepl("Covariates (optional)", g, fixed = TRUE) && grepl("at least 12 subjects per group", g, fixed = TRUE) &&
+      grepl("EMA ABEL (both designs) or FDA RSABE (2×3×3 only", g, fixed = TRUE, useBytes = TRUE) &&
+      all(grepl("ABEL|ABE", BE_DESIGNS$analysis_note[BE_DESIGNS$code %in% c("2x2x3", "2x3x3", "2x2x4")])) &&
+      grepl("RSABE", BE_DESIGNS$analysis_note[BE_DESIGNS$code == "2x3x3"]) && !grepl("RSABE", BE_DESIGNS$analysis_note[BE_DESIGNS$code == "2x2x3"]) &&
+      identical(unname(be_approach_choices("2x2x3")), c("standard", "abel")) &&
+      grepl("covariates", BE_DESIGNS$analysis_note[BE_DESIGNS$code == "parallel"])
+  }, error = function(e) FALSE),
+  "URS-BE-13, URS-BE-14, URS-BE-15", critical = FALSE, method = "Text of the help topics, the Data Guide and the design registry against be_approach_choices()",
+  expected = "Help and guide say what the selector offers: RSABE not for 2x2x3, covariates for parallel groups only")
+
+end_section("DOC")
+
+# =============================================================================
 # Post-execution
 # =============================================================================
 cat("\n", paste(rep("=",72),collapse=""), "\n")

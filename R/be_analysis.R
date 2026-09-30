@@ -941,7 +941,7 @@ abel_limits <- function(cv_pct) {
 #'
 #' Reports the reference's within-subject variability (swR, CVwR), the test's
 #' where the test was also replicated, their ratio, and the ABEL limits those
-#' values would imply. It does not issue a scaled bioequivalence verdict.
+#' values would imply. It does not issue a scaled bioequivalence verdict: the assessment is be_assess_parameter() in R/be_scaled.R.
 #'
 #' @return one-row data frame, or NULL when the reference is not replicated
 be_variability_diagnostic <- function(be_data, param, trt_col, subj_col,

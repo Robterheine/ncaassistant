@@ -313,7 +313,10 @@ help_what_is_be <- info_btn("help_what_is_be", "What is bioequivalence?",
   <li>Calculate the ratio (Test/Reference) and its 90% confidence interval</li>
   <li>If the 90% CI falls within <b>80% to 125%</b>, the formulations are bioequivalent</li>
   </ol>
-  This is required by regulatory agencies (FDA, EMA) for generic drug approval.")
+  This is required by regulatory agencies (FDA, EMA) for generic drug approval.
+  <br><br>
+  For highly variable drugs a replicate design and a reference-scaled approach (EMA ABEL or
+  FDA RSABE) can be used instead of fixed limits.")
 
 help_log_transform <- info_btn("help_log_transform", "Why log-transform?",
   "PK parameters like Cmax and AUC follow a <b>log-normal distribution</b> — 
@@ -335,6 +338,9 @@ help_ci_level <- info_btn("help_ci_level", "Why 90% and not 95%?",
   5% significance level. The 90% CI for the ratio is mathematically equivalent 
   to two one-sided tests each at α = 0.05.
   <br><br>
+  The FDA scaled method (RSABE) also works with a one-sided 95% upper bound for its
+  scaled criterion. The app handles that itself; the slider sets the interval for the ratio.
+  <br><br>
   <em>Always use 90% for standard bioequivalence. Only change this if your 
   regulatory guidance specifies otherwise.</em>")
 
@@ -346,13 +352,16 @@ help_be_limits <- info_btn("help_be_limits", "What are the BE limits?",
   considered bioequivalent.
   <br><br>
   <b>Narrow therapeutic index drugs</b> (e.g., warfarin, cyclosporine): the EMA 
-  uses tighter limits of <b>90.00% to 111.11%</b>; the FDA uses a reference-scaled method.
+  uses tighter limits of <b>90.00% to 111.11%</b>; the FDA uses a reference-scaled method
+  (available in Plan a Study only).
   <br><br>
   <b>Highly variable drugs</b> (within-subject CV of the Reference above 30%) may use wider limits under 
   scaled approaches (ABEL, RSABE). Those approaches also require the
   <b>point estimate</b> to lie within 80–125%. When you enter limits wider
-  than 80–125%, the app applies that constraint by default. This app does not
-  calculate scaled limits; they must come from your protocol.
+  than 80–125%, the app applies that constraint by default. Limits you enter yourself
+  must come from your protocol. For a replicate design you can instead choose EMA ABEL or
+  FDA RSABE under <i>Acceptance approach</i>: the app then computes the widened limits (ABEL) or
+  applies the scaled criterion (RSABE) from your data.
   <br><br>
   Under the EMA guideline wider limits apply to <b>Cmax only</b>; AUC is still judged
   against 80–125%. The app does the same unless you choose <i>All compared metrics</i>,
@@ -372,7 +381,9 @@ help_be_design <- info_btn("help_be_design", "What design is my study?",
   <b>Replicate designs</b>: a subject receives a treatment more than once. 
   2×2×4 (TRTR | RTRT) and 2×2×3 (TRT | RTR) are full replicates; 2×3×3 
   (TRR | RTR | RRT) is a partial replicate, where only the Reference is repeated. 
-  Used for highly variable drugs.
+  Used for highly variable drugs, where EMA ABEL or FDA RSABE can be chosen.
+  <br><br>
+  In a parallel design you can also adjust for baseline characteristics such as age or weight.
   <br><br>
   <b>Paired comparison</b>: all subjects received the treatments in the same 
   order. Period and treatment cannot be separated, so no bioequivalence 
@@ -463,12 +474,14 @@ help_cv_wr <- info_btn("help_cv_wr", "What is the Reference CV?",
   you need the within-subject variability of the <b>Reference product specifically</b>.
   <br><br>
   This comes from a replicate design study where the Reference is given twice, 
-  allowing its variability to be estimated separately from the Test.
+  allowing its variability to be estimated separately from the Test. The Bioequivalence
+  Testing path shows it as CVwR (EMA model) for information; the FDA method estimates the
+  Reference SD differently, from the two Reference administrations of each subject.
   <br><br>
   <b>If you only have one CV estimate</b> (e.g., from a standard 2-period study), 
   enter the same value here as above. This assumes Test and Reference are equally variable.
   <br><br>
-  <b>Enter as a percentage</b> — for example, type <b>35</b> for 35%.")
+  <b>Enter as a percentage</b>: for example, type <b>35</b> for 35%.")
 
 help_theta0 <- info_btn("help_theta0", "What is the expected T/R ratio?",
   "<b>T/R ratio</b> is your best guess for how similar the Test and Reference 

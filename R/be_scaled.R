@@ -13,7 +13,7 @@
 # Both build on fit_be_parameter(): the standard route is that fit.
 
 RSABE_SIGMA_W0 <- 0.25                                  # FDA regulatory constant
-RSABE_THETA    <- (log(1.25) / RSABE_SIGMA_W0)^2         # 0.7966
+RSABE_THETA    <- (log(1.25) / RSABE_SIGMA_W0)^2         # 0.7967
 RSABE_SWITCH   <- 0.294                                 # s_WR at which scaling starts
 RSABE_MIN_SUBJECTS <- 24L                               # FDA recommendation
 

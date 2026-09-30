@@ -188,8 +188,9 @@ path_be_ui <- function(id) {
                 tags$div(
                   class = "alert alert-warning py-2 small mb-2",
                   icon("triangle-exclamation", class = "me-1"),
-                  "Widened limits must be pre-specified in the protocol. This app does not ",
-                  "derive them or check them against CV", tags$sub("wR"), ". Reference-scaled ",
+                  "Widened limits must be pre-specified in the protocol. When you enter them here, the app does not ",
+                  "derive them or check them against CV", tags$sub("wR"), ". For a replicate design, ",
+                  "choose EMA ABEL under Acceptance approach and the app derives the limits itself. Reference-scaled ",
                   "methods (ABEL, RSABE) require the point-estimate constraint; untick it only ",
                   "for comparisons that have none, such as drug-interaction no-effect boundaries."
                 )

@@ -12,6 +12,12 @@
 # plan_*          offered by Plan a Study for ABE / ABEL+RSABE / FDA NTID
 # verdict         the analysis issues a bioequivalence verdict
 
+# The one wording of what the analysis does. app.R (intended use, design card),
+# the Statistical Methods page and the README use it; a validation test compares
+# the copies (README.md is static text and must match it exactly).
+BE_SCOPE_STATEMENT <- paste0("Average bioequivalence for every design, plus EMA ABEL and FDA RSABE for replicate designs. ",
+                             "The FDA scaled test for narrow therapeutic index drugs is for planning only.")
+
 BE_DESIGNS <- data.frame(
   code           = c("2x2x2", "2x2x3", "2x3x3", "2x2x4", "parallel", "paired"),
   label          = c("2×2 standard crossover (TR | RT)",
@@ -30,10 +36,10 @@ BE_DESIGNS <- data.frame(
   plan_ntid      = c(FALSE, FALSE, FALSE, TRUE, FALSE, FALSE),
   verdict        = c(TRUE, TRUE, TRUE, TRUE, TRUE, FALSE),
   analysis_note  = c("Standard ABE, EMA Method A model.",
-                     "ABE with the same model as 2×2×3; CVwR and CVwT reported (informational).",
-                     "ABE; CVwR reported, CVwT not estimable (test given once).",
-                     "ABE; CVwR and CVwT reported (informational).",
-                     "ABE, one-way model on treatment.",
+                     "ABE (EMA Method A model) or EMA ABEL; CVwR and CVwT reported.",
+                     "ABE, EMA ABEL or FDA RSABE; CVwR reported, CVwT not estimable (test given once).",
+                     "ABE, EMA ABEL or FDA RSABE; CVwR and CVwT reported.",
+                     "ABE, one-way model on treatment, with optional baseline covariates.",
                      "Ratio and CI only; period and treatment are confounded, so no verdict."),
   stringsAsFactors = FALSE
 )
