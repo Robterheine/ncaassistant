@@ -23,15 +23,8 @@ Observation (not a defect): a typed acceptance limit stays in the field when new
 
 ## Repeated at the owner's request
 
-MAN-54, MAN-58, MAN-59 and MAN-61 were run a second time by the agent on 30 September 2026, in the browser pane with the owner's session open, from the same commit, following the tutorial steps. Every number above came out the same. MAN-61 on the local training server added audit entries 9 to 13; the last analysis entry carries FDA RSABE, theta 0.7967 and the switch 0.294, and the chain of 13 entries is intact. The initials below remain the owner's: a repeat by the agent does not replace them.
+MAN-54, MAN-58, MAN-59 and MAN-61 were run a second time by the agent on 30 September 2026, in the browser pane with the owner's session open, from the same commit, following the tutorial steps. Every number above came out the same. MAN-61 on the local training server added audit entries 9 to 13; the last analysis entry carries FDA RSABE, theta 0.7967 and the switch 0.294, and the chain of 13 entries is intact.
 
-## Critical tests for the product owner
+## Decision of the product owner
 
-The product owner runs these four personally and initials them (decision 7 of the plan):
-
-| ID | What to do | Initials and date |
-|---|---|---|
-| MAN-54 | Tutorial 4b with the covariate Weight | |
-| MAN-58 | Tutorial 4c with FDA RSABE | |
-| MAN-59 | Tutorial 4c with EMA ABEL and with the standard approach | |
-| MAN-61 | The record and the audit trail of the RSABE run, on your own controlled test server | |
+On 30 September 2026 the product owner decided that running the four critical tests personally, and initialling them, is not required for this release, and that the cold-read test of Tutorials 4b and 4c by two pharmacokineticists is not carried out. The plan had asked for both (decision 7). The tests above therefore rest on the agent's execution alone, and an agent is not an independent tester.

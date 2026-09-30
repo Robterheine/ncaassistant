@@ -72,7 +72,7 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **584 automated tests** in thirty-two sections, each mapped to a URS requirement:
+The script runs **585 automated tests** in thirty-two sections, each mapped to a URS requirement:
 
 | Section | Code | Tests | Tests cover |
 |---------|------|------:|-------------|
@@ -107,11 +107,11 @@ The script runs **584 automated tests** in thirty-two sections, each mapped to a
 | Covariate adjustment | COV | 16 | The parallel-group model with baseline covariates against Python statsmodels and matrix algebra, invariance to centering, rescaling, row order and level order, no change without covariates, every stop rule, the coefficient table, a seeded type I error and precision simulation, the group balance, the record, the audit event and the planner offer |
 | FDA reference-scaled bioequivalence | RSA | 14 | Appendix G of the FDA guidance against two independent implementations (Python and R) on 13 replicateBE data sets, consistency with `PowerTOST::power.RSABE`, the switch at 0.294 and the point-estimate limits, complete cases, refused input, the assessment wrapper, the explanation lines, notes, record and audit, module wiring, and the fixes of the code review and the interface audit |
 | EMA expanding limits | ABL | 4 | ABEL verdict, limits and sWR against `replicateBE::method.A` on its 30 reference data sets, widening for Cmax only with the cap at CVwR 50%, design rules and the point-estimate condition, exclusions |
-| Text matches the code | DOC | 5 | The scope statement in every copy, the constants, limits and references on the Statistical Methods page, no em dashes, help and Data Guide against the approach selector, and the counts in the READMEs, the version history, the protocol and the URS against this run |
+| Text matches the code | DOC | 6 | The scope statement in every copy, the constants, limits and references on the Statistical Methods page, no em dashes, help and Data Guide against the approach selector, the requirement IDs of the URS document against the list behind the coverage line, and the counts in the READMEs, the version history, the protocol, the URS and the manual against this run |
 
 In addition, **77 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload (flat and CDISC ADNCA), column mapping, interlock messages, the half-life review and minimum-R² note, choosing the Reference treatment, the replicate variability table, planning with both CVs, CDISC parameter codes, partial AUC intervals in the batch and bioequivalence paths (including an invalid interval, a suppressed metric and the shaded figure), the Complete Analysis Record download and its reproduction check, the Visualize Figure Record, loading and downloading an example, exclusions in the app (including download and loading back), the half-life rules dialog and a Dose column per kg. They are included in the script for traceability but are marked SKIP in automated runs. The 13 MAN-GXP tests cover controlled mode: nothing runs before sign-in, the first sign-in, the header, the inactivity warning, the password change, sign-out, open mode unchanged, every path's audit entries, fail-closed behaviour, the Records page and signing dialog, the inspector account, the Audit trail page and restoring an archive on a clean machine. They need a test server set up as described in the user manual's appendix on controlled installations, not a laptop.
 
-The execution record of the manual tests MAN-54 to MAN-64 of v1.8.0, with the four tests the product owner runs personally, is `MANUAL_TESTS_MAN-54-64_v1.8.0.md`; two screenshots are in `manual_evidence/`.
+The execution record of the manual tests MAN-54 to MAN-64 of v1.8.0, run by an AI agent (the product owner waived personal execution and initials), is `MANUAL_TESTS_MAN-54-64_v1.8.0.md`; two screenshots are in `manual_evidence/`.
 
 The test tables in `NCA_Assistant_IQOQPQ.docx` (IQ, automated OQ/PQ sections, manual tests, traceability matrix and totals) are generated from `validation_results.csv` of a passing reference run, so they list exactly the tests the script defines.
 
@@ -133,8 +133,8 @@ Visualisation tests (URS-VIZ) are classified SUPPORTIVE because graphical output
 A passing run produces:
 
 ```
-Total: 661 (auto: 584, manual: 77)
-  PASS: 584 | FAIL: 0 | ERROR: 0 | SKIP: 77
+Total: 662 (auto: 585, manual: 77)
+  PASS: 585 | FAIL: 0 | ERROR: 0 | SKIP: 77
 
 ALL CRITICAL TESTS PASSED
 
@@ -143,7 +143,7 @@ URS: 95/95 covered (92 by automated tests; manual tests only: URS-BE-06, URS-BE-
 Results: validation/validation_results.csv
 ```
 
-Of the 584 automated tests, 419 are CRITICAL and 165 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
+Of the 585 automated tests, 419 are CRITICAL and 166 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
 
 IQ-REL-01 and IQ-REL-02 pass only on an unchanged release: after any edit to a file listed in the manifest, IQ-REL-01 fails until `make_release_files.R` is run again for a new release. When IQ-REL-02 fails, its Detail column names each package whose version differs from `renv.lock`.
 

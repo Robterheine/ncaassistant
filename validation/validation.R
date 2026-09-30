@@ -7329,7 +7329,7 @@ check("RSA-12", "Module wiring: the selector exists only for replicate designs, 
       has("be_scaled_error = function(e)") && has("input$cov_log, input$be_approach)),") &&
       has('!isTRUE(input$be_lower == 80) || !isTRUE(input$be_upper == 125)') && has("limits_differ") &&
       has("be_scaled_notes(ci_df, scaled_details)") && has('output$scaled_explain <- renderUI({') &&
-      has("if (length(be_approach_choices(input$be_design)) > 1 && !identical(input$be_approach, approach)") &&
+      has("if (length(be_approach_choices(input$be_design)) > 1 && !identical(input$be_approach, approach)") && has("background:#FFF3CD;color:#7D5A00;") &&
       identical(unname(be_approach_choices("2x2x4")), c("standard", "abel", "rsabe")) && length(be_approach_choices("parallel")) == 1
   }, error = function(e) FALSE),
   "URS-BE-14, URS-BE-15", critical = FALSE, method = "Code inspection of R/mod_path_be.R; click-through on a 36-subject 2x2x4 study with both approaches",
@@ -7562,10 +7562,24 @@ cat("RESULTS SUMMARY\n")
 cat(paste(rep("=",72),collapse=""), "\n")
 
 # The counts in the documents are the counts of this run (this check included)
+
 all_urs <- c(paste0("URS-GEN-0",c(1,3:9)),paste0("URS-DAT-0",1:9),paste0("URS-NCA-",sprintf("%02d",1:15)),
              paste0("URS-BE-0",1:9),"URS-BE-10","URS-BE-11","URS-BE-12","URS-BE-13","URS-BE-14","URS-BE-15",paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:8),paste0("URS-UI-0",1:5),
              paste0("URS-VIZ-0",1:9),paste0("URS-GXP-",sprintf("%02d",1:20)))
 start_section("DOC")
+check("DOC-06", "Every requirement ID in the URS document is in the list of tested requirements, and the list holds nothing the URS lacks",
+  tryCatch({
+    td <- tempfile(); dir.create(td); utils::unzip("validation/NCA_Assistant_URS.docx", "word/document.xml", exdir = td)
+    x <- paste(readLines(file.path(td, "word", "document.xml"), warn = FALSE, encoding = "UTF-8"), collapse = "")
+    cells <- regmatches(x, gregexpr("<w:tc>.*?</w:tc>", x, perl = TRUE))[[1]]
+    first <- gsub("<[^>]+>", "", cells)
+    ids <- sort(unique(first[grepl("^URS-[A-Z]+-[0-9]{2}$", first)]))
+    length(ids) == length(all_urs) && identical(ids, sort(all_urs))
+  }, error = function(e) FALSE),
+  "URS-GEN-03", critical = FALSE,
+  method = "The requirement IDs in the tables of validation/NCA_Assistant_URS.docx against all_urs, the list behind the coverage line",
+  expected = "The same 95 IDs on both sides; a new requirement cannot be left out of the coverage line")
+
 check("DOC-05", "The counts in the READMEs, the version history and the protocol equal the counts of this run",
   tryCatch({
     rs <- do.call(rbind, results)

@@ -1203,7 +1203,15 @@ path_be_server <- function(id, shared) {
       if (length(lines) == 0) return(NULL)
       tags$div(class = "small mt-2",
                tags$strong(if (identical(r$approach, "rsabe")) "How each metric was judged (FDA RSABE)" else "How each metric was judged (EMA ABEL)"),
-               tags$ul(class = "mb-1", lapply(lines, tags$li)))
+               tags$ul(class = "mb-1", lapply(lines, function(l) {
+                 # The hint near the switch is shown in amber, apart from the result it qualifies
+                 tail <- " s_WR is close to the switch, so a small change in the data can change the route."
+                 if (endsWith(l, tail))
+                   tags$li(substr(l, 1, nchar(l) - nchar(tail)),
+                           tags$span(class = "rounded px-1", style = "background:#FFF3CD;color:#7D5A00;",
+                                     trimws(tail)))
+                 else tags$li(l)
+               })))
     })
 
     # Which covariates the primary interval is adjusted for

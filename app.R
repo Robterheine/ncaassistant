@@ -892,7 +892,7 @@ server <- function(input, output, session) {
               tags$li(tags$strong("New: "), "EMA ABEL and FDA RSABE for replicate designs, under Acceptance approach. The choice is a declaration before the run; the results show the route, s_WR, the limits and, for RSABE, the criterion bound, and the record keeps the approach and its constants. The FDA scaled test for narrow therapeutic index drugs stays in Plan a Study only"),
               tags$li(tags$strong("New: "), "two example datasets (a highly variable replicate study and a parallel study with covariates), Tutorials 4b and 4c in the manual, and matching text in the Statistical Methods page, the help and the Data Guide"),
               tags$li("Results without covariates and with the standard approach are unchanged, and tests prove it"),
-              tags$li("Validation: 584 automated and 77 manual tests (was 431 and 49), with sections for controlled mode, the three reviews, exclusions, half-life flags, the example data, covariates, RSABE, ABEL and the text checks")
+              tags$li("Validation: 585 automated and 77 manual tests (was 431 and 49), with sections for controlled mode, the three reviews, exclusions, half-life flags, the example data, covariates, RSABE, ABEL and the text checks")
             )
           ),
 
