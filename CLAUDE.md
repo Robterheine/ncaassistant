@@ -66,6 +66,6 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## 5. Prose Length → Humanizer
 
-Any new prose written for the user manual or the app (help text, labels, Methods page, popovers, etc.) that runs longer than 2 sentences must be passed through the `humanizer` skill before it's considered final.
+Every new or changed word of prose written for the user manual, the app or the documentation (help text, labels, Methods page, popovers, README, validation documents, etc.) must be passed through the `humanizer` skill before it's considered final, with no em dashes. Identifiers, constants, formulas, file names and button labels that a test or the manual quotes are exempt.
 
 Source: https://github.com/multica-ai/andrej-karpathy-skills/blob/main/CLAUDE.md (sections 1-4), plus a project-specific addition (section 5).
