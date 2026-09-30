@@ -75,6 +75,8 @@ rsabe_assess <- function(be_data, param, design, trt_col, subj_col, per_col, seq
                                             "the standard approach or EMA ABEL.")))
   if (is.null(per_col) || is.null(seq_col))
     return(list(ok = FALSE, reason = "RSABE needs the Period and Sequence columns to be mapped."))
+  if (anyNA(suppressWarnings(as.numeric(as.character(be_data[[per_col]])))))
+    return(list(ok = FALSE, reason = "RSABE needs the Period values to be numbers (1, 2, 3, ...), so that the administrations can be put in order."))
   cc <- rsabe_contrasts(be_data, param, design, trt_col, subj_col, per_col, seq_col)
   s <- cc$subjects; n <- if (is.null(s)) 0L else nrow(s)
   seqs <- if (n > 0) length(unique(s$sequence)) else 0L
@@ -142,7 +144,8 @@ be_assess_parameter <- function(approach = "standard", be_data, param, design, .
       return(add_cols(out, "Standard", NA_real_, NA_real_, NA_real_, NA_real_))
     }
     lim <- abel_limits(v$cv)
-    a <- args; a$be_lower <- lim[1]; a$be_upper <- lim[2]; a$widened_scope <- "cmax"
+    # The EMA point-estimate condition is part of the method; the checkbox of the fixed-limits mode does not apply
+    a <- args; a$be_lower <- lim[1]; a$be_upper <- lim[2]; a$widened_scope <- "cmax"; a$pe_constraint <- TRUE
     out <- fit(a)
     out$scaled <- list(approach = "abel", CVwR = v$cv, sWR = v$sw, df = v$df, lower = lim[1], upper = lim[2])
     return(add_cols(out, if (v$cv > 30) "Scaled" else "Standard", v$sw, lim[1], lim[2], NA_real_))
@@ -150,25 +153,30 @@ be_assess_parameter <- function(approach = "standard", be_data, param, design, .
   # RSABE
   if (!is_ratio) return(add_cols(fit(), "Standard", NA_real_, NA_real_, NA_real_, NA_real_))
   r <- rsabe_assess(be_data, param, design, trt_col, subj_col, per_col, seq_col)
+  std <- fit()
+  # A metric the standard fit refused (zero values, an interval past the last concentration) stays refused
+  if (!is.null(std$reason)) return(add_cols(std, "Standard", NA_real_, NA_real_, NA_real_, NA_real_))
   if (!isTRUE(r$ok)) {
-    out <- fit(); out$reason <- paste0("no scaled verdict: ", r$reason); out$row$Bioequivalent <- out$reason
+    out <- std; out$reason <- paste0("no scaled verdict: ", r$reason); out$row$Bioequivalent <- out$reason
     return(add_cols(out, "Standard", NA_real_, NA_real_, NA_real_, NA_real_))
   }
   if (!r$scaled) {   # below the switch: the app's ABE model (fixed or mixed, as chosen)
-    out <- fit(); out$scaled <- r
+    out <- std; out$scaled <- r
     return(add_cols(out, "Standard", r$sWR, NA_real_, NA_real_, r$critbound))
   }
-  out <- fit()
+  out <- std
   # Scaled route: the estimate, 90% CI and verdict come from the FDA contrasts
   ci_level <- if (is.null(args$ci_level)) 90 else args$ci_level
-  if (!isTRUE(all.equal(as.numeric(ci_level), 90))) {
+  if (isFALSE(args$verdict)) {          # a supportive metric: ratio and interval, no conclusion
+    out$row$Bioequivalent <- "no verdict"
+  } else if (!isTRUE(all.equal(as.numeric(ci_level), 90))) {
     out$row$Bioequivalent <- paste0("no verdict: the RSABE assessment uses the 90% confidence interval (this is ", ci_level, "%)")
   } else {
     out$row$Bioequivalent <- if (r$pass) "YES" else "NO"
   }
   out$row$Point_Est <- round(r$pe, 2); out$row$CI_Lower <- round(r$ci_lo, 2); out$row$CI_Upper <- round(r$ci_hi, 2)
   out$row$BE_Lower <- r$limit_lo; out$row$BE_Upper <- r$limit_hi
-  out$row$PE_Constraint <- if (r$pe_ok) "YES" else "NO"
+  out$row$PE_Constraint <- if (isFALSE(args$verdict)) "not applicable" else if (r$pe_ok) "YES" else "NO"
   out$row$N_Test <- r$n; out$row$N_Ref <- r$n; out$row$DF <- r$dfi; out$row$MSE <- round(r$mse_i, 6)
   out$row$Model <- "RSABE (intra-subject contrasts, FDA Appendix G)"
   out$estimate$pe <- r$pe; out$estimate$ci_lo <- r$ci_lo; out$estimate$ci_hi <- r$ci_hi

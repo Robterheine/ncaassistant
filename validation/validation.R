@@ -7264,6 +7264,34 @@ check("RSA-12", "Module wiring: the selector exists only for replicate designs, 
   "URS-BE-14, URS-BE-15", critical = FALSE, method = "Code inspection of R/mod_path_be.R; click-through on a 36-subject 2x2x4 study with both approaches",
   expected = "Selector only where it applies; both fit calls use it; the two approaches produce different routes and limits in the running app")
 
+check("RSA-13", "Review fixes: exclusions leave CVwR, ABEL keeps the point-estimate condition, RSABE respects supportive metrics and refused metrics, Period must be numeric",
+  tryCatch({
+    args <- list(trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
+    b <- abl_b("rds01"); b$EXCLUDED <- NA_character_
+    i <- which(b$Treatment == "Reference")[1:6]; b$EXCLUDED[i] <- "Vomiting"
+    v_all <- within_subject_variability(abl_b("rds01"), "CMAX", "Reference", "Treatment", "Subject", "Period", "Sequence")
+    v_ex <- within_subject_variability(b, "CMAX", "Reference", "Treatment", "Subject", "Period", "Sequence")
+    b2 <- b[!is.na(b$EXCLUDED) == FALSE, ]
+    v_gone <- within_subject_variability(b2, "CMAX", "Reference", "Treatment", "Subject", "Period", "Sequence")
+    # ABEL: a hidden 'point estimate' checkbox left at FALSE must not switch the condition off
+    w <- abl_b("rds08"); w$CMAX[w$Treatment == "Test"] <- w$CMAX[w$Treatment == "Test"] * 1.6
+    x <- do.call(be_assess_parameter, c(list("abel", w, "CMAX", "2x2x4", pe_constraint = FALSE), args))$row
+    # RSABE: supportive metric, refused metric, non-numeric periods
+    sup <- do.call(be_assess_parameter, c(list("rsabe", rsa_synth(0.6, 100), "CMAX", "2x2x4", verdict = FALSE), args))$row
+    z <- rsa_synth(0.6, 100); z$CMAX[z$Subject == "3" & z$Treatment == "Test"][1] <- 0
+    zr <- do.call(be_assess_parameter, c(list("rsabe", z, "CMAX", "2x2x4"), args))
+    np <- rsa_synth(0.6, 100); np$Period <- paste0("P", np$Period)
+    nr <- rsabe_assess(np, "CMAX", "2x2x4", "Treatment", "Subject", "Period", "Sequence")
+    isTRUE(all.equal(v_ex$cv, v_gone$cv, tolerance = 1e-12)) && !isTRUE(all.equal(v_ex$cv, v_all$cv)) &&
+      x$Bioequivalent == "NO" && x$PE_Constraint == "NO" &&
+      sup$Route == "Scaled" && sup$Bioequivalent == "no verdict" && sup$PE_Constraint == "not applicable" &&
+      !is.null(zr$reason) && grepl("zero", zr$reason) && zr$row$Route == "Standard" && !grepl("RSABE", zr$row$Model) &&
+      !nr$ok && grepl("Period values to be numbers", nr$reason)
+  }, error = function(e) FALSE),
+  "URS-BE-14, URS-BE-15, URS-BE-11", critical = TRUE,
+  method = "Findings of the code review of phases 1-5, each with the data that triggered it",
+  expected = "Excluded profiles do not enter CVwR; ABEL verdict NO when only the point estimate fails, whatever the checkbox; supportive RSABE metric has no verdict; a zero value stops the RSABE result; text periods are refused")
+
 end_section("RSA")
 
 # =============================================================================
@@ -7274,12 +7302,6 @@ end_section("RSA")
 # implementation: replicateBE::method.A on its 30 reference data sets.
 start_section("ABL")
 
-abl_b <- function(nm) {
-  d <- getExportedValue("replicateBE", nm)
-  data.frame(Subject = as.character(d$subject), Period = as.character(d$period), Sequence = as.character(d$sequence),
-             Treatment = factor(ifelse(d$treatment == "T", "Test", "Reference"), levels = c("Reference", "Test")),
-             CMAX = d$PK, AUCLST = d$PK, stringsAsFactors = FALSE)
-}
 abl_args <- list(trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
 abl_run <- function(b, param = "CMAX", design = "2x2x4", ...) do.call(be_assess_parameter, c(list("abel", b, param, design), abl_args, list(...)))
 abl_ma <- function(nm) suppressMessages(suppressWarnings(replicateBE::method.A(

@@ -901,7 +901,9 @@ resolve_be_design <- function(design, be_data, subj_col, trt_col,
 #' @return list(sw, cv (percent), df, n_subjects) or NULL if not estimable
 within_subject_variability <- function(be_data, param, level, trt_col, subj_col,
                                        per_col = NULL, seq_col = NULL) {
-  d <- be_data[as.character(be_data[[trt_col]]) == level, , drop = FALSE]
+  # Profiles the analyst excluded leave the estimate, as they leave the comparison
+  keep <- if ("EXCLUDED" %in% names(be_data)) is.na(be_data$EXCLUDED) | !nzchar(be_data$EXCLUDED) else rep(TRUE, nrow(be_data))
+  d <- be_data[keep & as.character(be_data[[trt_col]]) == level, , drop = FALSE]
   d$.y <- suppressWarnings(log(as.numeric(d[[param]])))
   d <- d[is.finite(d$.y), , drop = FALSE]
   subj <- as.character(d[[subj_col]])
