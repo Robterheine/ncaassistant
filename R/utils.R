@@ -778,7 +778,9 @@ EXAMPLE_FILES <- c(
   "BLQ results \"<0.5\" (Tutorial 2)"          = "example_blq.csv",
   "2x2 crossover BE (Tutorials 4, 6)"      = "example_be_crossover.csv",
   "Parallel-group BE"                          = "example_be_parallel.csv",
+  "Parallel-group BE with covariates (Tutorial 4b)" = "example_be_parallel_covariates.csv",
   "2x2x4 full replicate BE"            = "example_be_replicate_2x2x4.csv",
+  "2x2x4 replicate, highly variable (Tutorial 4c)" = "example_be_replicate_hvd.csv",
   "CDISC ADNCA dataset"                        = "example_adnca.csv")
 
 #' Absolute path of a bundled example; only whitelisted names are accepted

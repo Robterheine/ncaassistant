@@ -1277,6 +1277,14 @@ server <- function(input, output, session) {
     filename = function() "example_blq.csv",
     content = function(file) file.copy("data/example_blq.csv", file)
   )
+  output$dl_example_parallel_cov <- downloadHandler(
+    filename = function() "example_be_parallel_covariates.csv",
+    content = function(file) file.copy("data/example_be_parallel_covariates.csv", file)
+  )
+  output$dl_example_replicate_hvd <- downloadHandler(
+    filename = function() "example_be_replicate_hvd.csv",
+    content = function(file) file.copy("data/example_be_replicate_hvd.csv", file)
+  )
   output$dl_example_replicate <- downloadHandler(
     filename = function() "example_be_replicate_2x2x4.csv",
     content = function(file) file.copy("data/example_be_replicate_2x2x4.csv", file)

@@ -138,6 +138,25 @@ data_guide_ui <- function() {
             downloadButton("dl_example_blq", "example_blq.csv",
                            class = "btn-outline-primary btn-sm")
           )
+        ),
+        layout_columns(
+          col_widths = c(6, 6),
+          tags$div(
+            tags$h6(class = "fw-semibold", "Parallel groups with covariates"),
+            tags$p(class = "small text-muted",
+                   "40 subjects, 20 per group, with the baseline columns Age, Weight and Sex. ",
+                   "Use with Bioequivalence (Parallel groups), and choose the covariates before you run."),
+            downloadButton("dl_example_parallel_cov", "example_be_parallel_covariates.csv",
+                           class = "btn-outline-primary btn-sm")
+          ),
+          tags$div(
+            tags$h6(class = "fw-semibold", "Replicate, highly variable"),
+            tags$p(class = "small text-muted",
+                   "32 subjects, sequences TRTR and RTRT, with a highly variable Reference for Cmax. ",
+                   "Use with Bioequivalence (2×2×4 full replicate) and the Acceptance approach selector."),
+            downloadButton("dl_example_replicate_hvd", "example_be_replicate_hvd.csv",
+                           class = "btn-outline-primary btn-sm")
+          )
         )
       )
     ),

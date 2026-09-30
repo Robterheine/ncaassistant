@@ -5986,15 +5986,17 @@ check("EXM-01", "Every bundled example exists and its columns are recognised",
     det <- function(f) auto_detect_columns(names(read_pk_file(example_path(f))))
     th <- det("example_theoph.csv"); xo <- det("example_be_crossover.csv"); rp <- det("example_be_replicate_2x2x4.csv")
     pa <- det("example_be_parallel.csv"); bl <- det("example_blq.csv")
+    pc <- det("example_be_parallel_covariates.csv"); hv <- det("example_be_replicate_hvd.csv")
     ad <- adnca_convert(adnca_read(example_path("example_adnca.csv")), time = "NRRLT")
-    length(EXAMPLE_FILES) == 6 && all(file.exists(vapply(EXAMPLE_FILES, example_path, "")) ) &&
+    length(EXAMPLE_FILES) == 8 && all(file.exists(vapply(EXAMPLE_FILES, example_path, "")) ) &&
       th$conc == "conc" && th$dose == "Dose" && xo$treatment == "Treatment" && xo$period == "Period" &&
       xo$sequence == "Sequence" && rp$period == "Period" && pa$treatment == "Treatment" && bl$conc == "Concentration" &&
+      pc$treatment == "Treatment" && (length(pc$period) == 0 || !nzchar(pc$period)) && hv$period == "Period" && hv$sequence == "Sequence" &&
       nrow(ad$flat) > 0
   }, error = function(e) FALSE),
   "URS-UI-02, URS-DAT-01", critical = FALSE,
-  method = "example_path() and auto_detect_columns() for the six files; adnca_convert() for the ADNCA example",
-  expected = "All six present; mappings as in the tutorials; the ADNCA example converts with NRRLT")
+  method = "example_path() and auto_detect_columns() for the eight files; adnca_convert() for the ADNCA example",
+  expected = "All eight present; mappings as in the tutorials; the ADNCA example converts with NRRLT")
 
 check("EXM-02", "Load example goes through the upload path: earlier results cleared, data read, source recorded as example",
   tryCatch({
@@ -6063,6 +6065,62 @@ check("EXM-06", "Download serves the chosen example unchanged",
   }, error = function(e) FALSE),
   "URS-UI-02", critical = FALSE, method = "shiny::testServer: the Download button with example_blq.csv chosen",
   expected = "The downloaded file has the SHA-256 of data/example_blq.csv")
+
+check("EXM-07", "The highly variable replicate example shows both routes of RSABE and the numbers Tutorial 4c quotes",
+  tryCatch({
+    d <- read.csv(example_path("example_be_replicate_hvd.csv"), stringsAsFactors = FALSE)
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc", treatment = "Treatment", period = "Period",
+               sequence = "Sequence", dose = "Dose")
+    r <- suppressWarnings(run_nca(d, cm, rep_settings)); b <- build_be_data(r, d, cm, reference = "Reference")
+    a <- list(trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
+    row <- function(ap, p) do.call(be_assess_parameter, c(list(ap, b$data, p, "2x2x4"), a))$row
+    st <- row("standard", "CMAX"); sa <- row("standard", "AUCLST")
+    rc <- row("rsabe", "CMAX"); ra <- row("rsabe", "AUCLST"); ac <- row("abel", "CMAX")
+    vd <- be_variability_diagnostic(b$data, "CMAX", "Treatment", "Subject", "Period", "Sequence")
+    length(unique(d$Subject)) == 32 && all(table(unique(d[c("Subject", "Sequence")])$Sequence) == 16) &&
+      identical(c(st$Point_Est, st$CI_Lower, st$CI_Upper, st$Bioequivalent), c(88.35, 77.52, 100.69, "NO")) &&
+      identical(c(sa$Point_Est, sa$CI_Lower, sa$CI_Upper, sa$Bioequivalent), c(98.2, 90.56, 106.5, "YES")) &&
+      rc$Route == "Scaled" && rc$Bioequivalent == "YES" && round(rc$s_WR, 3) == 0.399 && round(rc$Scaled_Lower, 2) == 70.04 &&
+      round(rc$Scaled_Upper, 2) == 142.78 && round(rc$Crit_Bound, 4) == -0.0446 && rc$Point_Est == 88.35 && rc$CI_Lower == 76.67 && rc$CI_Upper == 101.81 &&
+      ra$Route == "Standard" && round(ra$s_WR, 3) == 0.251 && ra$Bioequivalent == "YES" &&
+      ac$Route == "Scaled" && ac$Bioequivalent == "YES" && round(c(ac$Scaled_Lower, ac$Scaled_Upper), 2)[1] == 73.84 &&
+      round(c(ac$Scaled_Lower, ac$Scaled_Upper), 2)[2] == 135.43 && round(vd$CVwR, 1) == 41.5
+  }, error = function(e) FALSE),
+  "URS-BE-14, URS-BE-15, URS-UI-02", critical = FALSE,
+  method = "example_be_replicate_hvd.csv through run_nca(), build_be_data() and be_assess_parameter() for the standard, RSABE and ABEL approaches",
+  expected = "Standard Cmax 88.35% (77.52-100.69%) fails; RSABE: Cmax scaled (s_WR 0.399, limits 70.04-142.78%, bound -0.0446) and AUC standard (s_WR 0.251), both bioequivalent; ABEL limits 73.84-135.43%")
+
+check("EXM-08", "The parallel example with covariates gives the numbers Tutorial 4b quotes: the unadjusted interval fails for Cmax, the adjusted one passes",
+  tryCatch({
+    d <- read.csv(example_path("example_be_parallel_covariates.csv"), stringsAsFactors = FALSE)
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc", treatment = "Treatment", dose = "Dose")
+    r <- suppressWarnings(run_nca(d, cm, rep_settings))
+    bu <- build_be_data(r, d, cm, reference = "Reference"); bw <- build_be_data(r, d, cm, reference = "Reference", covariates = "Weight")
+    fu <- function(p) fit_be_parameter(bu$data, p, "parallel", trt_col = "Treatment", subj_col = "Subject")$row
+    fw <- function(p) fit_be_parameter(bw$data, p, "parallel", trt_col = "Treatment", subj_col = "Subject", covariates = bw$covariates)
+    cu <- fu("CMAX"); cw <- fw("CMAX")$row; au <- fu("AUCLST"); aw <- fw("AUCLST")$row
+    bal <- be_covariate_balance(bw$data, bw$covariates, "Treatment", "Subject")
+    length(unique(d$Subject)) == 40 && all(table(unique(d[c("Subject", "Treatment")])$Treatment) == 20) &&
+      identical(c(cu$Point_Est, cu$CI_Lower, cu$CI_Upper, cu$Bioequivalent), c(84.64, 77.76, 92.12, "NO")) &&
+      identical(c(cw$Point_Est, cw$CI_Lower, cw$CI_Upper, cw$Bioequivalent), c(95.04, 90.12, 100.22, "YES")) &&
+      identical(c(cw$Unadj_Lower, cw$Unadj_Upper), c(77.76, 92.12)) && cw$DF == 37 &&
+      identical(c(au$Point_Est, au$CI_Lower, au$CI_Upper), c(90.81, 85.2, 96.8)) && identical(c(aw$Point_Est, aw$CI_Lower, aw$CI_Upper), c(98.13, 93.51, 102.99)) &&
+      bal$Reference == "68.16 (9.5)" && bal$Test == "77.69 (12)" && round(bal$Std_Diff, 2) == 0.88 &&
+      round(100 * sqrt(exp(cw$Unadj_MSE) - 1), 1) == 16 && round(100 * sqrt(exp(cw$MSE) - 1), 1) == 9.1
+  }, error = function(e) FALSE),
+  "URS-BE-13, URS-UI-02", critical = FALSE,
+  method = "example_be_parallel_covariates.csv with and without Weight as covariate",
+  expected = "Cmax: unadjusted 84.64% (77.76-92.12%) not bioequivalent; adjusted for Weight 95.04% (90.12-100.22%) bioequivalent; residual df 37; Weight 68.2 vs 77.7 kg, standardized difference 0.88")
+
+check("EXM-09", "The two new examples are what the committed generator makes from its seeds",
+  tryCatch({
+    source(file.path("validation", "fixtures", "make_example_datasets.R"), local = TRUE)
+    h <- sim_hvd(522)$data; p <- sim_par(676)$data
+    fh <- read.csv("data/example_be_replicate_hvd.csv"); fp <- read.csv("data/example_be_parallel_covariates.csv")
+    isTRUE(all.equal(h, fh, check.attributes = FALSE)) && isTRUE(all.equal(p, fp, check.attributes = FALSE))
+  }, error = function(e) FALSE),
+  "URS-UI-02", critical = FALSE, method = "sim_hvd(522) and sim_par(676) from validation/fixtures/make_example_datasets.R against the files in data/",
+  expected = "Identical values: the examples can be regenerated")
 
 end_section("EXM")
 
@@ -7259,6 +7317,7 @@ check("RSA-12", "Module wiring: the selector exists only for replicate designs, 
       has("be_scaled_error = function(e)") && has("input$cov_log, input$be_approach)),") &&
       has('!isTRUE(input$be_lower == 80) || !isTRUE(input$be_upper == 125)') && has("limits_differ") &&
       has("be_scaled_notes(ci_df, scaled_details)") && has('output$scaled_explain <- renderUI({') &&
+      has("if (length(be_approach_choices(input$be_design)) > 1 && !identical(input$be_approach, approach)") &&
       identical(unname(be_approach_choices("2x2x4")), c("standard", "abel", "rsabe")) && length(be_approach_choices("parallel")) == 1
   }, error = function(e) FALSE),
   "URS-BE-14, URS-BE-15", critical = FALSE, method = "Code inspection of R/mod_path_be.R; click-through on a 36-subject 2x2x4 study with both approaches",

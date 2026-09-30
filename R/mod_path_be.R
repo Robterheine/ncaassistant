@@ -787,7 +787,9 @@ path_be_server <- function(id, shared) {
         # -------------------------------------------------------------------
 
         approach <- approach_for(design_used$design)
-        if (!identical(input$be_approach, approach) && !is.null(input$be_approach) && input$be_approach != "standard") {
+        # Only when the selector is on screen: a choice left over from an earlier study is not the user's current one
+        if (length(be_approach_choices(input$be_design)) > 1 && !identical(input$be_approach, approach) &&
+            !is.null(input$be_approach) && input$be_approach != "standard") {
           showNotification(paste0("The approach you chose is not available for the design analysed (",
                                   design_used$design, "), so the standard approach was used."), type = "warning", duration = NULL)
         }
@@ -1258,9 +1260,13 @@ path_be_server <- function(id, shared) {
       if (scaled_run) {
         swr_lab <- if (identical(be_result()$approach, "rsabe")) "s_WR (FDA contrasts)" else "s_WR (EMA model)"
         names(display_ci)[names(display_ci) == "s_WR"] <- swr_lab
-        extra <- c("Route", swr_lab, "Accept. Lower", "Accept. Upper",
-                   if (identical(be_result()$approach, "rsabe")) "RSABE criterion bound (met at 0 or below)")
-        key_cols <- append(key_cols, intersect(extra, names(display_ci)), after = match(paste0(ci_lab, "Upper"), key_cols))
+        # One "Limits" column instead of two keeps the verdict columns on screen
+        display_ci$Limits <- ifelse(is.na(display_ci[["Accept. Lower"]]), "",
+                                    sprintf("%.2f\u2013%.2f", display_ci[["Accept. Lower"]], display_ci[["Accept. Upper"]]))
+        names(display_ci)[names(display_ci) == "RSABE criterion bound (met at 0 or below)"] <- "Criterion bound (\u2264 0)"
+        extra <- c("Route", swr_lab, "Limits", if (identical(be_result()$approach, "rsabe")) "Criterion bound (\u2264 0)")
+        # After the verdict, which stays where it always is; the route details follow it
+        key_cols <- append(key_cols, intersect(extra, names(display_ci)), after = match("Bioequivalent?", key_cols))
       }
       # Profiles that could not enter a comparison are part of the result
       for (cc in c("Profiles missing (Test)", "Profiles missing (Reference)",
@@ -1276,7 +1282,7 @@ path_be_server <- function(id, shared) {
       display_ci <- display_ci[, key_cols, drop = FALSE]
       
       # Fixed 2 decimal places for ratio and CI columns (regulatory standard)
-      num_cols <- intersect(c("Estimate", paste0(ci_lab, "Lower"), paste0(ci_lab, "Upper"), "Accept. Lower", "Accept. Upper",
+      num_cols <- intersect(c("Estimate", paste0(ci_lab, "Lower"), paste0(ci_lab, "Upper"),
                               paste0(welch_lab, "Lower (suppl.)"), paste0(welch_lab, "Upper (suppl.)"),
                               paste0(unadj_lab, "Lower (suppl.)"), paste0(unadj_lab, "Upper (suppl.)")),
                             names(display_ci))
@@ -1290,8 +1296,8 @@ path_be_server <- function(id, shared) {
         dt <- dt %>% formatRound(columns = num_cols, digits = 2)
       if (scaled_run) {
         if (swr_lab %in% names(display_ci)) dt <- dt %>% formatRound(columns = swr_lab, digits = 3)
-        if ("RSABE criterion bound (met at 0 or below)" %in% names(display_ci))
-          dt <- dt %>% formatRound(columns = "RSABE criterion bound (met at 0 or below)", digits = 4)
+        if ("Criterion bound (\u2264 0)" %in% names(display_ci))
+          dt <- dt %>% formatRound(columns = "Criterion bound (\u2264 0)", digits = 4)
       }
       dt
     })
