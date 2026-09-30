@@ -175,3 +175,93 @@ be_assess_parameter <- function(approach = "standard", be_data, param, design, .
   out$scaled <- r
   add_cols(out, "Scaled", r$sWR, r$limit_lo, r$limit_hi, r$critbound)
 }
+
+#' One plain-language line per parameter for a scaled run
+#'
+#' Reads a row of the CI table (with the scaled columns) and says which route
+#' was taken and why, for example "s_WR 0.41 at or above 0.294, scaled route;
+#' criterion bound -0.12 at or below 0; point estimate 97.8% inside 80 to 125%".
+#' @param row one-row data frame from be_assess_parameter()
+#' @param name display name of the parameter
+#' @param ci_level confidence level of the analysis, in percent
+#' @return character(1), or NULL when the row has no verdict or no scaled columns
+be_scaled_explain <- function(row, name, ci_level = 90) {
+  if (!"Route" %in% names(row) || !row$Bioequivalent %in% c("YES", "NO")) return(NULL)
+  pe <- row$Point_Est; inside <- function(v) if (isTRUE(v)) "inside" else "outside"
+  pe_ok <- signif(pe, 4) >= 80 && signif(pe, 4) <= 125
+  near <- is.finite(row$s_WR) && abs(row$s_WR - RSABE_SWITCH) <= 0.02
+  tail <- if (near) " s_WR is close to the switch, so a small change in the data can change the route." else ""
+  met <- if (row$Bioequivalent == "YES") "Bioequivalence concluded." else "Bioequivalence not concluded."
+  if (row$Approach == "FDA RSABE") {
+    if (row$Route == "Scaled")
+      return(sprintf("%s: s_WR %.3f at or above %.3f, scaled route; criterion bound %.4f %s 0; point estimate %.1f%% %s 80 to 125%%. %s%s",
+                     name, row$s_WR, RSABE_SWITCH, row$Crit_Bound, if (row$Crit_Bound <= 0) "at or below" else "above",
+                     pe, inside(pe_ok), met, tail))
+    return(sprintf("%s: s_WR %.3f below %.3f, so no scaling: the standard test against 80 to 125%% (%s%% CI %.2f to %.2f%%). %s%s",
+                   name, row$s_WR, RSABE_SWITCH, ci_level, row$CI_Lower, row$CI_Upper, met, tail))
+  }
+  if (!is.finite(row$s_WR))
+    return(sprintf("%s: standard limits, 80 to 125%% (the EMA widens Cmax only). %s", name, met))
+  cv <- 100 * sqrt(exp(row$s_WR^2) - 1)
+  if (row$Route == "Scaled")
+    return(sprintf("%s: CVwR %.1f%%, above 30%%; limits %.2f to %.2f%%; %s%% CI %.2f to %.2f%% %s the limits; point estimate %.1f%% %s 80 to 125%%. %s%s",
+                   name, cv, row$Scaled_Lower, row$Scaled_Upper, ci_level, row$CI_Lower, row$CI_Upper,
+                   inside(row$CI_Lower >= row$Scaled_Lower && row$CI_Upper <= row$Scaled_Upper), pe, inside(pe_ok), met, tail))
+  sprintf("%s: CVwR %.1f%%, at or below 30%%, so the standard limits of 80 to 125%% apply. %s%s", name, cv, met, tail)
+}
+
+#' Notes on a scaled run: subject numbers and the switch
+#'
+#' The FDA recommends at least 24 evaluable subjects for RSABE; the assessment
+#' is still computed. Subjects who lack a period are left out of the
+#' contrasts, and their number is reported.
+#' @param ci_df CI table of the run
+#' @param details named list of the `scaled` elements of be_assess_parameter()
+#' @return character vector
+be_scaled_notes <- function(ci_df, details) {
+  out <- character(0)
+  if (is.null(ci_df) || !"Approach" %in% names(ci_df)) return(out)
+  if (any(ci_df$Approach == "FDA RSABE", na.rm = TRUE)) {
+    n <- suppressWarnings(min(unlist(lapply(details, function(d) if (isTRUE(d$ok)) d$n else NA)), na.rm = TRUE))
+    if (is.finite(n) && n < RSABE_MIN_SUBJECTS)
+      out <- c(out, sprintf(paste0("The FDA recommends at least %d evaluable subjects for RSABE (found %d in the contrast). ",
+                                   "The assessment is computed anyway; discuss the sample size."), RSABE_MIN_SUBJECTS, n))
+    lost <- unique(unlist(lapply(details, function(d) if (isTRUE(d$ok)) d$n_incomplete else NULL)))
+    if (any(lost > 0))
+      out <- c(out, sprintf(paste0("Subjects who lack a value in one or more periods are left out of the RSABE contrasts ",
+                                   "(up to %d subject(s)); the numbers of subjects used are in the table."), max(lost)))
+  }
+  out
+}
+
+#' Constants and rules of the chosen approach, for the record
+be_scaled_settings <- function(approach) {
+  switch(approach,
+    rsabe = list(analysis_approach = "FDA RSABE", source = "FDA, Statistical Approaches to Establishing Bioequivalence (May 2026), Appendix G",
+                 sigma_w0 = RSABE_SIGMA_W0, theta = RSABE_THETA, switch_s_WR = RSABE_SWITCH,
+                 point_estimate_limits_percent = c(80, 125), confidence_level_percent = 90, criterion_upper_bound_percent = 95,
+                 minimum_subjects_recommended = RSABE_MIN_SUBJECTS),
+    abel = list(analysis_approach = "EMA ABEL", source = "EMA CPMP/EWP/QWP/1401/98 Rev. 1, section 4.1.10",
+                k = 0.76, cv_switch_percent = 30, cv_cap_percent = 50, widened_metrics = "Cmax",
+                point_estimate_limits_percent = c(80, 125)),
+    NULL)
+}
+
+#' Worksheet with the steps of the scaled assessment, one row per parameter
+#' @param be_results BE result list of the app (ci_table, scaled_details)
+#' @return data.frame or NULL
+be_scaled_sheet <- function(be_results) {
+  ci <- be_results$ci_table; det <- be_results$scaled_details
+  if (is.null(ci) || !"Approach" %in% names(ci) || length(det) == 0) return(NULL)
+  g <- function(d, k) if (!is.null(d[[k]]) && length(d[[k]]) == 1) d[[k]] else NA
+  do.call(rbind, lapply(seq_len(nrow(ci)), function(i) {
+    d <- det[[as.character(ci$Parameter[i])]]
+    data.frame(Parameter = ci$Parameter[i], Approach = ci$Approach[i], Route = ci$Route[i], s_WR = ci$s_WR[i],
+               DF_reference = g(d, "dfd"), x = g(d, "x"), boundx = g(d, "boundx"), y = g(d, "y"), boundy = g(d, "boundy"),
+               Crit_Bound = ci$Crit_Bound[i], Point_Est = ci$Point_Est[i],
+               Limit_Lower = if (ci$Route[i] == "Scaled") ci$Scaled_Lower[i] else NA_real_,
+               Limit_Upper = if (ci$Route[i] == "Scaled") ci$Scaled_Upper[i] else NA_real_,
+               Subjects_used = g(d, "n"), Subjects_left_out = g(d, "n_incomplete"),
+               Verdict = ci$Bioequivalent[i], stringsAsFactors = FALSE)
+  }))
+}

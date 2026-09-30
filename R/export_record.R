@@ -490,7 +490,7 @@ create_analysis_record <- function(output_path, results, settings, col_map,
         df$Source <- rownames(df)
         openxlsx::writeData(wb, sn, df)
       }
-      sheets <- be_covariate_sheets(be_results)
+      sheets <- Filter(Negate(is.null), c(be_covariate_sheets(be_results), list(BE_Scaled = be_scaled_sheet(be_results))))
       for (sn in names(sheets)) { openxlsx::addWorksheet(wb, sn); openxlsx::writeData(wb, sn, sheets[[sn]]) }
     }
     add_cdisc_code_sheet(wb, names(results)[vapply(results, is.numeric, logical(1))],

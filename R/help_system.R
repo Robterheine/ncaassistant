@@ -392,6 +392,21 @@ help_mixed_effects <- info_btn("help_mixed_effects", "Fixed vs. Mixed effects?",
   <br><br>
   <em>Use the model your protocol or statistical analysis plan specifies.</em>")
 
+help_be_approach <- info_btn("help_be_approach", "Which acceptance approach?",
+  "<b>Standard</b>: average bioequivalence with the acceptance limits you enter, usually 80 to 125%.
+  <br><br>
+  <b>EMA ABEL</b>: for Cmax only, the limits widen with the within-subject variability of the
+  reference (CV<sub>wR</sub> above 30%, at most 69.84 to 143.19%). AUC keeps 80 to 125%. The
+  point estimate must also lie within 80 to 125%.
+  <br><br>
+  <b>FDA RSABE</b>: for each metric where the reference's within-subject SD (s<sub>WR</sub>) is
+  0.294 or higher, the criterion scales with s<sub>WR</sub>, and the point estimate must lie
+  within 80 to 125%. Below 0.294 the ordinary 80 to 125% test applies.
+  <br><br>
+  The choice is a declaration before the run: state it in the protocol. The app never switches by
+  itself after looking at your data. ABEL is offered for 2x2x3, 2x3x3 and 2x2x4 designs; RSABE for
+  2x3x3 and 2x2x4 only, because the FDA text has no steps for 2x2x3.")
+
 help_be_covariates <- info_btn("help_be_covariates", "Adjusting for baseline characteristics?",
   "A <b>covariate</b> is a characteristic of each subject, such as age or weight, that may
   influence the PK parameter. In a parallel-group study the two groups are different

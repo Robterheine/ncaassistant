@@ -1670,7 +1670,7 @@ check("REG-BE-AOV-01", "Fixed model: Sequence tested against Subject(Sequence)",
 check("REG-BE-D5-01", "ABEL/RSABE note shows for every design the planner offers scaled methods for",
   tryCatch({
     src <- paste(readLines("R/mod_path_be.R", warn = FALSE), collapse = "\n")
-    pos <- regexpr("This app performs average bioequivalence (ABE)", src, fixed = TRUE)
+    pos <- regexpr("By default this app performs average bioequivalence (ABE)", src, fixed = TRUE)
     before <- substr(src, max(1, pos - 700), pos)
     pos > 0 && grepl("BE_DESIGNS$code[BE_DESIGNS$plan_scaled]", before, fixed = TRUE) &&
       setequal(BE_DESIGNS$code[BE_DESIGNS$plan_scaled], c("2x2x3", "2x3x3", "2x2x4"))
@@ -6997,6 +6997,12 @@ rsa_be <- function(id) {
              Treatment = factor(ifelse(d$treatment == "T", "Test", "Reference"), levels = c("Reference", "Test")),
              CMAX = d$pk, stringsAsFactors = FALSE)
 }
+abl_b <- function(nm) {
+  d <- getExportedValue("replicateBE", nm)
+  data.frame(Subject = as.character(d$subject), Period = as.character(d$period), Sequence = as.character(d$sequence),
+             Treatment = factor(ifelse(d$treatment == "T", "Test", "Reference"), levels = c("Reference", "Test")),
+             CMAX = d$PK, AUCLST = d$PK, stringsAsFactors = FALSE)
+}
 rsa_design <- function(id) if (id %in% c("rds02", "rds04", "rds07", "rds30")) "2x3x3" else "2x2x4"
 rsa_run <- function(b, design) rsabe_assess(b, "CMAX", design, "Treatment", "Subject", "Period", "Sequence")
 # Synthetic study with exactly known s_WR and point estimate (24 subjects, 2x2x4):
@@ -7170,6 +7176,93 @@ check("RSA-08", "Without the scaled approach nothing changes: 'standard' returns
   }, error = function(e) FALSE),
   "URS-BE-14, URS-BE-15", critical = TRUE, method = "be_assess_parameter('standard') against fit_be_parameter() on rds01; be_approach_choices() for each design",
   expected = "Identical; scaled approaches offered only for the designs the FDA or EMA text covers")
+
+check("RSA-09", "The result explains itself: one line per metric with the route, the numbers and the verdict; an amber hint near the switch",
+  tryCatch({
+    args <- list(trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
+    run <- function(ap, b, p = "CMAX") do.call(be_assess_parameter, c(list(ap, b, p, "2x2x4"), args))$row
+    hi <- be_scaled_explain(run("rsabe", rsa_synth(0.6, 97.8)), "Cmax")
+    lo <- be_scaled_explain(run("rsabe", rsa_synth(0.2, 100)), "Cmax")
+    nr <- be_scaled_explain(run("rsabe", rsa_synth(0.2941, 100)), "Cmax")
+    bb <- abl_b("rds08"); ab <- be_scaled_explain(run("abel", bb), "Cmax"); au <- be_scaled_explain(run("abel", bb, "AUCLST"), "AUC")
+    abs_ <- be_scaled_explain(run("abel", abl_b("rds29")), "Cmax")
+    nov <- be_scaled_explain(run("rsabe", rsa_synth(0.6, 100))[, ], "Cmax", 90)
+    l95 <- run("rsabe", rsa_synth(0.6, 100)); l95$Bioequivalent <- "no verdict: x"
+    grepl("s_WR 0.600 at or above 0.294, scaled route; criterion bound -0\\.[0-9]+ at or below 0; point estimate 97.8% inside 80 to 125%. Bioequivalence concluded.", hi) &&
+      grepl("s_WR 0.200 below 0.294, so no scaling", lo) && grepl("close to the switch", nr) && !grepl("close to the switch", hi) &&
+      grepl("CVwR 77", ab) && grepl("limits 69.84 to 143.19%", ab) && grepl("standard limits, 80 to 125% \\(the EMA widens Cmax only\\)", au) &&
+      grepl("at or below 30%, so the standard limits", abs_) && is.null(be_scaled_explain(l95, "Cmax")) &&
+      is.null(be_scaled_explain(fit_be_parameter(rsa_be("rds01"), "CMAX", "2x2x4", trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")$row, "Cmax"))
+  }, error = function(e) FALSE),
+  "URS-BE-14, URS-BE-15", critical = FALSE, method = "be_scaled_explain() for RSABE (scaled, below the switch, near it), ABEL (Cmax, AUC, below 30%), a run without verdict and a standard run",
+  expected = "The stated route, numbers and verdict match; the near-switch hint only near 0.294; nothing for a standard or verdictless row")
+
+check("RSA-10", "Notes on a scaled run: fewer than 24 subjects, subjects left out of the contrasts; nothing for other approaches",
+  tryCatch({
+    args <- list(trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
+    b <- rsa_synth(0.6, 100, n = 20); f <- do.call(be_assess_parameter, c(list("rsabe", b, "CMAX", "2x2x4"), args))
+    n20 <- be_scaled_notes(f$row, list(CMAX = f$scaled))
+    b2 <- rsa_synth(0.6, 100, n = 26); b2$CMAX[b2$Subject == "1" & b2$Period == "1"] <- NA
+    f2 <- do.call(be_assess_parameter, c(list("rsabe", b2, "CMAX", "2x2x4"), args))
+    n26 <- be_scaled_notes(f2$row, list(CMAX = f2$scaled))
+    fs <- do.call(be_assess_parameter, c(list("standard", b, "CMAX", "2x2x4"), args))
+    fa <- do.call(be_assess_parameter, c(list("abel", b, "CMAX", "2x2x4"), args))
+    length(n20) == 1 && grepl("at least 24 evaluable subjects for RSABE \\(found 20", n20) && grepl("computed anyway", n20) &&
+      length(n26) == 1 && grepl("left out of the RSABE contrasts", n26) && !grepl("at least 24", n26) &&
+      length(be_scaled_notes(fs$row, list())) == 0 && length(be_scaled_notes(fa$row, list(CMAX = fa$scaled))) == 0
+  }, error = function(e) FALSE),
+  "URS-BE-14", critical = TRUE, method = "be_scaled_notes() with 20 subjects, with 26 subjects and one missing period, and with the standard and ABEL approaches",
+  expected = "A warning below 24 (still computed); a note on subjects left out; no note for other approaches")
+
+check("RSA-11", "Record and audit: approach and constants in the settings JSON, BE_Scaled sheet with the steps, approach in the audit event; nothing added for a standard run",
+  tryCatch({
+    args <- list(trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
+    b <- rsa_synth(0.6, 100)
+    f <- do.call(be_assess_parameter, c(list("rsabe", b, "CMAX", "2x2x4"), args))
+    res <- list(ci_table = f$row, approach = "rsabe", scaled_details = list(CMAX = f$scaled))
+    sh <- be_scaled_sheet(res)
+    fs <- do.call(be_assess_parameter, c(list("standard", b, "CMAX", "2x2x4"), args))
+    cst <- be_scaled_settings("rsabe"); cab <- be_scaled_settings("abel")
+    f0 <- tempfile(fileext = ".csv"); write.csv(exc_xo, f0, row.names = FALSE)
+    r <- suppressWarnings(run_nca(exc_xo, exc_cm, exc_st()))
+    td <- tempfile("rsa11_"); dir.create(td); zf <- file.path(td, "rec.zip")
+    create_analysis_record(zf, r, exc_st(), exc_cm, f0, "crossover.csv", blq_rule = "rule1", lloq = 0,
+                           be_results = res, be_settings = list(ci_level = 90, analysis_approach = cst))
+    utils::unzip(zf, exdir = td)
+    js <- jsonlite::fromJSON(file.path(td, "analysis_settings.json"))
+    d <- file.path(gxp_tmp, "rsa11"); dir.create(d); gxp_set(d)
+    gxp_env$audit_init(file.path(d, "audit.sqlite"), user = "owner", org = "Validation Org")
+    be <- paste(readLines("R/mod_path_be.R"), collapse = "\n")
+    gxp_env$gxp_guard("analysis_run", object = "bioequivalence", sha256 = "abc", session = NULL,
+                      details = list(be_settings = list(analysis_approach = cst)))
+    tr <- gxp_env$audit_read(file.path(d, "audit.sqlite")); gxp_unset()
+    dj <- jsonlite::fromJSON(tr$details[tr$event == "analysis_run"][1])
+    all(c("Parameter", "Approach", "Route", "s_WR", "DF_reference", "x", "boundx", "y", "boundy", "Crit_Bound", "Subjects_used") %in% names(sh)) &&
+      sh$Route == "Scaled" && sh$Subjects_used == 24 && isTRUE(all.equal(sh$s_WR, 0.6, tolerance = 1e-6)) &&
+      "BE_Scaled" %in% openxlsx::getSheetNames(file.path(td, "results.xlsx")) &&
+      isTRUE(all.equal(js$bioequivalence$analysis_approach$theta, (log(1.25) / 0.25)^2)) &&
+      js$bioequivalence$analysis_approach$switch_s_WR == 0.294 && identical(dj$be_settings$analysis_approach$analysis_approach, "FDA RSABE") &&
+      cab$k == 0.76 && cab$cv_cap_percent == 50 && is.null(be_scaled_settings("standard")) && is.null(be_scaled_sheet(list(ci_table = fs$row))) &&
+      grepl("audit_be$analysis_approach <- be_scaled_settings(approach)", be, fixed = TRUE) &&
+      grepl("rs$be$analysis_approach <- be_scaled_settings(approach)", be, fixed = TRUE)
+  }, error = function(e) { gxp_unset(); FALSE }),
+  "URS-BE-14, URS-BE-15, URS-EXP-05, URS-GXP-07", critical = TRUE,
+  method = "be_scaled_sheet(), be_scaled_settings(), create_analysis_record() and a trail entry; the BE module builds the snapshot and the audit details",
+  expected = "Constants and source in the JSON, BE_Scaled sheet, approach in the audit entry; no sheet or setting for the standard approach")
+
+check("RSA-12", "Module wiring: the selector exists only for replicate designs, the chosen approach reaches every fit, limits must stay 80-125, stale results clear, per-metric limits are drawn",
+  tryCatch({
+    be <- paste(readLines("R/mod_path_be.R"), collapse = "\n"); has <- function(x) grepl(x, be, fixed = TRUE)
+    has('output$approach_ui <- renderUI({') && has("if (length(ch) < 2) return(NULL)") &&
+      has("fit_one <- function(dat, param) be_assess_parameter(") && has("fit_out <- tryCatch(be_assess_parameter(") &&
+      length(gregexpr("approach, dat, param,|approach, be_data, param,", be, perl = TRUE)[[1]]) == 2 &&
+      has("be_scaled_error = function(e)") && has("input$cov_log, input$be_approach)),") &&
+      has('!isTRUE(input$be_lower == 80) || !isTRUE(input$be_upper == 125)') && has("limits_differ") &&
+      has("be_scaled_notes(ci_df, scaled_details)") && has('output$scaled_explain <- renderUI({') &&
+      identical(unname(be_approach_choices("2x2x4")), c("standard", "abel", "rsabe")) && length(be_approach_choices("parallel")) == 1
+  }, error = function(e) FALSE),
+  "URS-BE-14, URS-BE-15", critical = FALSE, method = "Code inspection of R/mod_path_be.R; click-through on a 36-subject 2x2x4 study with both approaches",
+  expected = "Selector only where it applies; both fit calls use it; the two approaches produce different routes and limits in the running app")
 
 end_section("RSA")
 

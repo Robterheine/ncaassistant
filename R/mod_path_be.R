@@ -129,6 +129,9 @@ path_be_ui <- function(id) {
                 )
               ),
 
+              # Acceptance approach: replicate designs only
+              uiOutput(ns("approach_ui")),
+
               # Shown for every design the planner offers scaled methods for
               conditionalPanel(
                 condition = sprintf("[%s].indexOf(input['%s']) >= 0",
@@ -138,12 +141,11 @@ path_be_ui <- function(id) {
                   class = "alert alert-info py-2 small mb-2",
                   icon("circle-info", class = "me-1"),
                   tags$strong("Note: "),
-                  "This app performs average bioequivalence (ABE) with the acceptance limits you enter, for all designs. ",
-                  "It does not perform reference-scaled analysis (ABEL/RSABE). ",
-                  "When the reference is replicated, the results show CV", tags$sub("wR"),
-                  " and the limits it would imply, for information. If your drug requires ",
-                  "widened or scaled limits (CV", tags$sub("wR"), " > 30%), use dedicated ",
-                  "software for the scaled analysis."
+                  "By default this app performs average bioequivalence (ABE) with the acceptance limits you enter. ",
+                  "For a replicate design you can instead choose EMA ABEL or FDA RSABE under Acceptance approach. ",
+                  "That choice is your declaration before the run, and the app never switches by itself. ",
+                  "The results also show CV", tags$sub("wR"), " and the limits it would imply, for information. ",
+                  "The FDA scaled test for narrow therapeutic index drugs is in Plan a Study only."
                 )
               ),
               
@@ -236,6 +238,7 @@ path_be_ui <- function(id) {
                      "log-transformation, is shown as a difference in its own units and has no verdict."),
               uiOutput(ns("cov_caption")),
               DTOutput(ns("ci_table")),
+              uiOutput(ns("scaled_explain")),
               uiOutput(ns("sensitivity_ui")),
               tags$p(class = "text-muted small mt-2",
                      icon("circle-info", class = "me-1"),
@@ -244,7 +247,7 @@ path_be_ui <- function(id) {
               hr(),
               tags$p(class = "text-muted small",
                      "Forest plot: dot = point estimate, bar = confidence interval, ",
-                     "dashed lines = acceptance limits."),
+                     "dashed lines = acceptance limits (one pair per metric when the limits are scaled)."),
               plotlyOutput(ns("forest_plot"), height = "350px"),
               uiOutput(ns("variability_panel"))
             ),
@@ -394,6 +397,20 @@ path_be_server <- function(id, shared) {
       }))
     })
 
+    # Acceptance approach: offered for the replicate designs the FDA or EMA text covers
+    output$approach_ui <- renderUI({
+      ch <- be_approach_choices(input$be_design)
+      if (length(ch) < 2) return(NULL)
+      keep <- isolate(input$be_approach)
+      selectInput(ns("be_approach"), tagList("Acceptance approach", help_be_approach), choices = ch,
+                  selected = if (!is.null(keep) && keep %in% ch) keep else "standard")
+    })
+    # The approach in force: only what the analysed design allows
+    approach_for <- function(design) {
+      a <- input$be_approach
+      if (!is.null(a) && a %in% be_approach_choices(design)) a else "standard"
+    }
+
     output$data_ok <- reactive({ shared$data_ready })
     outputOptions(output, "data_ok", suspendWhenHidden = FALSE)
     
@@ -482,7 +499,7 @@ path_be_server <- function(id, shared) {
                     input$r2adj_be, input$mw, input$be_design, input$be_reference, input$model_type,
                     input$log_transform, input$ci_level, input$be_lower, input$be_upper,
                     input$pe_constraint, input$widened_scope, pauc_spec(), lzr(),
-                    input$be_covariates, input$cov_categorical, input$cov_log)),
+                    input$be_covariates, input$cov_categorical, input$cov_log, input$be_approach)),
       has_result = function() !is.null(be_result()) || !is.null(be_nca_result()),
       clear = function() { be_result(NULL); be_nca_result(NULL); be_run_settings(NULL); balance_result(NULL) },
       id = "be_stale")
@@ -748,7 +765,19 @@ path_be_server <- function(id, shared) {
         }
         # -------------------------------------------------------------------
 
+        approach <- approach_for(design_used$design)
+        if (!identical(input$be_approach, approach) && !is.null(input$be_approach) && input$be_approach != "standard") {
+          showNotification(paste0("The approach you chose is not available for the design analysed (",
+                                  design_used$design, "), so the standard approach was used."), type = "warning", duration = NULL)
+        }
+        if (approach != "standard" && (!isTRUE(input$be_lower == 80) || !isTRUE(input$be_upper == 125))) {
+          showNotification(paste0("With EMA ABEL or FDA RSABE the acceptance limits are set by the method. ",
+                                  "Reset the limits to 80 and 125 (they still apply to the metrics the method does not scale)."),
+                           type = "error", duration = NULL)
+          return()
+        }
         ci_results <- list()
+        scaled_details <- list()
         cov_coefs <- list(); cov_warns <- character(0)
         welch_results <- list()
         anova_results <- list()
@@ -783,8 +812,8 @@ path_be_server <- function(id, shared) {
                  NULL)
         }
 
-        fit_one <- function(dat, param) fit_be_parameter(
-            dat, param,
+        fit_one <- function(dat, param) be_assess_parameter(
+            approach, dat, param,
             design        = design_used$design,
             model_type    = input$model_type,
             trt_col       = trt_col_be,
@@ -802,8 +831,8 @@ path_be_server <- function(id, shared) {
             covariates    = bd$covariates)
         cov_stopped <- FALSE
         for (param in params) {
-          fit_out <- tryCatch(fit_be_parameter(
-            be_data, param,
+          fit_out <- tryCatch(be_assess_parameter(
+            approach, be_data, param,
             design        = design_used$design,
             model_type    = input$model_type,
             trt_col       = trt_col_be,
@@ -822,6 +851,10 @@ path_be_server <- function(id, shared) {
             be_covariate_error = function(e) {
               showNotification(conditionMessage(e), type = "error", duration = NULL)
               NULL
+            },
+            be_scaled_error = function(e) {
+              showNotification(conditionMessage(e), type = "error", duration = NULL)
+              NULL
             })
           if (is.null(fit_out)) { cov_stopped <- TRUE; break }
           if (!is.na(fit_out$row$Model) && grepl("mixed model failed", fit_out$row$Model)) {
@@ -838,6 +871,7 @@ path_be_server <- function(id, shared) {
           ci_results[[param]] <- fit_out$row
           welch_results[[param]] <- fit_out$estimate$welch
           cov_coefs[[param]] <- fit_out$estimate$covariate_coefs
+          if (!is.null(fit_out$scaled)) scaled_details[[param]] <- fit_out$scaled
           cov_warns <- c(cov_warns, fit_out$warnings)
         }
         if (cov_stopped) return()
@@ -912,14 +946,16 @@ path_be_server <- function(id, shared) {
                          widened_scope = widened_scope_value(input$widened_scope),
                          parameters = params)
         if (!is.null(bd$covariates)) audit_be$covariates <- bd$covariates[, c("name", "type", "transform")]
+        if (approach != "standard") audit_be$analysis_approach <- be_scaled_settings(approach)
         if (!gxp_guard("analysis_run", object = "bioequivalence", sha256 = gxp_data_sha256(shared$study_info),
                        details = list(trigger = "run", path = "be", nca_settings = settings,
                                       be_settings = audit_be))) return()
         be_result(list(ci_table = ci_df, anova = anova_results, cv_table = cv_df, design = design_used$design,
                        sensitivity = sens_df,
                        covariates = bd$covariates, covariate_coefs = cov_coefs,
+                       approach = approach, scaled_details = scaled_details,
                        covariate_balance = be_covariate_balance(be_data, bd$covariates, trt_col_be, subj_col_be),
-                       m13a = c(unique(cov_warns), be_m13a_checks(d_unexcl, shared$col_map, nca_res,
+                       m13a = c(unique(cov_warns), be_scaled_notes(ci_df, scaled_details), be_m13a_checks(d_unexcl, shared$col_map, nca_res,
                                                ci_df[ci_df$Parameter %in% setdiff(params, c(supportive, BE_NO_VERDICT_PARAMS)), ],
                                                isTRUE(input$is_ss)),
                                 if (has_excl && !setequal(
@@ -943,6 +979,11 @@ path_be_server <- function(id, shared) {
             pe_constraint     = !identical(input$pe_constraint, FALSE),
             widened_scope     = widened_scope_value(input$widened_scope),
             parameters        = params)))
+        if (approach != "standard") {
+          rs <- be_run_settings()
+          rs$be$analysis_approach <- be_scaled_settings(approach)
+          be_run_settings(rs)
+        }
         if (!is.null(bd$covariates)) {
           rs <- be_run_settings()
           rs$be$covariates <- bd$covariates[, c("name", "type", "transform")]
@@ -1135,6 +1176,19 @@ path_be_server <- function(id, shared) {
                tags$ul(class = "mb-0", lapply(msgs, tags$li)))
     })
 
+    # One line per parameter: the route taken and why
+    output$scaled_explain <- renderUI({
+      r <- be_result()
+      if (is.null(r) || is.null(r$approach) || identical(r$approach, "standard")) return(NULL)
+      ci <- r$ci_table
+      lines <- Filter(Negate(is.null), lapply(seq_len(nrow(ci)), function(i)
+        be_scaled_explain(ci[i, , drop = FALSE], friendly_name(ci$Parameter[i]), run_ci_level())))
+      if (length(lines) == 0) return(NULL)
+      tags$div(class = "small mt-2",
+               tags$strong(if (identical(r$approach, "rsabe")) "How each metric was judged (FDA RSABE)" else "How each metric was judged (EMA ABEL)"),
+               tags$ul(class = "mb-1", lapply(lines, tags$li)))
+    })
+
     # Which covariates the primary interval is adjusted for
     output$cov_caption <- renderUI({
       cv <- be_result()$covariates
@@ -1184,6 +1238,15 @@ path_be_server <- function(id, shared) {
                               else c(paste0(unadj_lab, "Lower (suppl.)"), paste0(unadj_lab, "Upper (suppl.)")),
                               "PE within 80\u2013125%", "Bioequivalent?"),
                             names(display_ci))
+      # Scaled runs: the route, s_WR, the limits in force and (RSABE) the criterion bound
+      scaled_run <- "Route" %in% names(display_ci)
+      if (scaled_run) {
+        swr_lab <- if (identical(be_result()$approach, "rsabe")) "s_WR (FDA contrasts)" else "s_WR (EMA model)"
+        names(display_ci)[names(display_ci) == "s_WR"] <- swr_lab
+        extra <- c("Route", swr_lab, "Accept. Lower", "Accept. Upper",
+                   if (identical(be_result()$approach, "rsabe")) "RSABE criterion bound (met at 0 or below)")
+        key_cols <- append(key_cols, intersect(extra, names(display_ci)), after = match(paste0(ci_lab, "Upper"), key_cols))
+      }
       # Profiles that could not enter a comparison are part of the result
       for (cc in c("Profiles missing (Test)", "Profiles missing (Reference)",
                    "Zero values (Test)", "Zero values (Reference)",
@@ -1198,7 +1261,7 @@ path_be_server <- function(id, shared) {
       display_ci <- display_ci[, key_cols, drop = FALSE]
       
       # Fixed 2 decimal places for ratio and CI columns (regulatory standard)
-      num_cols <- intersect(c("Estimate", paste0(ci_lab, "Lower"), paste0(ci_lab, "Upper"),
+      num_cols <- intersect(c("Estimate", paste0(ci_lab, "Lower"), paste0(ci_lab, "Upper"), "Accept. Lower", "Accept. Upper",
                               paste0(welch_lab, "Lower (suppl.)"), paste0(welch_lab, "Upper (suppl.)"),
                               paste0(unadj_lab, "Lower (suppl.)"), paste0(unadj_lab, "Upper (suppl.)")),
                             names(display_ci))
@@ -1210,6 +1273,11 @@ path_be_server <- function(id, shared) {
                     fontWeight = "bold")
       if (length(num_cols) > 0)
         dt <- dt %>% formatRound(columns = num_cols, digits = 2)
+      if (scaled_run) {
+        if (swr_lab %in% names(display_ci)) dt <- dt %>% formatRound(columns = swr_lab, digits = 3)
+        if ("RSABE criterion bound (met at 0 or below)" %in% names(display_ci))
+          dt <- dt %>% formatRound(columns = "RSABE criterion bound (met at 0 or below)", digits = 4)
+      }
       dt
     })
     
@@ -1254,11 +1322,13 @@ path_be_server <- function(id, shared) {
         tags$div(
           class = "alert alert-secondary py-2 small",
           icon("circle-info", class = "me-1"),
-          "These are the inputs to a reference-scaled assessment, estimated with the ",
-          "period-adjusted reference-only model (as in the replicateBE package). The ",
-          "implied limits are informational. ",
-          tags$strong("This app does not issue a scaled bioequivalence verdict."),
-          " For a regulatory decision use replicateBE or validated commercial software.")
+          "These values come from the period-adjusted reference-only model (as in the replicateBE package), ",
+          "the EMA way of estimating CV", tags$sub("wR"), ". FDA RSABE estimates s", tags$sub("WR"),
+          " differently, from contrasts between the two reference administrations, so the two can differ. ",
+          if (is.null(be_result()$approach) || identical(be_result()$approach, "standard"))
+            tagList("The implied limits are informational. ", tags$strong("With the standard approach the app gives no scaled verdict."),
+                    " Choose EMA ABEL or FDA RSABE under Acceptance approach to get one.")
+          else "The verdict above follows the approach you chose.")
       )
     })
 
@@ -1283,11 +1353,19 @@ path_be_server <- function(id, shared) {
         none$note <- ifelse(nz > 0, paste0("no estimate: ", nz, " zero value(s)"), "no estimate")
       }
       ci <- ci[!is.na(ci$Point_Est), , drop = FALSE]
+      limits_differ <- nrow(unique(lims)) > 1
+      lim_rows <- ci[!is.na(ci$BE_Lower), , drop = FALSE]
+      if (limits_differ) lim_rows$pos <- as.integer(lim_rows$Label)
 
       p <- ggplot(ci, aes(x = Point_Est, y = Label)) +
         geom_vline(xintercept = 100, color = "grey50") +
-        { if (nrow(lims) > 0) geom_vline(xintercept = c(lims$BE_Lower[1], lims$BE_Upper[1]),
+        { if (nrow(lims) > 0 && !limits_differ) geom_vline(xintercept = c(lims$BE_Lower[1], lims$BE_Upper[1]),
                                          color = "#E74C3C", linetype = "dashed") } +
+        # Scaled runs: each metric has its own limits, drawn as short dashed segments on its row
+        { if (limits_differ) geom_segment(data = lim_rows, aes(x = BE_Lower, xend = BE_Lower, y = pos - 0.4, yend = pos + 0.4),
+                                          inherit.aes = FALSE, color = "#E74C3C", linetype = "dashed") } +
+        { if (limits_differ) geom_segment(data = lim_rows, aes(x = BE_Upper, xend = BE_Upper, y = pos - 0.4, yend = pos + 0.4),
+                                          inherit.aes = FALSE, color = "#E74C3C", linetype = "dashed") } +
         geom_errorbar(aes(xmin = CI_Lower, xmax = CI_Upper),
                       width = 0.25, linewidth = 0.8,
                       orientation = "y") +
@@ -1701,7 +1779,7 @@ path_be_server <- function(id, shared) {
           df <- as.data.frame(be_result()$anova[[p]])
           df$Source <- rownames(df); writeData(wb, sn, df)
         }
-        sheets <- be_covariate_sheets(be_result())
+        sheets <- Filter(Negate(is.null), c(be_covariate_sheets(be_result()), list(BE_Scaled = be_scaled_sheet(be_result()))))
         for (sn in names(sheets)) { addWorksheet(wb, sn); writeData(wb, sn, sheets[[sn]]) }
         saveWorkbook(wb, file, overwrite = TRUE)
         gxp_export_done(file, paste0("BE_report_", Sys.Date(), ".xlsx"), "xlsx", gxp_data_sha256(shared$study_info))
