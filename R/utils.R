@@ -313,6 +313,7 @@ rename_be_columns <- function(df, ci_level = 90) {
     "Adjusted_for"  = "Adjusted for",
     "Unadj_Lower"   = paste0("Unadjusted ", ci_level, "% CI Lower (suppl.)"),
     "Unadj_Upper"   = paste0("Unadjusted ", ci_level, "% CI Upper (suppl.)"),
+    "Unadj_MSE"     = "Unadjusted residual variance",
     "MSE"           = "Residual Variance",
     "DF"            = "Degrees of Freedom",
     "Model"         = "Model"

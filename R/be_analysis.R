@@ -287,12 +287,14 @@ suggest_reference_treatment <- function(levels) {
 #' 100 * sqrt(exp(MSE) - 1), from the residual variance of the log-scale
 #' model. NA when the parameter was not analysed on the log scale. For a
 #' parallel design this is the total (between + within) CV, which is what a
-#' parallel-design sample size needs.
-within_cv_from_be <- function(ci_table, param = "CMAX") {
+#' parallel-design sample size needs. With covariates the MSE is the residual
+#' after adjustment; unadjusted = TRUE gives the CV without adjustment.
+within_cv_from_be <- function(ci_table, param = "CMAX", unadjusted = FALSE) {
   if (is.null(ci_table) || !all(c("Parameter", "Scale", "MSE") %in% names(ci_table))) return(NA_real_)
   i <- match(param, ci_table$Parameter)
-  if (is.na(i) || !grepl("^Ratio", ci_table$Scale[i]) || !is.finite(ci_table$MSE[i])) return(NA_real_)
-  100 * sqrt(exp(ci_table$MSE[i]) - 1)
+  mse <- if (unadjusted && "Unadj_MSE" %in% names(ci_table)) ci_table$Unadj_MSE[i] else ci_table$MSE[i]
+  if (is.na(i) || !grepl("^Ratio", ci_table$Scale[i]) || !is.finite(mse)) return(NA_real_)
+  100 * sqrt(exp(mse) - 1)
 }
 
 #' Is a confidence interval within the acceptance limits?
@@ -397,7 +399,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   n_miss_t <- NA_integer_; n_miss_r <- NA_integer_
   n_excl_t <- 0L; n_excl_r <- 0L; n_flag_t <- 0L; n_flag_r <- 0L; n_incomplete <- 0L
   if (!is.null(covariates) && nrow(covariates) == 0) covariates <- NULL
-  unadj_lo <- NA_real_; unadj_hi <- NA_real_
+  unadj_lo <- NA_real_; unadj_hi <- NA_real_; unadj_mse <- NA_real_
   make_row <- function(pe = NA, lo = NA, hi = NA, n_t = NA, n_r = NA, o_t = NA, o_r = NA,
                        pe_status = NA, verdict = NA, mse = NA, dfe = NA) {
     row <- data.frame(
@@ -415,7 +417,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
       MSE = mse, DF = dfe, Model = model_label, stringsAsFactors = FALSE)
     if (!is.null(covariates)) {
       row$Adjusted_for <- paste(covariates$name, collapse = ", ")
-      row$Unadj_Lower <- unadj_lo; row$Unadj_Upper <- unadj_hi
+      row$Unadj_Lower <- unadj_lo; row$Unadj_Upper <- unadj_hi; row$Unadj_MSE <- unadj_mse
     }
     row
   }
@@ -739,8 +741,9 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
     d0 <- unname(coef(fit0)[trt_coef_name]); ci0 <- as.numeric(ci0)
     if (is_ratio) { d0 <- exp(d0) * 100; ci0 <- exp(ci0) * 100 }
     unadj_lo <- ci0[1]; unadj_hi <- ci0[2]
+    unadj_mse <- round(summary(fit0)$sigma^2, 6)
     out$estimate$unadjusted <- list(pe = d0, ci_lo = unadj_lo, ci_hi = unadj_hi,
-                                    dfe = unname(fit0$df.residual))
+                                    dfe = unname(fit0$df.residual), mse = unadj_mse)
     out$estimate$covariate_coefs <- be_covariate_coefs(fit, covariates, trt_col, alpha)
     out$warnings <- cov_warnings
     unadj_lo <- round(unadj_lo, 2); unadj_hi <- round(unadj_hi, 2)
@@ -1066,7 +1069,9 @@ be_m13a_checks <- function(pk_data, col_map, nca_res, ci_df, is_ss = FALSE) {
 #' @return NULL when there is no CV for this metric; list(note) when the
 #'   kind does not fit the planner design; otherwise list(cv, cv_wr, label)
 planner_cv_offer <- function(be_results, analysis_type, planner_design, param = "CMAX") {
-  cv <- within_cv_from_be(be_results$ci_table, param)
+  # The planner assumes no adjustment, so it takes the unadjusted CV; the CV
+  # left after adjustment is offered beside it (parallel groups with covariates)
+  cv <- within_cv_from_be(be_results$ci_table, param, unadjusted = TRUE)
   if (is.na(cv)) return(NULL)
   be_parallel <- identical(be_design_model(if (is.null(be_results$design)) "2x2x2" else be_results$design), "parallel")
   pl_parallel <- identical(planner_design, "parallel")
@@ -1078,10 +1083,17 @@ planner_cv_offer <- function(be_results, analysis_type, planner_design, param = 
                               "crossover, which gives only the within-subject CV.")))
   scaled <- analysis_type %in% c("abel", "rsabe", "ntid")
   name <- if (exists("friendly_name")) friendly_name(param) else param
-  if (!scaled)
-    return(list(cv = cv, cv_wr = NA_real_,
+  if (!scaled) {
+    out <- list(cv = cv, cv_wr = NA_real_,
                 label = sprintf("Use the %s %s CV from my BE analysis (%.1f%%)", name,
-                                if (pl_parallel) "total" else "within-subject", cv)))
+                                if (pl_parallel) "total" else "within-subject", cv))
+    cv_adj <- within_cv_from_be(be_results$ci_table, param)
+    if (pl_parallel && "Unadj_MSE" %in% names(be_results$ci_table) && is.finite(cv_adj))
+      out$adjusted <- list(cv = cv_adj,
+                           label = sprintf("Use the %s residual CV after adjusting for %s (%.1f%%)", name,
+                                           be_results$ci_table$Adjusted_for[1], cv_adj))
+    return(out)
+  }
   vt <- be_results$cv_table
   i <- if (is.null(vt)) NA else match(param, vt$Parameter)
   cvwr <- if (is.na(i)) cv else vt$CVwR[i]
@@ -1115,4 +1127,23 @@ parallel_welch_notes <- function(be_data, params, trt_col, be_lower = 80, be_upp
                             if (exists("friendly_name")) friendly_name(p) else p, welch[1], welch[2], pooled[1], pooled[2]))
   }
   out
+}
+
+
+#' Worksheets that describe a covariate-adjusted analysis, for the downloads
+#'
+#' BE_Covariates: one row per parameter and model term, on the log scale of
+#' the analysis. Covariate_Balance: the group summary. NULL without covariates.
+#' @param be_results The BE result list of the app (covariates, covariate_coefs, covariate_balance)
+#' @return named list of data frames, or NULL
+be_covariate_sheets <- function(be_results) {
+  if (is.null(be_results$covariates) || nrow(be_results$covariates) == 0) return(NULL)
+  cc <- be_results$covariate_coefs
+  coefs <- do.call(rbind, lapply(names(cc), function(p) {
+    if (is.null(cc[[p]])) return(NULL)
+    data.frame(Parameter = if (exists("friendly_name")) friendly_name(p) else p, cc[[p]], check.names = FALSE, row.names = NULL)
+  }))
+  bal <- be_results$covariate_balance
+  if (!is.null(bal)) names(bal)[names(bal) == "Std_Diff"] <- "Standardized difference"
+  Filter(Negate(is.null), list(BE_Covariates = coefs, Covariate_Balance = bal))
 }

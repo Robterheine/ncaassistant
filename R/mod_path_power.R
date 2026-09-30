@@ -423,7 +423,12 @@ path_power_server <- function(id, shared) {
         if (!is.null(offer$note)) tags$p(class = "text-muted small mb-2", offer$note)
         else if (!is.null(offer)) actionButton(ns("use_nca_cv"), offer$label,
                                                class = "btn-outline-info btn-sm w-100 mt-1",
-                                               icon = icon("arrow-right")))
+                                               icon = icon("arrow-right")),
+        if (is.null(offer$note) && !is.null(offer$adjusted))
+          tagList(actionButton(ns("use_nca_cv_adj"), offer$adjusted$label,
+                               class = "btn-outline-info btn-sm w-100 mt-1", icon = icon("arrow-right")),
+                  tags$p(class = "text-muted small mb-2",
+                         "The planner assumes an analysis without covariates. Use the adjusted CV only if you plan to adjust for the same characteristics.")))
     })
 
     observeEvent(input$use_nca_cv, {
@@ -434,6 +439,15 @@ path_power_server <- function(id, shared) {
       if (is.null(offer) || !is.null(offer$note)) return()
       updateNumericInput(session, "cv", value = round(offer$cv, 1))
       if (!is.na(offer$cv_wr)) updateNumericInput(session, "cv_wr", value = round(offer$cv_wr, 1))
+    })
+
+    observeEvent(input$use_nca_cv_adj, {
+      ci <- shared$be_results$ci_table
+      m <- if (!is.null(input$cv_metric)) input$cv_metric else
+        ci$Parameter[grepl("^Ratio", ci$Scale) & is.finite(ci$MSE) & !ci$Parameter %in% BE_NO_VERDICT_PARAMS][1]
+      offer <- planner_cv_offer(shared$be_results, input$analysis_type, input$design, m)
+      if (is.null(offer) || is.null(offer$adjusted)) return()
+      updateNumericInput(session, "cv", value = round(offer$adjusted$cv, 1))
     })
 
     # The first CV is the Test CV for scaled methods and the total CV for a

@@ -721,10 +721,12 @@ path_be_server <- function(id, shared) {
         # Analysis still proceeds (na.exclude handles missing data in lm/lme),
         # but the user must be aware of the imbalance.
         balance_subjects <- unique(be_data[[subj_col_be]])
-        incomplete_subjects <- Filter(function(s) {
-          trts <- be_data[[trt_col_be]][be_data[[subj_col_be]] == s]
-          !all(trt_levels %in% as.character(trts))
-        }, balance_subjects)
+        # Parallel groups: every subject has one treatment by design
+        incomplete_subjects <- if (identical(be_design_model(design_used$design), "parallel")) character(0) else
+          Filter(function(s) {
+            trts <- be_data[[trt_col_be]][be_data[[subj_col_be]] == s]
+            !all(trt_levels %in% as.character(trts))
+          }, balance_subjects)
         
         if (length(incomplete_subjects) > 0) {
           n_total <- length(balance_subjects)
@@ -902,15 +904,17 @@ path_be_server <- function(id, shared) {
                                            ifelse(pe >= 80 & pe <= 125, "YES", "NO"))
         }
 
+        audit_be <- list(design_selected = input$be_design, design_analysed = design_used$design,
+                         reference = input$be_reference, model_type = input$model_type,
+                         log_transform = isTRUE(input$log_transform), ci_level = input$ci_level,
+                         acceptance_limits = c(input$be_lower, input$be_upper),
+                         pe_constraint = !identical(input$pe_constraint, FALSE),
+                         widened_scope = widened_scope_value(input$widened_scope),
+                         parameters = params)
+        if (!is.null(bd$covariates)) audit_be$covariates <- bd$covariates[, c("name", "type", "transform")]
         if (!gxp_guard("analysis_run", object = "bioequivalence", sha256 = gxp_data_sha256(shared$study_info),
                        details = list(trigger = "run", path = "be", nca_settings = settings,
-                                      be_settings = list(design_selected = input$be_design, design_analysed = design_used$design,
-                                                         reference = input$be_reference, model_type = input$model_type,
-                                                         log_transform = isTRUE(input$log_transform), ci_level = input$ci_level,
-                                                         acceptance_limits = c(input$be_lower, input$be_upper),
-                                                         pe_constraint = !identical(input$pe_constraint, FALSE),
-                                                         widened_scope = widened_scope_value(input$widened_scope),
-                                                         parameters = params)))) return()
+                                      be_settings = audit_be))) return()
         be_result(list(ci_table = ci_df, anova = anova_results, cv_table = cv_df, design = design_used$design,
                        sensitivity = sens_df,
                        covariates = bd$covariates, covariate_coefs = cov_coefs,
@@ -1697,6 +1701,8 @@ path_be_server <- function(id, shared) {
           df <- as.data.frame(be_result()$anova[[p]])
           df$Source <- rownames(df); writeData(wb, sn, df)
         }
+        sheets <- be_covariate_sheets(be_result())
+        for (sn in names(sheets)) { addWorksheet(wb, sn); writeData(wb, sn, sheets[[sn]]) }
         saveWorkbook(wb, file, overwrite = TRUE)
         gxp_export_done(file, paste0("BE_report_", Sys.Date(), ".xlsx"), "xlsx", gxp_data_sha256(shared$study_info))
       }

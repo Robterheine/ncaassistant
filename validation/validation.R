@@ -6902,6 +6902,80 @@ check("COV-11", "Group balance: means, SDs, category shares and standardized dif
   "URS-BE-13", critical = FALSE, method = "be_covariate_balance() against mean(), sd() and proportions; one profile marked excluded",
   expected = "Same values; the excluded subject leaves the summary; NULL without covariates")
 
+check("COV-12", "The record and the downloads carry the covariates: settings JSON, BE_Covariates and Covariate_Balance sheets, adjusted-for and unadjusted columns",
+  tryCatch({
+    b <- cov_be(cov_dat, data.frame(name = c("age", "sex"), type = c("numeric", "categorical")))
+    o <- cov_fit(b)
+    res <- list(ci_table = o$row, covariates = b$spec, covariate_coefs = list(Var = o$estimate$covariate_coefs),
+                covariate_balance = be_covariate_balance(b$data, b$spec, "Treat", "Subject"))
+    sh <- be_covariate_sheets(res)
+    f <- tempfile(fileext = ".csv"); write.csv(exc_xo, f, row.names = FALSE)
+    r <- suppressWarnings(run_nca(exc_xo, exc_cm, exc_st()))
+    td <- tempfile("cov12_"); dir.create(td); zf <- file.path(td, "rec.zip")
+    create_analysis_record(zf, r, exc_st(), exc_cm, f, "crossover.csv", blq_rule = "rule1", lloq = 0,
+                           be_results = res,
+                           be_settings = list(ci_level = 90, covariates = b$spec[, c("name", "type", "transform")]))
+    utils::unzip(zf, exdir = td)
+    js <- jsonlite::fromJSON(file.path(td, "analysis_settings.json"))
+    sn <- openxlsx::getSheetNames(file.path(td, "results.xlsx"))
+    ci <- names(rename_be_columns(o$row))
+    identical(names(sh), c("BE_Covariates", "Covariate_Balance")) &&
+      all(c("BE_Covariates", "Covariate_Balance") %in% sn) &&
+      identical(js$bioequivalence$covariates$name, c("age", "sex")) &&
+      all(c("Adjusted for", "Unadjusted 90% CI Lower (suppl.)", "Unadjusted 90% CI Upper (suppl.)",
+            "Unadjusted residual variance") %in% ci) &&
+      nrow(sh$BE_Covariates) == 2 && "Standardized difference" %in% names(sh$Covariate_Balance) &&
+      is.null(be_covariate_sheets(list(ci_table = o$row)))
+  }, error = function(e) FALSE),
+  "URS-BE-13, URS-EXP-05", critical = TRUE,
+  method = "create_analysis_record() with an adjusted result; be_covariate_sheets(); rename_be_columns()",
+  expected = "Settings JSON lists the covariates; both sheets are in results.xlsx; no sheets without covariates")
+
+check("COV-13", "Controlled mode: the audit event of a bioequivalence run carries the covariate settings",
+  tryCatch({
+    b <- cov_be(cov_dat, cov_sp("age", "weight"))
+    d <- file.path(gxp_tmp, "cov13"); dir.create(d); gxp_set(d)
+    gxp_env$audit_init(file.path(d, "audit.sqlite"), user = "owner", org = "Validation Org")
+    be <- paste(readLines("R/mod_path_be.R"), collapse = "\n")
+    wrote <- isTRUE(gxp_env$gxp_guard("analysis_run", object = "bioequivalence", sha256 = "abc", session = NULL,
+                                      details = list(trigger = "run", path = "be",
+                                                     be_settings = list(parameters = "CMAX",
+                                                                        covariates = b$spec[, c("name", "type", "transform")]))))
+    tr <- gxp_env$audit_read(file.path(d, "audit.sqlite"))
+    gxp_unset()
+    dj <- jsonlite::fromJSON(tr$details[tr$event == "analysis_run"][1])
+    wrote && identical(dj$be_settings$covariates$name, c("age", "weight")) &&
+      grepl("audit_be$covariates <- bd$covariates[, c(\"name\", \"type\", \"transform\")]", be, fixed = TRUE) &&
+      grepl("be_settings = audit_be", be, fixed = TRUE)
+  }, error = function(e) { gxp_unset(); FALSE }),
+  "URS-BE-13, URS-GXP-07", critical = TRUE,
+  method = "gxp_guard() with covariate details on a temporary trail, read back; the BE module builds those details",
+  expected = "The trail entry holds name, type and transform of each covariate")
+
+check("COV-14", "The planner offers the unadjusted CV and, beside it, the residual CV after adjustment; nothing changes without covariates",
+  tryCatch({
+    d <- cov_dat; d$Treat <- factor(d$Treat, levels = c("R", "T"))
+    b <- cov_be(cov_dat, cov_sp("age", "weight")); o <- cov_fit(b)
+    plain <- fit_be_parameter(d, "Var", "parallel", trt_col = "Treat", subj_col = "Subject")
+    res <- list(ci_table = o$row, design = "parallel"); res0 <- list(ci_table = plain$row, design = "parallel")
+    of <- planner_cv_offer(res, "abe", "parallel", "Var"); of0 <- planner_cv_offer(res0, "abe", "parallel", "Var")
+    r <- cov_ref[cov_ref$model == "none", ]; ra <- cov_ref[cov_ref$model == "age_weight", ]
+    isTRUE(all.equal(of$cv, 100 * sqrt(exp(r$mse) - 1), tolerance = 1e-5)) &&
+      isTRUE(all.equal(of$adjusted$cv, 100 * sqrt(exp(ra$mse) - 1), tolerance = 1e-5)) &&
+      of$adjusted$cv < of$cv && grepl("after adjusting for age, weight", of$adjusted$label) &&
+      is.null(of0$adjusted) && isTRUE(all.equal(of0$cv, of$cv, tolerance = 1e-5))
+  }, error = function(e) FALSE),
+  "URS-BE-13, URS-PWR-01", critical = FALSE, method = "planner_cv_offer() on adjusted and unadjusted parallel results, against statsmodels MSE",
+  expected = "Main offer equals the unadjusted CV; a second offer equals the adjusted residual CV; no second offer without covariates")
+
+check("COV-15", "Parallel groups raise no 'incomplete design' alarm: every subject has one treatment by design",
+  tryCatch({
+    be <- paste(readLines("R/mod_path_be.R"), collapse = "\n")
+    grepl('incomplete_subjects <- if (identical(be_design_model(design_used$design), "parallel")) character(0) else', be, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = FALSE, method = "Code inspection of the balance pre-check in R/mod_path_be.R; click-through on a parallel dataset",
+  expected = "The pre-check is skipped for parallel designs and kept for crossover and replicate designs")
+
 end_section("COV")
 
 # =============================================================================
