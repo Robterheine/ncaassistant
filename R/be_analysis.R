@@ -777,7 +777,7 @@ be_covariate_balance <- function(be_data, spec, trt_col, subj_col) {
     v <- d[[spec$col[i]]]
     if (spec$type[i] == "numeric") {
       m <- tapply(v, g, mean, na.rm = TRUE)[lv]; sdv <- tapply(v, g, stats::sd, na.rm = TRUE)[lv]
-      rows[[length(rows) + 1]] <- data.frame(Covariate = spec$name[i], Level = NA_character_,
+      rows[[length(rows) + 1]] <- data.frame(Covariate = paste0(spec$name[i], if (spec$transform[i] == "log") " (natural log)" else ""), Level = NA_character_,
         A = sprintf("%s (%s)", signif(m[1], 4), signif(sdv[1], 3)), B = sprintf("%s (%s)", signif(m[2], 4), signif(sdv[2], 3)),
         Std_Diff = sd_diff(m[2], m[1], sqrt((sdv[1]^2 + sdv[2]^2) / 2)), stringsAsFactors = FALSE)
     } else {
@@ -811,7 +811,7 @@ be_covariate_coefs <- function(fit, spec, trt_col, alpha = 0.10) {
     hit <- if (spec$type[i] == "numeric") intersect(col, rownames(sm)) else
       rownames(sm)[startsWith(rownames(sm), col)]
     for (h in hit) {
-      lab <- if (spec$type[i] == "numeric") spec$name[i] else {
+      lab <- if (spec$type[i] == "numeric") paste0(spec$name[i], if (spec$transform[i] == "log") " (natural log)" else "") else {
         lv <- levels(fit$model[[col]])
         paste0(spec$name[i], ": ", substring(h, nchar(col) + 1), " vs ", lv[1])
       }

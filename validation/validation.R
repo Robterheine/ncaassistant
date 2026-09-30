@@ -7292,6 +7292,30 @@ check("RSA-13", "Review fixes: exclusions leave CVwR, ABEL keeps the point-estim
   method = "Findings of the code review of phases 1-5, each with the data that triggered it",
   expected = "Excluded profiles do not enter CVwR; ABEL verdict NO when only the point estimate fails, whatever the checkbox; supportive RSABE metric has no verdict; a zero value stops the RSABE result; text periods are refused")
 
+check("RSA-14", "Interface audit fixes: a level other than 90% gives no scaled interval under a wrong label; the limits are refused before the NCA; advanced covariate options do not stay active unseen; log covariates are named as such",
+  tryCatch({
+    args <- list(trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
+    b <- rsa_synth(0.6, 100)
+    l95 <- do.call(be_assess_parameter, c(list("rsabe", b, "CMAX", "2x2x4", ci_level = 95), args))
+    std95 <- do.call(fit_be_parameter, c(list(b, "CMAX", design = "2x2x4", ci_level = 95), args))
+    sup95 <- do.call(be_assess_parameter, c(list("rsabe", b, "CMAX", "2x2x4", ci_level = 95, verdict = FALSE), args))$row
+    cb <- cov_be(cov_dat, data.frame(name = c("age", "sex"), type = c("numeric", "categorical"), transform = c("log", "none")))
+    bal <- be_covariate_balance(cb$data, cb$spec, "Treat", "Subject")
+    cf <- cov_fit(cb)$estimate$covariate_coefs
+    be <- paste(readLines("R/mod_path_be.R"), collapse = "\n"); has <- function(x) grepl(x, be, fixed = TRUE)
+    # the limits check sits before the NCA run in the run handler
+    i_lim <- regexpr("A scaled approach sets its own limits: refuse before the NCA runs", be, fixed = TRUE)
+    i_nca <- regexpr("run_nca(", be, fixed = TRUE)
+    isTRUE(all.equal(l95$row$CI_Lower, std95$row$CI_Lower)) && isTRUE(all.equal(l95$row$Point_Est, std95$row$Point_Est)) &&
+      l95$row$Route == "Standard" && grepl("^no verdict", l95$row$Bioequivalent) && sup95$Bioequivalent == "no verdict" &&
+      "age (natural log)" %in% bal$Covariate && "age (natural log)" %in% cf$Term &&
+      i_lim > 0 && i_lim < i_nca && has("observeEvent(input$cov_advanced, {") && has('output$cov_summary <- renderUI({') &&
+      has("(!input['%s'] || input['%s'] == 'standard')") && grepl("in the downloads", be_scaled_notes(
+        data.frame(Approach = "FDA RSABE"), list(CMAX = list(ok = TRUE, n = 30, n_incomplete = 1)))[1])
+  }, error = function(e) FALSE),
+  "URS-BE-14, URS-BE-13", critical = TRUE, method = "Findings of the adversarial audit of the interface, each with the input that triggered it",
+  expected = "At 95% the interval and the estimate are the standard ones with no scaled verdict; the limits check runs first; unticking Advanced options clears them; the balance and the coefficient table say natural log")
+
 end_section("RSA")
 
 # =============================================================================

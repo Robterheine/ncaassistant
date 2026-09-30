@@ -653,7 +653,7 @@ tags$h6(class = "fw-semibold mt-3", "Descriptive Statistics"),
                "true CV", tags$sub("wR"), " is at or below about 30%, that is, around and below the switch. The partial ",
                "replicate cannot estimate the Test variance, and with unequal variances its consumer risk can exceed 5% ",
                "(Tothfalusi & Endrenyi, 2016). A subject who lacks a period leaves the RSABE contrasts, and the number ",
-               "of subjects used is in the table. The app does not implement the exact method of Tothfalusi & Endrenyi ",
+               "of subjects used is in the downloads. The app does not implement the exact method of Tothfalusi & Endrenyi ",
                "or other corrections, which neither agency has adopted."),
 
         tags$h6(class = "fw-semibold mt-3", "Partial AUCs"),

@@ -165,12 +165,18 @@ be_assess_parameter <- function(approach = "standard", be_data, param, design, .
     return(add_cols(out, "Standard", r$sWR, NA_real_, NA_real_, r$critbound))
   }
   out <- std
-  # Scaled route: the estimate, 90% CI and verdict come from the FDA contrasts
+  # The assessment is a 90% procedure. At another level the standard interval stays as it is, labelled
+  # with its own level, and there is no scaled result
   ci_level <- if (is.null(args$ci_level)) 90 else args$ci_level
+  if (!isTRUE(all.equal(as.numeric(ci_level), 90))) {
+    out$row$Bioequivalent <- if (isFALSE(args$verdict)) "no verdict" else
+      paste0("no verdict: the RSABE assessment uses the 90% confidence interval (this is ", ci_level, "%)")
+    out$scaled <- r
+    return(add_cols(out, "Standard", r$sWR, NA_real_, NA_real_, NA_real_))
+  }
+  # Scaled route: the estimate, 90% CI and verdict come from the FDA contrasts
   if (isFALSE(args$verdict)) {          # a supportive metric: ratio and interval, no conclusion
     out$row$Bioequivalent <- "no verdict"
-  } else if (!isTRUE(all.equal(as.numeric(ci_level), 90))) {
-    out$row$Bioequivalent <- paste0("no verdict: the RSABE assessment uses the 90% confidence interval (this is ", ci_level, "%)")
   } else {
     out$row$Bioequivalent <- if (r$pass) "YES" else "NO"
   }
@@ -237,7 +243,7 @@ be_scaled_notes <- function(ci_df, details) {
     lost <- unique(unlist(lapply(details, function(d) if (isTRUE(d$ok)) d$n_incomplete else NULL)))
     if (any(lost > 0))
       out <- c(out, sprintf(paste0("Subjects who lack a value in one or more periods are left out of the RSABE contrasts ",
-                                   "(up to %d subject(s)); the numbers of subjects used are in the table."), max(lost)))
+                                   "(up to %d subject(s)); the numbers of subjects used are in the downloads."), max(lost)))
   }
   out
 }

@@ -112,7 +112,7 @@ path_be_ui <- function(id) {
                 condition = sprintf("input['%s'] == 'parallel'", ns("be_design")),
                 tags$details(
                   class = "mb-2",
-                  tags$summary(class = "fw-semibold", "Covariates (optional)"),
+                  tags$summary(class = "fw-semibold", "Covariates (optional)", uiOutput(ns("cov_summary"), inline = TRUE)),
                   tags$div(
                     class = "pt-2",
                     selectizeInput(ns("be_covariates"), tagList("Baseline characteristics to adjust for", help_be_covariates),
@@ -175,8 +175,8 @@ path_be_ui <- function(id) {
                 numericInput(ns("be_upper"), "Upper (%)", value = 125)
               ),
               conditionalPanel(
-                condition = sprintf("input['%s'] < 80 || input['%s'] > 125",
-                                    ns("be_lower"), ns("be_upper")),
+                condition = sprintf("(input['%s'] < 80 || input['%s'] > 125) && (!input['%s'] || input['%s'] == 'standard')",
+                                    ns("be_lower"), ns("be_upper"), ns("be_approach"), ns("be_approach")),
                 radioButtons(ns("widened_scope"), "Widened limits apply to",
                              choices = c("Cmax only" = "cmax",
                                          "Cmax and partial AUCs (not AUC to last point or to infinity)" = "cmax_pauc",
@@ -373,6 +373,13 @@ path_be_server <- function(id, shared) {
       updateSelectizeInput(session, "cov_categorical", choices = sel, selected = intersect(isolate(input$cov_categorical), sel))
       updateSelectizeInput(session, "cov_log", choices = sel, selected = intersect(isolate(input$cov_log), sel))
     })
+    # Advanced options never stay active out of sight: unticking the box clears them
+    observeEvent(input$cov_advanced, {
+      if (!isTRUE(input$cov_advanced)) {
+        updateSelectizeInput(session, "cov_categorical", selected = character(0))
+        updateSelectizeInput(session, "cov_log", selected = character(0))
+      }
+    }, ignoreInit = TRUE)
     # The covariate specification the inputs describe (parallel groups only)
     cov_spec_input <- reactive({
       sel <- input$be_covariates
@@ -381,6 +388,12 @@ path_be_server <- function(id, shared) {
                  type = ifelse(sel %in% input$cov_categorical, "categorical", "auto"),
                  transform = ifelse(sel %in% input$cov_log, "log", "none"),
                  stringsAsFactors = FALSE)
+    })
+    # The collapsed section still shows that covariates are active
+    output$cov_summary <- renderUI({
+      n <- length(input$be_covariates)
+      if (n == 0 || !identical(input$be_design, "parallel")) return(NULL)
+      tags$span(class = "badge bg-primary ms-2", paste(n, "selected"))
     })
     # What the app made of each chosen column, and any problem with it, before the run
     output$cov_types <- renderUI({
@@ -555,6 +568,13 @@ path_be_server <- function(id, shared) {
       }
       if (input$be_lower >= input$be_upper) {
         showNotification("Lower acceptance limit must be less than upper (e.g., 80 and 125).",
+                         type = "error", duration = NULL)
+        return()
+      }
+      # A scaled approach sets its own limits: refuse before the NCA runs, not after
+      if (approach_for(input$be_design) != "standard" && (!isTRUE(input$be_lower == 80) || !isTRUE(input$be_upper == 125))) {
+        showNotification(paste0("With EMA ABEL or FDA RSABE the acceptance limits are set by the method. ",
+                                "Reset the limits to 80 and 125 (they still apply to the metrics the method does not scale)."),
                          type = "error", duration = NULL)
         return()
       }
@@ -770,12 +790,6 @@ path_be_server <- function(id, shared) {
         if (!identical(input$be_approach, approach) && !is.null(input$be_approach) && input$be_approach != "standard") {
           showNotification(paste0("The approach you chose is not available for the design analysed (",
                                   design_used$design, "), so the standard approach was used."), type = "warning", duration = NULL)
-        }
-        if (approach != "standard" && (!isTRUE(input$be_lower == 80) || !isTRUE(input$be_upper == 125))) {
-          showNotification(paste0("With EMA ABEL or FDA RSABE the acceptance limits are set by the method. ",
-                                  "Reset the limits to 80 and 125 (they still apply to the metrics the method does not scale)."),
-                           type = "error", duration = NULL)
-          return()
         }
         ci_results <- list()
         scaled_details <- list()
