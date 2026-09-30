@@ -38,7 +38,7 @@ if (length(missing) > 0) {
 library(NonCompart); library(PowerTOST); library(nlme); library(digest)
 
 for (f in c("R/pipeline.R", "R/adnca_import.R", "R/utils.R", "R/cdisc_terms.R", "R/nca_helpers.R", "R/interlocks.R", "R/data_quality.R",
-           "R/export_record.R", "R/designs.R", "R/be_analysis.R")) {
+           "R/export_record.R", "R/designs.R", "R/be_analysis.R", "R/be_scaled.R")) {
   tryCatch(source(f, local = TRUE), error = function(e) NULL)
 }
 
@@ -58,7 +58,7 @@ source_files <- c("R/utils.R", "R/nca_helpers.R", "R/data_quality.R",
                   "R/export_record.R", "R/mod_data_upload.R", "R/designs.R", "R/be_analysis.R",
                   "R/pipeline.R", "R/interlocks.R", "R/adnca_import.R", "R/cdisc_terms.R",
                   "converters/adnca_to_flat.R", "R/gxp_audit.R", "R/gxp_access.R", "R/gxp_sign.R",
-                  "gxp/manage_users.R")
+                  "gxp/manage_users.R", "R/be_scaled.R")
 hash_files <- c("validation/validation.R", source_files)
 file_hashes <- sapply(hash_files, function(f) {
   if (file.exists(f)) digest(file = f, algo = "sha256") else "FILE_NOT_FOUND"
@@ -6979,6 +6979,288 @@ check("COV-15", "Parallel groups raise no 'incomplete design' alarm: every subje
 end_section("COV")
 
 # =============================================================================
+# SECTION RSA: FDA reference-scaled average bioequivalence (RSABE, Appendix G)
+# =============================================================================
+# Reference values: an independent Python implementation (numpy/scipy, no lm();
+# validation/fixtures/make_rsabe_reference.py) and an independent R version on
+# explicit matrices (validation/fixtures/rsabe_independent.R), on 13 replicateBE
+# reference data sets. No package implements the RSABE assessment: replicateBE
+# has ABE and Method A/B only, PowerTOST gives power and not a verdict.
+start_section("RSA")
+
+source(file.path("validation", "fixtures", "rsabe_independent.R"))
+rsa_dat <- read.csv(file.path("validation", "fixtures", "rsabe_datasets.csv"), stringsAsFactors = FALSE)
+rsa_ref <- read.csv(file.path("validation", "fixtures", "rsabe_reference.csv"), stringsAsFactors = FALSE)
+rsa_be <- function(id) {
+  d <- rsa_dat[rsa_dat$dataset == id, ]
+  data.frame(Subject = d$subject, Period = as.character(d$period), Sequence = d$sequence,
+             Treatment = factor(ifelse(d$treatment == "T", "Test", "Reference"), levels = c("Reference", "Test")),
+             CMAX = d$pk, stringsAsFactors = FALSE)
+}
+rsa_design <- function(id) if (id %in% c("rds02", "rds04", "rds07", "rds30")) "2x3x3" else "2x2x4"
+rsa_run <- function(b, design) rsabe_assess(b, "CMAX", design, "Treatment", "Subject", "Period", "Sequence")
+# Synthetic study with exactly known s_WR and point estimate (24 subjects, 2x2x4):
+# R1 = a + k*(+-1), R2 = a - k*(+-1), T1 = T2 = a + shift + e; signs balanced within sequence
+rsa_synth <- function(swr, pe_pct = 100, n = 24) {
+  k <- swr / sqrt(4 * n / (2 * (n - 2)))
+  seqs <- rep(c("TRTR", "RTRT"), each = n / 2); s <- rep(c(1, -1), length.out = n)
+  a <- seq(-0.5, 0.5, length.out = n); e <- 0.02 * rep(c(1, -1), each = 1, length.out = n)
+  shift <- log(pe_pct / 100)
+  rows <- lapply(seq_len(n), function(i) {
+    ord <- strsplit(seqs[i], "")[[1]]; r <- 0; tt <- 0
+    y <- vapply(seq_along(ord), function(p) if (ord[p] == "R") { r <<- r + 1; a[i] + c(1, -1)[r] * s[i] * k } else a[i] + shift + e[i], 0)
+    data.frame(Subject = as.character(i), Period = as.character(1:4), Sequence = seqs[i],
+               Treatment = factor(ifelse(ord == "T", "Test", "Reference"), levels = c("Reference", "Test")), CMAX = exp(y),
+               stringsAsFactors = FALSE)
+  })
+  do.call(rbind, rows)
+}
+
+check("RSA-01", "rsabe_assess() equals the independent Python computation on 13 reference data sets (all steps of Appendix G)",
+  tryCatch({
+    ok <- TRUE
+    for (i in seq_len(nrow(rsa_ref))) {
+      r <- rsa_ref[i, ]; a <- rsa_run(rsa_be(r$dataset), rsa_design(r$dataset))
+      got <- c(a$n, a$pe, a$ci_lo, a$ci_hi, a$sWR, a$dfd, a$x, a$boundx, a$y, a$boundy, a$critbound)
+      exp <- c(r$n, r$pe, r$lcl, r$ucl, r$swr, r$dfd, r$x, r$boundx, r$y, r$boundy, r$critbound)
+      ok <- ok && isTRUE(all.equal(got, exp, tolerance = 1e-9)) && a$seqs == r$m
+    }
+    ok && nrow(rsa_ref) == 13
+  }, error = function(e) FALSE),
+  "URS-BE-14", critical = TRUE,
+  method = "13 replicateBE data sets (2x3x3, 2x2x4 and variants, some with missing periods) against Python numpy/scipy (versions in rsabe_reference.csv)",
+  expected = "N, point estimate, 90% limits, s_WR, df, x, boundx, y, boundy and the criterion bound equal to 9 significant figures")
+
+check("RSA-02", "rsabe_assess() equals a second independent implementation in R (explicit matrices), including on simulated unbalanced studies",
+  tryCatch({
+    ok <- TRUE
+    ind <- function(b, ord = FALSE) {
+      z <- data.frame(subject = b$Subject, period = as.numeric(b$Period), sequence = b$Sequence,
+                      treatment = ifelse(b$Treatment == "Test", "T", "R"), y = log(b$CMAX), stringsAsFactors = FALSE)
+      rsabe_independent(z)
+    }
+    for (id in rsa_ref$dataset) {
+      a <- rsa_run(rsa_be(id), rsa_design(id)); i <- ind(rsa_be(id))
+      ok <- ok && isTRUE(all.equal(c(a$n, a$pe, a$sWR, a$critbound, a$boundx, a$boundy),
+                                   unname(i[c("n", "pe", "swr", "critbound", "boundx", "boundy")]), tolerance = 1e-9))
+    }
+    set.seed(5)
+    for (k in 1:5) {   # unbalanced sequences and scattered missing periods
+      b <- rsa_synth(0.25 + 0.1 * k, 90 + 3 * k, n = 24 + 2 * k)
+      b$CMAX <- b$CMAX * exp(rnorm(nrow(b), 0, 0.15))
+      b$CMAX[sample(nrow(b), 4)] <- NA
+      b <- b[!(b$Sequence == "RTRT" & b$Subject %in% as.character(1:3)), ]
+      a <- rsa_run(b, "2x2x4"); i <- ind(b)
+      ok <- ok && isTRUE(all.equal(c(a$n, a$pe, a$critbound), unname(i[c("n", "pe", "critbound")]), tolerance = 1e-9))
+    }
+    ok
+  }, error = function(e) FALSE),
+  "URS-BE-14", critical = TRUE, method = "rsabe_independent() in validation/fixtures on the 13 data sets and 5 simulated studies with unequal sequences and missing values",
+  expected = "Equal to 9 significant figures")
+
+check("RSA-03", "Consistency with the planner: the pass rate of the assessment equals PowerTOST::power.RSABE within Monte Carlo error",
+  tryCatch({
+    sim_pass <- function(design, n, cv_wr, cv_wt, gmr, nsim, seed) {
+      set.seed(seed)
+      seqs <- if (design == "2x2x4") c("TRTR", "RTRT") else c("TRR", "RTR", "RRT")
+      sw_r <- sqrt(log(cv_wr^2 + 1)); sw_t <- sqrt(log(cv_wt^2 + 1))
+      seq_of <- rep(seqs, length.out = n)
+      base <- do.call(rbind, lapply(seq_len(n), function(i) {
+        ord <- strsplit(seq_of[i], "")[[1]]
+        data.frame(Subject = as.character(i), Period = as.character(seq_along(ord)), Sequence = seq_of[i],
+                   trt = ord, stringsAsFactors = FALSE)
+      }))
+      base$Treatment <- factor(ifelse(base$trt == "T", "Test", "Reference"), levels = c("Reference", "Test"))
+      hits <- 0
+      for (s in seq_len(nsim)) {
+        b <- base
+        b$CMAX <- exp(rnorm(n, 0, 0.3)[as.integer(b$Subject)] + ifelse(b$trt == "T", log(gmr), 0) +
+                        rnorm(nrow(b), 0, ifelse(b$trt == "T", sw_t, sw_r)))
+        a <- rsa_run(b, design); hits <- hits + isTRUE(a$pass)
+      }
+      hits / nsim
+    }
+    cases <- list(list("2x2x4", 30, 0.45, 0.45, 0.90), list("2x2x4", 24, 0.60, 0.60, 1.00), list("2x3x3", 36, 0.50, 0.50, 0.95))
+    nsim <- 3000; ok <- TRUE
+    for (cs in cases) {
+      mine <- sim_pass(cs[[1]], cs[[2]], cs[[3]], cs[[4]], cs[[5]], nsim, seed = 11)
+      pt <- suppressMessages(PowerTOST::power.RSABE(theta0 = cs[[5]], CV = c(cs[[4]], cs[[3]]), design = cs[[1]],
+                                                    n = cs[[2]], nsims = 1e5, setseed = TRUE))
+      ok <- ok && abs(mine - pt) < 4 * sqrt(pt * (1 - pt) / nsim) + 0.01
+    }
+    ok
+  }, error = function(e) FALSE),
+  "URS-BE-14, URS-PWR-01", critical = FALSE,
+  method = "3000 seeded studies per case (2x2x4 n=30 CV 45% GMR 0.90; 2x2x4 n=24 CV 60% GMR 1.00; 2x3x3 n=36 CV 50% GMR 0.95) assessed with rsabe_assess(); PowerTOST::power.RSABE with 1e5 simulations",
+  expected = "Pass rates equal within four binomial standard errors of the simulation (cases chosen far above the switch, so the ABE fall-back plays no part)")
+
+check("RSA-04", "The switch at s_WR 0.294 and the point-estimate limits: just below and above, four significant figures",
+  tryCatch({
+    lo <- rsa_run(rsa_synth(0.2939, 100), "2x2x4"); hi <- rsa_run(rsa_synth(0.2941, 100), "2x2x4")
+    abs(lo$sWR - 0.2939) < 1e-6 && abs(hi$sWR - 0.2941) < 1e-6 && !lo$scaled && hi$scaled && !lo$pass &&
+      # high s_WR, so the criterion is met and only the point estimate decides
+      { a <- rsa_run(rsa_synth(0.6, 124.99), "2x2x4"); b <- rsa_run(rsa_synth(0.6, 125.04), "2x2x4")
+        c2 <- rsa_run(rsa_synth(0.6, 125.06), "2x2x4"); d2 <- rsa_run(rsa_synth(0.6, 79.996), "2x2x4")
+        e2 <- rsa_run(rsa_synth(0.6, 79.99), "2x2x4")
+        a$critbound <= 0 && a$pass && b$pass && !c2$pass && c2$critbound <= 0 && d2$pass && !e2$pass &&
+          abs(a$pe - 124.99) < 0.01 }
+  }, error = function(e) FALSE),
+  "URS-BE-14", critical = TRUE, method = "Synthetic 2x2x4 studies with exactly known s_WR and point estimate",
+  expected = "Scaling starts at 0.294; 125.04% passes (125.0 to four figures), 125.06% fails; 79.996% passes (80.00), 79.99% fails")
+
+check("RSA-05", "Complete cases: a subject missing a period leaves the contrast, N is reported; unbalanced sequences work; excluded profiles are left out",
+  tryCatch({
+    b <- rsa_be("rds01"); full <- rsa_run(b, "2x2x4")
+    n_all <- length(unique(b$Subject))
+    b2 <- rsa_synth(0.5, 100); n0 <- rsa_run(b2, "2x2x4")$n
+    b2$CMAX[b2$Subject == "1" & b2$Period == "2"] <- NA
+    m1 <- rsa_run(b2, "2x2x4")
+    b3 <- rsa_synth(0.5, 100); b3$EXCLUDED <- NA_character_; b3$EXCLUDED[b3$Subject == "2" & b3$Period == "3"] <- "Vomiting"
+    m2 <- rsa_run(b3, "2x2x4")
+    b4 <- b2[!(b2$Subject %in% as.character(1:4) & b2$Sequence == "TRTR"), ]
+    full$n < n_all && full$n_incomplete == n_all - full$n && n0 == 24 && m1$n == 23 && m1$n_incomplete == 1 &&
+      m2$n == 23 && m2$n_incomplete == 1 && rsa_run(b4, "2x2x4")$ok
+  }, error = function(e) FALSE),
+  "URS-BE-14, URS-BE-11", critical = TRUE, method = "rds01 (77 subjects, missing periods); synthetic study with one period removed or excluded; sequences of unequal size",
+  expected = "Only subjects with every period enter; the count of subjects left out is reported; exclusions act like missing values")
+
+check("RSA-06", "Unsupported input is refused in plain words: 2x2x3, 2x2x2, missing Period or Sequence, too few subjects",
+  tryCatch({
+    b <- rsa_synth(0.5, 100)
+    r223 <- rsabe_assess(b, "CMAX", "2x2x3", "Treatment", "Subject", "Period", "Sequence")
+    r222 <- rsabe_assess(b, "CMAX", "2x2x2", "Treatment", "Subject", "Period", "Sequence")
+    rnp <- rsabe_assess(b, "CMAX", "2x2x4", "Treatment", "Subject", NULL, "Sequence")
+    few <- rsabe_assess(b[b$Subject %in% as.character(1:2), ], "CMAX", "2x2x4", "Treatment", "Subject", "Period", "Sequence")
+    w <- tryCatch(be_assess_parameter("rsabe", b, "CMAX", "2x2x3", trt_col = "Treatment", subj_col = "Subject",
+                                      per_col = "Period", seq_col = "Sequence"), error = function(e) e)
+    !r223$ok && grepl("2x2x3 design is not covered", r223$reason) && !r222$ok && !rnp$ok && grepl("Period and Sequence", rnp$reason) &&
+      !few$ok && grepl("Too few subjects", few$reason) && inherits(w, "be_scaled_error") && grepl("not available for the design 2x2x3", conditionMessage(w))
+  }, error = function(e) FALSE),
+  "URS-BE-14", critical = TRUE, method = "rsabe_assess() and be_assess_parameter() with unsupported designs and inputs",
+  expected = "ok = FALSE with a plain reason; be_assess_parameter() stops with class be_scaled_error")
+
+check("RSA-07", "The assessment wrapper: Route, s_WR, implied limits and criterion bound; below the switch the standard model is used; other confidence levels give no verdict",
+  tryCatch({
+    args <- list(trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
+    hi <- do.call(be_assess_parameter, c(list("rsabe", rsa_synth(0.6, 100), "CMAX", "2x2x4"), args))
+    lo <- do.call(be_assess_parameter, c(list("rsabe", rsa_synth(0.2, 100), "CMAX", "2x2x4"), args))
+    st <- do.call(be_assess_parameter, c(list("standard", rsa_synth(0.2, 100), "CMAX", "2x2x4"), args))
+    l95 <- do.call(be_assess_parameter, c(list("rsabe", rsa_synth(0.6, 100), "CMAX", "2x2x4", ci_level = 95), args))
+    tm <- do.call(be_assess_parameter, c(list("rsabe", rsa_synth(0.6, 100), "TMAX", "2x2x4"), args))
+    new_cols <- c("Approach", "Route", "s_WR", "Scaled_Lower", "Scaled_Upper", "Crit_Bound")
+    hi$row$Route == "Scaled" && hi$row$Bioequivalent == "YES" && hi$row$Approach == "FDA RSABE" &&
+      isTRUE(all.equal(hi$row$Scaled_Upper, 100 * exp(log(1.25) * 0.6 / 0.25))) && hi$row$Crit_Bound <= 0 &&
+      hi$row$BE_Upper == hi$row$Scaled_Upper && grepl("RSABE", hi$row$Model) &&
+      lo$row$Route == "Standard" && lo$row$Bioequivalent == "YES" && lo$row$BE_Upper == 125 && !grepl("RSABE", lo$row$Model) &&
+      all(new_cols %in% names(lo$row)) && !any(new_cols %in% names(st$row)) &&
+      grepl("^no verdict", l95$row$Bioequivalent) && tm$row$Route == "Standard"
+  }, error = function(e) FALSE),
+  "URS-BE-14", critical = TRUE, method = "be_assess_parameter('rsabe') on synthetic studies with s_WR 0.6 and 0.2, at 90 and 95%, and on Tmax",
+  expected = "Scaled route with implied limits and bound; standard route below the switch; the standard approach adds no columns")
+
+check("RSA-08", "Without the scaled approach nothing changes: 'standard' returns exactly the output of fit_be_parameter()",
+  tryCatch({
+    b <- rsa_be("rds01"); args <- list(trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
+    a <- do.call(be_assess_parameter, c(list("standard", b, "CMAX", "2x2x4"), args))
+    f <- do.call(fit_be_parameter, c(list(b, "CMAX", design = "2x2x4"), args))
+    identical(a, f) && identical(be_approach_choices("2x2x2"), c("Standard (average bioequivalence)" = "standard")) &&
+      identical(unname(be_approach_choices("2x2x3")), c("standard", "abel")) &&
+      identical(unname(be_approach_choices("2x3x3")), c("standard", "abel", "rsabe")) &&
+      identical(unname(be_approach_choices("parallel")), "standard")
+  }, error = function(e) FALSE),
+  "URS-BE-14, URS-BE-15", critical = TRUE, method = "be_assess_parameter('standard') against fit_be_parameter() on rds01; be_approach_choices() for each design",
+  expected = "Identical; scaled approaches offered only for the designs the FDA or EMA text covers")
+
+end_section("RSA")
+
+# =============================================================================
+# SECTION ABL: EMA average bioequivalence with expanding limits (ABEL)
+# =============================================================================
+# EMA CPMP/EWP/QWP/1401/98 Rev. 1, section 4.1.10: limits from CVwR above 30%,
+# capped at 50%, Cmax only, point estimate within 80.00-125.00%. Reference
+# implementation: replicateBE::method.A on its 30 reference data sets.
+start_section("ABL")
+
+abl_b <- function(nm) {
+  d <- getExportedValue("replicateBE", nm)
+  data.frame(Subject = as.character(d$subject), Period = as.character(d$period), Sequence = as.character(d$sequence),
+             Treatment = factor(ifelse(d$treatment == "T", "Test", "Reference"), levels = c("Reference", "Test")),
+             CMAX = d$PK, AUCLST = d$PK, stringsAsFactors = FALSE)
+}
+abl_args <- list(trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
+abl_run <- function(b, param = "CMAX", design = "2x2x4", ...) do.call(be_assess_parameter, c(list("abel", b, param, design), abl_args, list(...)))
+abl_ma <- function(nm) suppressMessages(suppressWarnings(replicateBE::method.A(
+  data = getExportedValue("replicateBE", nm), print = FALSE, details = TRUE, verbose = FALSE, plot.bxp = FALSE)))
+
+check("ABL-01", "ABEL verdict, limits and CVwR equal replicateBE::method.A on all 30 reference data sets",
+  tryCatch({
+    ok <- TRUE; n_scaled <- 0; n_std <- 0; n_yes <- 0; n_no <- 0
+    for (nm in sprintf("rds%02d", 1:30)) {
+      ma <- abl_ma(nm); r <- abl_run(abl_b(nm))$row
+      cv <- as.numeric(ma[1, "CVwR(%)"]); pass_ref <- identical(as.character(ma[1, "BE"]), "pass")
+      ok <- ok && identical(r$Bioequivalent, if (pass_ref) "YES" else "NO") &&
+        isTRUE(all.equal(r$s_WR, as.numeric(ma[1, "swR"]), tolerance = 1e-8)) &&
+        identical(r$Route, if (cv > 30) "Scaled" else "Standard")
+      if (cv > 30) {
+        ok <- ok && isTRUE(all.equal(c(r$Scaled_Lower, r$Scaled_Upper), c(as.numeric(ma[1, "L(%)"]), as.numeric(ma[1, "U(%)"])), tolerance = 1e-8)) &&
+          r$BE_Lower == r$Scaled_Lower
+        n_scaled <- n_scaled + 1
+      } else { ok <- ok && r$Scaled_Lower == 80 && r$Scaled_Upper == 125; n_std <- n_std + 1 }
+      n_yes <- n_yes + pass_ref; n_no <- n_no + !pass_ref
+    }
+    ok && n_scaled > 5 && n_std > 3 && n_yes > 3 && n_no > 3
+  }, error = function(e) FALSE),
+  "URS-BE-15, URS-BE-09", critical = TRUE,
+  method = "be_assess_parameter('abel') on rds01-rds30 against replicateBE::method.A (BE, L, U, swR, CVwR)",
+  expected = "Same verdict on every set (both passes and failures occur); same limits above CVwR 30% and 80.00-125.00% below; same s_WR")
+
+check("ABL-02", "Only Cmax is widened: in the same run AUC keeps 80.00-125.00%; the widening is capped at CVwR 50%",
+  tryCatch({
+    ok <- TRUE
+    for (nm in c("rds08", "rds04", "rds01")) {
+      b <- abl_b(nm); cm <- abl_run(b, "CMAX")$row; au <- abl_run(b, "AUCLST")$row
+      ok <- ok && au$Route == "Standard" && au$BE_Lower == 80 && au$BE_Upper == 125 && is.na(au$Scaled_Lower)
+    }
+    big <- abl_run(abl_b("rds08"))$row     # CVwR far above 50%
+    ok && isTRUE(all.equal(c(big$BE_Lower, big$BE_Upper), abel_limits(50), tolerance = 1e-12)) &&
+      isTRUE(all.equal(round(c(big$BE_Lower, big$BE_Upper), 2), c(69.84, 143.19)))
+  }, error = function(e) FALSE),
+  "URS-BE-15", critical = TRUE, method = "be_assess_parameter('abel') on Cmax and on AUC (same data), on data sets with CVwR near and above 50%",
+  expected = "AUC: standard route, 80-125; Cmax above 50% CVwR: 69.84-143.19")
+
+check("ABL-03", "Design rules: 2x2x3 accepted, 2x2x2 and parallel groups refused; the point estimate must also lie within 80-125%",
+  tryCatch({
+    r3 <- abl_run(abl_b("rds03"), design = "2x2x3")$row
+    ma <- abl_ma("rds03")
+    e2 <- tryCatch(abl_run(abl_b("rds03"), design = "2x2x2"), error = function(e) e)
+    ep <- tryCatch(abl_run(abl_b("rds03"), design = "parallel"), error = function(e) e)
+    # A wide, imprecise study: the 90% CI sits inside widened limits but the point estimate is outside 80-125%
+    b <- abl_b("rds08"); b$CMAX[b$Treatment == "Test"] <- b$CMAX[b$Treatment == "Test"] * 1.6
+    x <- abl_run(b)$row
+    ci_in <- x$CI_Lower >= x$BE_Lower && x$CI_Upper <= x$BE_Upper
+    identical(r3$Bioequivalent, if (identical(as.character(ma[1, "BE"]), "pass")) "YES" else "NO") &&
+      inherits(e2, "be_scaled_error") && inherits(ep, "be_scaled_error") &&
+      x$Point_Est > 125 && ci_in && x$Bioequivalent == "NO" && x$PE_Constraint == "NO"
+  }, error = function(e) FALSE),
+  "URS-BE-15", critical = TRUE, method = "rds03 as 2x2x3; rds08 with the Test values raised by 60%",
+  expected = "2x2x3 matches Method A; 2x2x2 and parallel refused with class be_scaled_error; verdict NO when only the point-estimate condition fails")
+
+check("ABL-04", "Sensitivity after an exclusion works for both approaches: the profile is counted as excluded and the scaled result is still computed",
+  tryCatch({
+    b <- abl_b("rds01"); b$EXCLUDED <- NA_character_
+    i <- which(b$Subject == b$Subject[1] & b$Treatment == "Test")[1]; b$EXCLUDED[i] <- "Vomiting"
+    a0 <- abl_run(abl_b("rds01"))$row; a1 <- abl_run(b)$row
+    r0 <- do.call(be_assess_parameter, c(list("rsabe", abl_b("rds01"), "CMAX", "2x2x4"), abl_args))$row
+    r1 <- do.call(be_assess_parameter, c(list("rsabe", b, "CMAX", "2x2x4"), abl_args))$row
+    a1$Excluded_Test == 1 && a0$Excluded_Test == 0 && r1$Route == "Scaled" && r1$N_Test == r0$N_Test - 1 &&
+      is.finite(a1$CI_Lower) && is.finite(r1$CI_Lower)
+  }, error = function(e) FALSE),
+  "URS-BE-15, URS-BE-14, URS-BE-11", critical = TRUE, method = "rds01 with one Test profile marked excluded, ABEL and RSABE",
+  expected = "ABEL: Excluded_Test = 1. RSABE: one subject fewer in the contrast. Both give an interval")
+
+end_section("ABL")
+
+# =============================================================================
 # Post-execution
 # =============================================================================
 cat("\n", paste(rep("=",72),collapse=""), "\n")
@@ -7004,7 +7286,7 @@ if (nrow(cf)>0) {
 }
 
 all_urs <- c(paste0("URS-GEN-0",c(1,3:9)),paste0("URS-DAT-0",1:9),paste0("URS-NCA-",sprintf("%02d",1:15)),
-             paste0("URS-BE-0",1:9),"URS-BE-10","URS-BE-11","URS-BE-12","URS-BE-13",paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:8),paste0("URS-UI-0",1:5),
+             paste0("URS-BE-0",1:9),"URS-BE-10","URS-BE-11","URS-BE-12","URS-BE-13","URS-BE-14","URS-BE-15",paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:8),paste0("URS-UI-0",1:5),
              paste0("URS-VIZ-0",1:9),paste0("URS-GXP-",sprintf("%02d",1:20)))
 covered <- unique(unlist(strsplit(results_df$URS_Ref,",\\s*")))
 # Coverage by executed tests only: a requirement whose only tests are manual
