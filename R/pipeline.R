@@ -218,6 +218,12 @@ resolve_exclusions <- function(data, col_map, excl) {
   out
 }
 
+#' The file columns mapped to a role, named by role
+mapped_roles <- function(col_map) {
+  roles <- unlist(col_map[intersect(c("subject", "time", "conc", "dose", "treatment", "period", "sequence"), names(col_map))])
+  roles[!is.na(roles) & nzchar(roles)]
+}
+
 #' Turn an uploaded table into the canonical analysis dataset
 #'
 #' Converts time and concentration to numbers (rewriting "<x" BLQ text to a
@@ -235,6 +241,10 @@ resolve_exclusions <- function(data, col_map, excl) {
 #' @return pk_dataset: list(data, col_map, design, provenance, analyte, units,
 #'   time_basis, blq, flags, interlocks, qc)
 prepare_pk_dataset <- function(raw, col_map, opts = list()) {
+  roles <- mapped_roles(col_map)
+  if (anyDuplicated(roles))
+    stop("Column '", roles[duplicated(roles)][1], "' is mapped to more than one role. Map a different column to each role.",
+         call. = FALSE)
   lloq <- if (is.null(opts$lloq)) 0 else opts$lloq
   rule <- if (is.null(opts$blq_rule)) "rule1" else opts$blq_rule
 

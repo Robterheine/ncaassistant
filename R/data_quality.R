@@ -96,15 +96,15 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
   # 2. COLUMN EXISTENCE & TYPE CHECKS
   # ===========================================================================
   
-  # The Subject column must not be the Time or Concentration column (this
-  # happens when a file has no Subject column and the suggestion is accepted)
-  if (!is.null(col_map$subject) && nzchar(col_map$subject) &&
-      col_map$subject %in% c(col_map$time, col_map$conc)) {
-    add("WARNING", "Columns",
-        paste0("Subject is mapped to the same column as ",
-               if (identical(col_map$subject, col_map$time)) "Time" else "Concentration"),
-        paste0("Column '", col_map$subject, "' is used twice, so every value becomes its own subject."),
-        "Map the Subject column. For a single profile, add a Subject column with one value on every row.")
+  # One file column cannot play two roles (this happens when a file has no
+  # Subject column and the suggestion is accepted): every value would become
+  # its own subject, or the times would be read as concentrations
+  roles <- mapped_roles(col_map)
+  for (cc in unique(roles[duplicated(roles)])) {
+    add("ERROR", "Columns",
+        paste0("Column '", cc, "' is mapped to more than one role"),
+        paste0("'", cc, "' is used for ", paste(names(roles)[roles == cc], collapse = " and "), "."),
+        "Map a different column to each role. For a single profile, add a Subject column with one value on every row.")
   }
 
   # Check mapped columns actually exist
@@ -308,11 +308,20 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
   conc_num <- suppressWarnings(as.numeric(as.character(conc_raw)))
   n_conc_na <- sum(is.na(conc_num))
   
+  # Infinite concentrations ("Inf", "1e999") give an infinite Cmax and no AUC
+  n_inf_conc <- sum(is.infinite(conc_num))
+  if (n_inf_conc > 0) {
+    inf_subj <- unique(as.character(data[[subj_col]][is.infinite(conc_num)]))
+    add("ERROR", "Concentration", paste(n_inf_conc, "infinite concentration values"),
+        paste0("Subjects: ", paste(head(inf_subj, 5), collapse = ", "), if (length(inf_subj) > 5) ", ..." else ""),
+        "Correct these values in the file. An infinite concentration cannot be analysed.")
+  }
+
   # Negative concentrations
-  n_neg_conc <- sum(conc_num < 0, na.rm = TRUE)
+  n_neg_conc <- sum(conc_num < 0 & is.finite(conc_num), na.rm = TRUE)
   if (n_neg_conc > 0) {
-    neg_subj <- unique(as.character(data[[subj_col]][!is.na(conc_num) & conc_num < 0]))
-    detail <- paste0("Min value: ", min(conc_num, na.rm = TRUE), ". Subjects: ",
+    neg_subj <- unique(as.character(data[[subj_col]][!is.na(conc_num) & is.finite(conc_num) & conc_num < 0]))
+    detail <- paste0("Min value: ", min(conc_num[is.finite(conc_num)], na.rm = TRUE), ". Subjects: ",
                      paste(head(neg_subj, 5), collapse = ", "), if (length(neg_subj) > 5) ", ..." else "")
     # NonCompart returns no parameters at all for a profile with a negative
     # value, so without an LLOQ the analysis cannot go ahead

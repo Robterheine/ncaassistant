@@ -83,6 +83,9 @@ rsabe_assess <- function(be_data, param, design, trt_col, subj_col, per_col, seq
   if (n < 3 || seqs < 1 || n - seqs < 2)
     return(list(ok = FALSE, n = n, n_incomplete = cc$n_incomplete,
                 reason = "Too few subjects with data in every period for the RSABE assessment."))
+  if (seqs < 2)
+    return(list(ok = FALSE, n = n, n_incomplete = cc$n_incomplete,
+                reason = "RSABE needs at least two sequences; all subjects are in one."))
   s$sequence <- factor(s$sequence)
   fi <- lm(I ~ sequence, data = s); fd <- lm(D ~ sequence, data = s)
   m <- nlevels(s$sequence); dfi <- n - m
@@ -148,7 +151,7 @@ be_assess_parameter <- function(approach = "standard", be_data, param, design, .
     a <- args; a$be_lower <- lim[1]; a$be_upper <- lim[2]; a$widened_scope <- "cmax"; a$pe_constraint <- TRUE
     out <- fit(a)
     out$scaled <- list(approach = "abel", CVwR = v$cv, sWR = v$sw, df = v$df, lower = lim[1], upper = lim[2])
-    return(add_cols(out, if (v$cv > 30) "Scaled" else "Standard", v$sw, lim[1], lim[2], NA_real_))
+    return(add_cols(out, if (v$cv > 30 && is.null(out$reason)) "Scaled" else "Standard", v$sw, lim[1], lim[2], NA_real_))
   }
   # RSABE
   if (!is_ratio) return(add_cols(fit(), "Standard", NA_real_, NA_real_, NA_real_, NA_real_))

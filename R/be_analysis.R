@@ -383,6 +383,8 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
     stop(structure(class = c("be_covariate_error", "error", "condition"),
                    list(message = be_covariate_checks(be_data, covariates, trt_col, subj_col, design = design)$errors[1],
                         call = NULL)))
+  if (!is.finite(be_lower) || !is.finite(be_upper))
+    stop("Enter both acceptance limits as numbers.", call. = FALSE)
   widened <- be_lower < 80 || be_upper > 125
   widen_here <- identical(widened_scope, "all") || param == "CMAX" ||
     (identical(widened_scope, "cmax_pauc") && length(partial_auc_cols(param)) == 1)
@@ -481,6 +483,18 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
       return(out)
     }
   }
+  # An infinite value (or, for a ratio, a negative one) cannot come from a valid
+  # profile and has no logarithm; dropping it silently would hide the profile
+  invalid <- !is.na(vals) & (is.infinite(vals) | (is_ratio & vals < 0))
+  if (any(invalid)) {
+    who <- vapply(which(invalid), prof_label, character(1))
+    out$reason <- paste0("no verdict: ", sum(invalid), " infinite or negative value(s): ",
+                         paste(head(who, 5), collapse = "; "),
+                         if (length(who) > 5) paste0(" and ", length(who) - 5, " more") else "",
+                         ". Correct the data or exclude these profiles with a reason.")
+    out$row <- make_row(verdict = out$reason)
+    return(out)
+  }
   if (is_ratio) {
     # A zero (e.g. an early partial AUC with only BLQ samples) has no
     # logarithm. The profiles that would drop out are the low-exposure ones, so
@@ -499,7 +513,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
       out$row <- make_row(verdict = out$reason)
       return(out)
     }
-    vals <- log(vals); vals[!is.finite(vals)] <- NA
+    vals <- log(vals)
   } else {
     n_zero_t <- 0L; n_zero_r <- 0L
   }
@@ -679,6 +693,15 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
 
   diff <- coef_result$diff; se_diff <- coef_result$se
   dfe <- coef_result$dfe; mse <- coef_result$mse
+
+  # No residual degrees of freedom (2 subjects in a crossover, 1 per group in a
+  # parallel study): the variance and the interval cannot be estimated
+  if (!is.finite(dfe) || dfe < 1 || !is.finite(se_diff)) {
+    reason <- "no verdict: the model has no residual degrees of freedom, so the confidence interval cannot be estimated. More subjects are needed."
+    out$reason <- reason
+    out$row <- make_row(n_t = n2, n_r = n1, o_t = o2, o_r = o1, verdict = reason)
+    return(out)
+  }
 
   t_crit <- qt(1 - alpha / 2, dfe)
   ci_lo <- diff - t_crit * se_diff

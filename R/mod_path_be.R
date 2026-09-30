@@ -872,6 +872,12 @@ path_be_server <- function(id, shared) {
             be_scaled_error = function(e) {
               showNotification(conditionMessage(e), type = "error", duration = NULL)
               NULL
+            },
+            # Anything else must not end the session
+            error = function(e) {
+              showNotification(paste0("The analysis of ", friendly_name(param), " stopped with an unexpected error: ",
+                                      conditionMessage(e)), type = "error", duration = NULL)
+              NULL
             })
           if (is.null(fit_out)) { cov_stopped <- TRUE; break }
           if (!is.na(fit_out$row$Model) && grepl("mixed model failed", fit_out$row$Model)) {
@@ -1382,6 +1388,7 @@ path_be_server <- function(id, shared) {
         none$note <- ifelse(nz > 0, paste0("no estimate: ", nz, " zero value(s)"), "no estimate")
       }
       ci <- ci[!is.na(ci$Point_Est), , drop = FALSE]
+      if (nrow(ci) == 0) return(plotly_empty())
       limits_differ <- nrow(unique(lims)) > 1
       lim_rows <- ci[!is.na(ci$BE_Lower), , drop = FALSE]
       if (limits_differ) lim_rows$pos <- as.integer(lim_rows$Label)

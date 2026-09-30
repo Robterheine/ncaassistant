@@ -6665,6 +6665,87 @@ check("ARV-10", "Errors stay on screen until closed and are announced to screen 
   method = "Every showNotification(type = \"error\") call in R/ and app.R; the live regions in app.R",
   expected = "No error disappears on a timer (were 5 to 12 s); notification text is copied into live regions, errors assertively")
 
+# Stress test of the app (2026-09-30): hostile inputs that ended the session or gave wrong numbers
+stress_xo <- function(n) {
+  seqs <- rep(c("TR", "RT"), length.out = n); set.seed(11)
+  do.call(rbind, lapply(seq_len(n), function(i) {
+    ord <- strsplit(seqs[i], "")[[1]]; b <- rnorm(1, 0, .3)
+    data.frame(Subject = as.character(i), Period = as.character(1:2), Sequence = seqs[i],
+               Treatment = factor(ifelse(ord == "T", "Test", "Reference"), levels = c("Reference", "Test")),
+               CMAX = exp(b + ifelse(ord == "T", 0.05, 0) + rnorm(2, 0, .2)))
+  }))
+}
+stress_fit <- function(d, design = "2x2x2", ...) fit_be_parameter(d, "CMAX", design, trt_col = "Treatment", subj_col = "Subject",
+                                                                   per_col = "Period", seq_col = "Sequence", ...)
+check("ARV-11", "A study with no residual degrees of freedom gives a reason, not an error that ends the session",
+  tryCatch({
+    a <- stress_fit(stress_xo(2))
+    par11 <- data.frame(Subject = c("1", "2"), Treatment = factor(c("Reference", "Test"), levels = c("Reference", "Test")), CMAX = c(1, 2))
+    b <- fit_be_parameter(par11, "CMAX", "parallel", trt_col = "Treatment", subj_col = "Subject")
+    ok <- function(r) !is.null(r$reason) && grepl("degrees of freedom", r$reason) && is.na(r$row$Point_Est) &&
+      !r$row$Bioequivalent %in% c("YES", "NO")
+    ok(a) && ok(b) && identical(stress_fit(stress_xo(12))$row$Bioequivalent %in% c("YES", "NO"), TRUE)
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = TRUE,
+  method = "fit_be_parameter() on a 2-subject 2x2x2 crossover and a 1 + 1 parallel study; a 12-subject crossover as control",
+  expected = "No estimate and a stated reason for the two degenerate studies (was: R error); the control still gets a verdict")
+
+check("ARV-12", "An infinite or negative value in the BE data is reported, never dropped without a trace",
+  tryCatch({
+    d <- stress_xo(12); d$CMAX[1] <- Inf
+    e <- stress_xo(12); e$CMAX[1] <- -5
+    m <- stress_xo(12); m$CMAX[1] <- NA
+    a <- stress_fit(d); b <- stress_fit(e); c2 <- stress_fit(m)
+    grepl("infinite or negative", a$reason) && grepl("infinite or negative", b$reason) &&
+      is.null(c2$reason) && c2$row$Missing_Test + c2$row$Missing_Ref == 1
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = TRUE,
+  method = "fit_be_parameter() with Inf, a negative value and an NA in one Cmax",
+  expected = "Inf and the negative value give no verdict with the profile named (was: dropped without a count); an NA is counted as missing as before")
+
+check("ARV-13", "The quality check refuses infinite concentrations and a column mapped to two roles, and the pipeline stops on the latter",
+  tryCatch({
+    raw <- data.frame(S = rep(1:2, each = 4), T = rep(c(0, 1, 2, 4), 2), C = c(0, 5, 3, 1, 0, 4, 2, 1))
+    cm <- list(subject = "S", time = "T", conc = "C")
+    qc_ok <- run_data_quality_check(raw, cm, lloq = 0)
+    inf <- raw; inf$C[3] <- Inf
+    qc_inf <- run_data_quality_check(inf, cm, lloq = 0)
+    qc_dup <- run_data_quality_check(raw, list(subject = "S", time = "T", conc = "T"), lloq = 0)
+    qc_one <- run_data_quality_check(data.frame(V1 = 1:6), list(subject = "V1", time = "V1", conc = "V1"), lloq = 0)
+    stopped <- inherits(try(prepare_pk_dataset(data.frame(V1 = 1:6), list(subject = "V1", time = "V1", conc = "V1"),
+                                               list(lloq = 0)), silent = TRUE), "try-error")
+    has <- function(qc, pat) any(qc$findings$Severity == "ERROR" & grepl(pat, qc$findings$Message))
+    qc_ok$pass && !qc_inf$pass && has(qc_inf, "infinite") && !qc_dup$pass && has(qc_dup, "more than one role") &&
+      !qc_one$pass && stopped
+  }, error = function(e) FALSE),
+  "URS-DAT-02, URS-DAT-03", critical = TRUE,
+  method = "run_data_quality_check() with an Inf concentration, Time mapped as Concentration, and a one-column file mapped to all three roles; prepare_pk_dataset() on the last",
+  expected = "Each is an error in the quality check (was: no finding or a warning); the pipeline stops with a message instead of a subscript error; a clean file still passes")
+
+check("ARV-14", "Reference-scaled assessment with one sequence, and a missing acceptance limit, give a clear refusal",
+  tryCatch({
+    set.seed(3)
+    d <- do.call(rbind, lapply(1:12, function(i) data.frame(Subject = as.character(i), Period = as.character(1:3), Sequence = "TRR",
+            Treatment = factor(c("Test", "Reference", "Reference"), levels = c("Reference", "Test")), CMAX = exp(rnorm(3, 1, .3)))))
+    r <- rsabe_assess(d, "CMAX", "2x3x3", "Treatment", "Subject", "Period", "Sequence")
+    lim <- tryCatch(stress_fit(stress_xo(12), be_lower = NA), error = function(e) conditionMessage(e))
+    !isTRUE(r$ok) && grepl("at least two sequences", r$reason) && grepl("acceptance limits", lim)
+  }, error = function(e) FALSE),
+  "URS-BE-01", critical = FALSE,
+  method = "rsabe_assess() on a 2x3x3 study with all subjects in one sequence; fit_be_parameter() with be_lower = NA",
+  expected = "RSABE refuses with a stated reason (was: contrasts error); the missing limit stops with a message naming the limits")
+
+check("ARV-15", "The BE run turns any unexpected error in the model fit into a message instead of ending the session",
+  tryCatch({
+    be <- paste(readLines("R/mod_path_be.R"), collapse = "\n")
+    grepl("stopped with an unexpected error", be, fixed = TRUE) &&
+      grepl("be_scaled_error = function(e)", be, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-UI-01", critical = FALSE,
+  method = "Code inspection of R/mod_path_be.R",
+  expected = "The tryCatch around be_assess_parameter() has a general error handler after the two classed ones")
+
+
 end_section("ARV")
 
 # =============================================================================

@@ -72,7 +72,7 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **585 automated tests** in thirty-two sections, each mapped to a URS requirement:
+The script runs **590 automated tests** in thirty-two sections, each mapped to a URS requirement:
 
 | Section | Code | Tests | Tests cover |
 |---------|------|------:|-------------|
@@ -102,7 +102,7 @@ The script runs **585 automated tests** in thirty-two sections, each mapped to a
 | Example datasets | EXM | 9 | Every bundled example loads through the upload path and is recorded as an example (also in controlled mode, with its SHA-256); only bundled files can be loaded or downloaded by name; a record made from an example says so and reproduces; the download serves the file unchanged; the two examples of v1.8.0 (a highly variable replicate study and a parallel study with covariates) give the numbers the tutorials quote and are what the committed generator makes from its seeds |
 | Half-life quality flags | HLF | 6 | The span ratio and the rule limits at their boundaries; flags blank where the half-life is blanked, off at steady state for extrapolation, back-extrapolation for IV bolus only; rules switched off, changed, recorded and reproduced; manual fits flagged; flags counted in summaries and bioequivalence, excluding nothing; flags in words |
 | Exclusions with a reason | EXC | 11 | An excluded sample equals deleting it from the file under every BLQ rule; matching by profile and time; an exclusion that no longer matches is reported; a profile exclusion keeps its NCA and leaves summaries and bioequivalence; records hold and reproduce the register; IV bolus, trough and partial AUC edge cases; ICH M13A checks on the data before exclusions; the sensitivity analysis; adding and restoring in the app; audit entries first; schema 1.3.0 settings still read |
-| Adversarial review of the app | ARV | 10 | One test per finding that held up, each built from the failing case: a Dose column per kg (converted with the weight column, the Dose panel, a reproducing record), Cτ within a trough window, AUCτ extrapolated past the last sample, a 2×2 subject without both treatments in Method B, a pre-dose sample at a negative time, loading the exclusion register again with its timing, errors that stay on screen |
+| Adversarial review of the app | ARV | 15 | One test per finding that held up, each built from the failing case: a Dose column per kg (converted with the weight column, the Dose panel, a reproducing record), Cτ within a trough window, AUCτ extrapolated past the last sample, a 2×2 subject without both treatments in Method B, a pre-dose sample at a negative time, loading the exclusion register again with its timing, errors that stay on screen, and the stress test (a study with no residual degrees of freedom, infinite or negative values in the BE data, infinite concentrations, one column mapped to two roles, single-sequence RSABE, a missing acceptance limit) |
 | Parallel-group bioequivalence | PAR | 5 | The 11 published datasets of Fuglsang et al. (AAPS J 2015): group sizes, the pooled-variance 90% CI and point estimate against the paper's consensus (Table II), the app's supplementary Welch CI against Table I, the Welch note appearing exactly where the two verdicts differ, and the Welch interval at the chosen confidence level and absent for crossovers |
 | Covariate adjustment | COV | 16 | The parallel-group model with baseline covariates against Python statsmodels and matrix algebra, invariance to centering, rescaling, row order and level order, no change without covariates, every stop rule, the coefficient table, a seeded type I error and precision simulation, the group balance, the record, the audit event and the planner offer |
 | FDA reference-scaled bioequivalence | RSA | 14 | Appendix G of the FDA guidance against two independent implementations (Python and R) on 13 replicateBE data sets, consistency with `PowerTOST::power.RSABE`, the switch at 0.294 and the point-estimate limits, complete cases, refused input, the assessment wrapper, the explanation lines, notes, record and audit, module wiring, and the fixes of the code review and the interface audit |
@@ -133,8 +133,8 @@ Visualisation tests (URS-VIZ) are classified SUPPORTIVE because graphical output
 A passing run produces:
 
 ```
-Total: 662 (auto: 585, manual: 77)
-  PASS: 585 | FAIL: 0 | ERROR: 0 | SKIP: 77
+Total: 667 (auto: 590, manual: 77)
+  PASS: 590 | FAIL: 0 | ERROR: 0 | SKIP: 77
 
 ALL CRITICAL TESTS PASSED
 
@@ -143,7 +143,7 @@ URS: 95/95 covered (92 by automated tests; manual tests only: URS-BE-06, URS-BE-
 Results: validation/validation_results.csv
 ```
 
-Of the 585 automated tests, 419 are CRITICAL and 166 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
+Of the 590 automated tests, 422 are CRITICAL and 168 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
 
 IQ-REL-01 and IQ-REL-02 pass only on an unchanged release: after any edit to a file listed in the manifest, IQ-REL-01 fails until `make_release_files.R` is run again for a new release. When IQ-REL-02 fails, its Detail column names each package whose version differs from `renv.lock`.
 
