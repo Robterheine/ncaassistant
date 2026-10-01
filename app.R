@@ -663,8 +663,58 @@ server <- function(input, output, session) {
         role    = "Extended UI components for improved interactivity.",
         url     = "https://cran.r-project.org/package=shinyWidgets",
         ref     = "Perrier V, Meyer F, Granjon D. shinyWidgets: Custom Inputs Widgets for Shiny."
+      ),
+      list(
+        name    = "digest",
+        role    = "SHA-256 fingerprints of data files, code and records, used in the Analysis Record and the release checks.",
+        ref     = "Eddelbuettel D et al. digest: Create Compact Hash Digests of R Objects."
+      ),
+      list(
+        name    = "jsonlite",
+        role    = "Reading and writing JSON: the Analysis Record, the exclusion register and the audit trail.",
+        ref     = "Ooms J. The jsonlite package: a practical and consistent mapping between JSON data and R objects. arXiv:1403.2805, 2014."
+      ),
+      list(
+        name    = "htmltools",
+        role    = "Escapes text from your data file before it enters the HTML of a record.",
+        ref     = "Cheng J et al. htmltools: Tools for HTML."
+      ),
+      list(
+        name    = "withr",
+        role    = "Builds the Analysis Record archive in a temporary folder.",
+        ref     = "Hester J et al. withr: Run Code 'With' Temporarily Modified Global State."
+      ),
+      list(
+        name    = "scales",
+        role    = "Percentage axes in the Plan a Study plots.",
+        ref     = "Wickham H, Pedersen TL, Seidel D. scales: Scale Functions for Visualization."
+      ),
+      list(
+        name    = "shinymanager",
+        role    = "Controlled mode only. Sign-in, accounts and the idle sign-out.",
+        ref     = "Thieurmel B, Perrier V. shinymanager: Authentication Management for 'shiny' Applications."
+      ),
+      list(
+        name    = "DBI",
+        role    = "Controlled mode only. Database interface for the audit trail and the user store.",
+        ref     = "R Special Interest Group on Databases (R-SIG-DB), Wickham H, M\u00FCller K. DBI: R Database Interface."
+      ),
+      list(
+        name    = "RSQLite",
+        role    = "Controlled mode only. The SQLite database behind the audit trail and the user store.",
+        ref     = "M\u00FCller K et al. RSQLite: SQLite Interface for R."
+      ),
+      list(
+        name    = "later",
+        role    = "Controlled mode only. Closes the session shortly after a sign-out.",
+        ref     = "Chang W et al. later: Utilities for Scheduling Functions to Execute Later with Event Loops."
       )
     )
+    # Version and licence come from the installed package; the controlled-mode
+    # packages may be absent on a standard installation
+    pkg_version <- function(pkg) tryCatch(as.character(packageVersion(pkg)), error = function(e) "not installed")
+    for (i in seq_along(pkg_info)) if (is.null(pkg_info[[i]]$url))
+      pkg_info[[i]]$url <- paste0("https://cran.r-project.org/package=", pkg_info[[i]]$name)
     
     # Build the package table rows
     pkg_rows <- lapply(pkg_info, function(pkg) {
@@ -672,9 +722,12 @@ server <- function(input, output, session) {
         tags$td(tags$a(href = pkg$url, target = "_blank",
                        class = "fw-bold text-decoration-none",
                        pkg$name)),
-        tags$td(tags$code(pkg$version)),
+        tags$td(tags$code(if (is.null(pkg$version)) pkg_version(pkg$name) else pkg$version)),
         # Each package keeps its own licence (read from the installed package)
-        tags$td(class = "small", tryCatch(utils::packageDescription(pkg$name)$License, error = function(e) "")),
+        tags$td(class = "small", {
+          lic <- suppressWarnings(tryCatch(utils::packageDescription(pkg$name)$License, error = function(e) ""))
+          if (is.null(lic) || length(lic) != 1 || is.na(lic)) "" else lic
+        }),
         tags$td(class = "small", pkg$role),
         tags$td(class = "small text-muted", pkg$ref)
       )
@@ -712,9 +765,10 @@ server <- function(input, output, session) {
         ),
         card_body(
           tags$p(class = "text-muted small",
-                 "This application is built entirely in R. All statistical computations ",
-                 "are performed by the packages listed below. Click a package name to ",
-                 "visit its CRAN page."),
+                 "This application is built entirely in R. The statistical computations rest on ",
+                 "the packages listed below, apart from the reference-scaled methods described under Runtime Environment. Click a package name to ",
+                 "visit its CRAN page. Packages marked controlled mode only are used on a controlled ",
+                 "installation, and may be absent from a standard one."),
           
           tags$table(
             class = "table table-sm table-hover",
@@ -788,7 +842,8 @@ server <- function(input, output, session) {
             }),
             tags$tr(tags$td(class = "fw-bold", "BE engine:"),
                     tags$td("Base R lm() / nlme::lme() with ANOVA-based ",
-                            "90% confidence intervals")),
+                            "90% confidence intervals. The FDA RSABE contrasts and the EMA ABEL limits are the ",
+                            "app's own code (R/be_scaled.R), tested against reference calculations in the validation package.")),
             tags$tr(tags$td(class = "fw-bold", "Power engine:"),
                     tags$td("PowerTOST (exact method via Owen's Q for average bioequivalence; simulation for the scaled methods)"))
           )
@@ -898,6 +953,8 @@ server <- function(input, output, session) {
               tags$li(tags$strong("New: "), "covariate adjustment for parallel-group bioequivalence: choose baseline characteristics before the run, read the adjusted interval with the unadjusted one beside it, and see the balance of the groups. The covariates are in the Analysis Record and the audit trail"),
               tags$li(tags$strong("New: "), "EMA ABEL and FDA RSABE for replicate designs, under Acceptance approach. The choice is a declaration before the run; the results show the route, s_WR, the limits and, for RSABE, the criterion bound, and the record keeps the approach and its constants. The FDA scaled test for narrow therapeutic index drugs stays in Plan a Study only"),
               tags$li(tags$strong("New: "), "two example datasets (a highly variable replicate study and a parallel study with covariates), Tutorials 4b and 4c in the manual, and matching text in the Statistical Methods page, the help and the Data Guide"),
+              tags$li(tags$strong("Correctness fix: "), "an infinite or negative value in the bioequivalence data gives no verdict and names the profile. Before, it was dropped without being counted"),
+              tags$li(tags$strong("Changed: "), "infinite concentrations are refused, and so is one file column mapped to two roles (before, only a warning for Subject). A study with no residual degrees of freedom, such as 2 subjects in a crossover, gives a reason instead of an error. An unexpected error in a bioequivalence run shows a message and the session stays open. RSABE refuses a study with one sequence, and the header wraps on a phone. From a stress test of the app"),
               tags$li("Results without covariates and with the standard approach are unchanged, and tests prove it"),
               tags$li("Validation: 590 automated and 77 manual tests (was 431 and 49), with sections for controlled mode, the three reviews, exclusions, half-life flags, the example data, covariates, RSABE, ABEL, the text checks and a stress test of the app")
             )
