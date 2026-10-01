@@ -16,7 +16,9 @@ d = docx.Document(P)
 rows = list(csv.DictReader(open("validation/validation_results.csv", encoding="utf-8")))
 auto = [r for r in rows if r["Result"] != "SKIP"]
 man  = [r for r in rows if r["Section"] == "MAN"]
-assert all(r["Result"] == "PASS" for r in auto), "reference run must pass"
+# DOC-05 checks that the counts in this protocol equal the run, so it cannot pass before
+# the protocol has been regenerated; the final run of validation.R shows its real result
+assert all(r["Result"] == "PASS" for r in auto if r["ID"] != "DOC-05"), "reference run must pass"
 V = re.search(r'^APP_VERSION <- "([^"]+)"', open("app.R", encoding="utf-8").read(), re.M).group(1)
 
 def set_text(par, text):

@@ -109,7 +109,14 @@ pharma_theme <- bs_theme(
 ui <- page_fluid(
   theme = pharma_theme,
   tags$head(tags$link(rel = "stylesheet", href = "fonts/source-sans-pro/font.css"),
-            tags$link(rel = "stylesheet", href = "fonts/fira-code/font.css")),
+            tags$link(rel = "stylesheet", href = "fonts/fira-code/font.css"),
+            # Header on a phone: the buttons wrap onto a second line instead of
+            # widening the page (www/custom.css is not linked into the app)
+            tags$style(HTML(paste(
+              "nav.navbar > .container-fluid { flex-wrap: wrap; row-gap: 6px; }",
+              "nav.navbar > .container-fluid > .d-flex { flex-wrap: wrap; row-gap: 6px; }",
+              "@media (max-width: 576px) { nav.navbar > .container-fluid > .d-flex .btn.ms-2,",
+              "nav.navbar > .container-fluid > .d-flex .btn.ms-3 { margin-left: 0 !important; margin-right: 6px; } }")))),
   if (gxp_enabled()) tags$script(src = "gxp_activity.js", `data-timeout` = GXP_TIMEOUT_MIN),
   
   # Global header
