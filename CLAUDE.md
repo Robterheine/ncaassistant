@@ -12,7 +12,7 @@ Before implementing:
 - State your assumptions explicitly. If uncertain, ask.
 - If multiple interpretations exist, present them - don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+- If the request has more than one reasonable reading and the answer changes the work, name the readings and ask. Otherwise take the sensible default and say what you chose.
 
 ## 2. Simplicity First
 
@@ -64,7 +64,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
-## 5. Prose Length → Humanizer
+## 5. Prose → Humanizer
 
 Every new or changed word of prose written for the user manual, the app or the documentation (help text, labels, Methods page, popovers, README, validation documents, etc.) must be passed through the `humanizer` skill before it's considered final, with no em dashes. Identifiers, constants, formulas, file names and button labels that a test or the manual quotes are exempt.
 
