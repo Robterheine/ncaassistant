@@ -6137,6 +6137,28 @@ check("EXM-09", "The two new examples are what the committed generator makes fro
 end_section("EXM")
 
 # =============================================================================
+# SECTION GLD: The bioequivalence run gives the same results as before the v1.9 refactor
+# =============================================================================
+# validation/fixtures/be_run_golden/ holds what the app stored for nine runs,
+# made with the code before the run moved into run_be_analysis(). Each case is
+# run again through the real module and must be identical().
+start_section("GLD")
+source(file.path("validation", "fixtures", "make_be_run_golden.R"))
+be_golden_env()
+gld_cases <- be_golden_cases()
+for (i in seq_along(gld_cases)) local({
+  nm <- names(gld_cases)[i]
+  check(sprintf("GLD-%02d", i), sprintf("BE run '%s' is identical to its golden output", nm),
+    tryCatch(identical(readRDS(file.path("validation", "fixtures", "be_run_golden", paste0(nm, ".rds"))),
+                       be_golden_run(gld_cases[[nm]])), error = function(e) FALSE),
+    "URS-BE-01, URS-BE-02, URS-EXP-05", critical = TRUE,
+    method = paste0("The real BE module run through shiny::testServer on ", gld_cases[[nm]]$file,
+                    "; be_result(), be_run_settings() and the notifications against the stored file"),
+    expected = "identical() to the golden file: the table, ANOVA, verdicts, checks and messages")
+})
+end_section("GLD")
+
+# =============================================================================
 # SECTION HLF: Half-life quality flags
 # =============================================================================
 start_section("HLF")
@@ -6381,8 +6403,9 @@ check("EXC-07", "The ICH M13A checks use the data before exclusions, so excludin
     r <- suppressWarnings(run_nca(with_ex, exc_cm, exc_st(exclusions = ex)))
     m_all <- be_m13a_checks(without, exc_cm, r, NULL); m_ex <- be_m13a_checks(with_ex, exc_cm, r, NULL)
     be <- paste(readLines("R/mod_path_be.R"), collapse = "\n")
+    ba <- paste(readLines("R/be_analysis.R", warn = FALSE), collapse = "\n")
     any(grepl("Pre-dose concentration above 5% of Cmax", m_all)) && !any(grepl("Pre-dose concentration above 5% of Cmax", m_ex)) &&
-      grepl("be_m13a_checks(d_unexcl, shared$col_map, nca_res,", be, fixed = TRUE) &&
+      grepl("be_m13a_checks(d_unexcl, cm, nca_res,", ba, fixed = TRUE) &&
       grepl("data_without_exclusions(shared)", be, fixed = TRUE)
   }, error = function(e) FALSE),
   "URS-BE-11, URS-DAT-09", critical = TRUE,
@@ -6392,6 +6415,7 @@ check("EXC-07", "The ICH M13A checks use the data before exclusions, so excludin
 check("EXC-08", "A sensitivity analysis without the exclusions is computed, shown and recorded",
   tryCatch({
     be <- paste(readLines("R/mod_path_be.R"), collapse = "\n")
+    ba <- paste(readLines("R/be_analysis.R", warn = FALSE), collapse = "\n")
     f <- tempfile(fileext = ".csv"); write.csv(exc_xo, f, row.names = FALSE)
     r <- suppressWarnings(run_nca(exc_xo, exc_cm, exc_st()))
     bd <- build_be_data(r, exc_xo, exc_cm, reference = "Reference")
@@ -6400,8 +6424,8 @@ check("EXC-08", "A sensitivity analysis without the exclusions is computed, show
     create_analysis_record(zf, r, exc_st(), exc_cm, f, "crossover.csv", blq_rule = "rule1", lloq = 0,
                            be_results = list(ci_table = ci, sensitivity = ci), be_settings = list(ci_level = 90))
     utils::unzip(zf, exdir = td)
-    grepl("sens_df <- tryCatch(do.call(rbind, lapply(params, function(p) fit_one(bd0$data, p)$row)),", be, fixed = TRUE) &&
-      grepl("sensitivity = sens_df", be, fixed = TRUE) && grepl("Sensitivity analysis: without your exclusions", be, fixed = TRUE) &&
+    grepl("sens_df <- tryCatch(do.call(rbind, lapply(params, function(p) fit_one(bd0$data, p)$row)),", ba, fixed = TRUE) &&
+      grepl("sensitivity = sens_df", ba, fixed = TRUE) && grepl("Sensitivity analysis: without your exclusions", be, fixed = TRUE) &&
       "BE_Without_Exclusions" %in% openxlsx::getSheetNames(file.path(td, "results.xlsx"))
   }, error = function(e) FALSE),
   "URS-BE-11, URS-EXP-05, URS-BE-12", critical = FALSE,
@@ -6737,13 +6761,13 @@ check("ARV-14", "Reference-scaled assessment with one sequence, and a missing ac
 
 check("ARV-15", "The BE run turns any unexpected error in the model fit into a message instead of ending the session",
   tryCatch({
-    be <- paste(readLines("R/mod_path_be.R"), collapse = "\n")
-    grepl("stopped with an unexpected error", be, fixed = TRUE) &&
-      grepl("be_scaled_error = function(e)", be, fixed = TRUE)
+    ba <- paste(readLines("R/be_analysis.R", warn = FALSE), collapse = "\n")
+    grepl("stopped with an unexpected error", ba, fixed = TRUE) &&
+      grepl("be_scaled_error = function(e)", ba, fixed = TRUE)
   }, error = function(e) FALSE),
   "URS-UI-01", critical = FALSE,
-  method = "Code inspection of R/mod_path_be.R",
-  expected = "The tryCatch around be_assess_parameter() has a general error handler after the two classed ones")
+  method = "Code inspection of run_be_analysis() in R/be_analysis.R",
+  expected = "The tryCatch around the fit has a general error handler after the two classed ones")
 
 
 check("ARV-16", "ADNCA: ANL01FL is read in any case, and a dataset where no record has ANL01FL = Y is refused by name",
@@ -6761,14 +6785,15 @@ check("ARV-16", "ADNCA: ANL01FL is read in any case, and a dataset where no reco
 check("ARV-17", "Warnings that change how BE results are read reach the on-screen checks, the Checks sheet and the Analysis Record",
   tryCatch({
     be <- paste(readLines("R/mod_path_be.R", warn = FALSE), collapse = "\n")
-    grepl("warn_run(design_used$note, 15)", be, fixed = TRUE) && grepl("if (!is.null(mismatch)) warn_run(mismatch, 15)", be, fixed = TRUE) &&
-      grepl('warn_run(\n            paste0("No Sequence column is mapped.', be, fixed = TRUE) &&
-      grepl('warn_run(\n            paste0("Tmax is included in your analysis.', be, fixed = TRUE) &&
-      grepl("m13a = c(run_warns, ", be, fixed = TRUE) &&
+    ba <- paste(readLines("R/be_analysis.R", warn = FALSE), collapse = "\n")
+    grepl("warn_run(design_used$note, 15)", ba, fixed = TRUE) && grepl("if (!is.null(mismatch)) warn_run(mismatch, 15)", ba, fixed = TRUE) &&
+      grepl('warn_run(\n      paste0("No Sequence column is mapped.', ba, fixed = TRUE) &&
+      grepl('warn_run(\n      paste0("Tmax is included in your analysis.', ba, fixed = TRUE) &&
+      grepl("m13a = c(run_warns, ", ba, fixed = TRUE) &&
       grepl("record_checks(shared$qc_result, c(be_result()$m13a", be, fixed = TRUE)
   }, error = function(e) FALSE),
   "URS-EXP-04", critical = FALSE,
-  method = "Code inspection of R/mod_path_be.R",
+  method = "Code inspection of run_be_analysis() in R/be_analysis.R and of R/mod_path_be.R",
   expected = "The design-mismatch, missing-Sequence and Tmax warnings are collected in run_warns and stored with the M13A checks, which feed the Checks sheet and the record")
 
 check("ARV-18", "Confidence limits and point estimates round halves up, as SAS does, before the comparison with the limits",
@@ -7136,7 +7161,7 @@ check("COV-13", "Controlled mode: the audit event of a bioequivalence run carrie
     gxp_unset()
     dj <- jsonlite::fromJSON(tr$details[tr$event == "analysis_run"][1])
     wrote && identical(dj$be_settings$covariates$name, c("age", "weight")) &&
-      grepl("audit_be$covariates <- bd$covariates[, c(\"name\", \"type\", \"transform\")]", be, fixed = TRUE) &&
+      grepl("audit_be$covariates <- run$covariates[, c(\"name\", \"type\", \"transform\")]", be, fixed = TRUE) &&
       grepl("be_settings = audit_be", be, fixed = TRUE)
   }, error = function(e) { gxp_unset(); FALSE }),
   "URS-BE-13, URS-GXP-07", critical = TRUE,
@@ -7161,10 +7186,10 @@ check("COV-14", "The planner offers the unadjusted CV and, beside it, the residu
 
 check("COV-15", "Parallel groups raise no 'incomplete design' alarm: every subject has one treatment by design",
   tryCatch({
-    be <- paste(readLines("R/mod_path_be.R"), collapse = "\n")
-    grepl('incomplete_subjects <- if (identical(be_design_model(design_used$design), "parallel")) character(0) else', be, fixed = TRUE)
+    ba <- paste(readLines("R/be_analysis.R", warn = FALSE), collapse = "\n")
+    grepl('incomplete_subjects <- if (identical(be_design_model(design_used$design), "parallel")) character(0) else', ba, fixed = TRUE)
   }, error = function(e) FALSE),
-  "URS-BE-01", critical = FALSE, method = "Code inspection of the balance pre-check in R/mod_path_be.R; click-through on a parallel dataset",
+  "URS-BE-01", critical = FALSE, method = "Code inspection of the balance pre-check in run_be_analysis() (R/be_analysis.R); click-through on a parallel dataset",
   expected = "The pre-check is skipped for parallel designs and kept for crossover and replicate designs")
 
 end_section("COV")
@@ -7444,13 +7469,15 @@ check("RSA-11", "Record and audit: approach and constants in the settings JSON, 
 check("RSA-12", "Module wiring: the selector exists only for replicate designs, the chosen approach reaches every fit, limits must stay 80-125, stale results clear, per-metric limits are drawn",
   tryCatch({
     be <- paste(readLines("R/mod_path_be.R"), collapse = "\n"); has <- function(x) grepl(x, be, fixed = TRUE)
+    ba <- paste(readLines("R/be_analysis.R", warn = FALSE), collapse = "\n"); has_ba <- function(x) grepl(x, ba, fixed = TRUE)
     has('output$approach_ui <- renderUI({') && has("if (length(ch) < 2) return(NULL)") &&
-      has("fit_one <- function(dat, param) be_assess_parameter(") && has("fit_out <- tryCatch(be_assess_parameter(") &&
-      length(gregexpr("approach, dat, param,|approach, be_data, param,", be, perl = TRUE)[[1]]) == 2 &&
-      has("be_scaled_error = function(e)") && has("input$cov_log, input$be_approach)),") &&
+      has_ba("fit_one <- function(dat, param) be_assess_parameter(") && has_ba("fit_out <- tryCatch(fit_one(be_data, param),") &&
+      has_ba("fit_one(bd0$data, p)$row") && length(gregexpr("approach, dat, param,", ba, fixed = TRUE)[[1]]) == 1 &&
+      !has("be_assess_parameter(") &&
+      has_ba("be_scaled_error = function(e)") && has("input$cov_log, input$be_approach)),") &&
       has('!isTRUE(input$be_lower == 80) || !isTRUE(input$be_upper == 125)') && has("limits_differ") &&
-      has("be_scaled_notes(ci_df, scaled_details)") && has('output$scaled_explain <- renderUI({') &&
-      has("if (length(be_approach_choices(input$be_design)) > 1 && !identical(input$be_approach, approach)") && has("background:#FFF3CD;color:#7D5A00;") &&
+      has_ba("be_scaled_notes(ci_df, scaled_details)") && has('output$scaled_explain <- renderUI({') &&
+      has_ba("if (length(be_approach_choices(s$design_selected)) > 1 && !identical(s$approach, approach)") && has("background:#FFF3CD;color:#7D5A00;") &&
       identical(unname(be_approach_choices("2x2x4")), c("standard", "abel", "rsabe")) && length(be_approach_choices("parallel")) == 1
   }, error = function(e) FALSE),
   "URS-BE-14, URS-BE-15", critical = FALSE, method = "Code inspection of R/mod_path_be.R; click-through on a 36-subject 2x2x4 study with both approaches",

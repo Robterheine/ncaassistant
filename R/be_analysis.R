@@ -1185,3 +1185,319 @@ be_covariate_sheets <- function(be_results) {
   if (!is.null(bal)) names(bal)[names(bal) == "Std_Diff"] <- "Standardized difference"
   Filter(Negate(is.null), list(BE_Covariates = coefs, Covariate_Balance = bal))
 }
+
+
+# ---- The bioequivalence run, without the interface -------------------------------
+# One implementation, called by the app (R/mod_path_be.R) and by the
+# reproduction script of an Analysis Record, so the record repeats exactly what
+# the app did. Nothing here reads input$ or shared$, shows a notification or
+# writes reactive state: what the app would show comes back in $messages, and a
+# run that must end comes back in $stop.
+
+#' Run the bioequivalence analysis on an NCA result
+#'
+#' @param nca_res NCA result (run_nca()) of the analysed data
+#' @param pk_data processed PK data (exclusions applied)
+#' @param col_map column mapping
+#' @param be_settings list: design_selected, reference, parameters (as chosen,
+#'   before the steady-state swap), approach (as chosen, may be NULL), model_type,
+#'   log_transform, ci_level, be_lower, be_upper, pe_constraint, widened_scope,
+#'   covariates (specification data frame or NULL), conc_unit, time_unit,
+#'   is_steady_state
+#' @param nca_settings the settings run_nca() used (partial AUCs, dose, ...)
+#' @param detected_design what detect_study_design() found in the data
+#' @param exclusions the exclusion register
+#' @param data_unexcluded the processed data without the exclusions (NULL when
+#'   there are none)
+#' @param lz_overrides manual half-life selections
+#' @return list(result, params, design_used, approach, covariates, balance_info,
+#'   messages, stop). `result` is what the app stores as its BE result; `stop` is
+#'   NULL or list(text, type, duration) when the run ended without a result.
+run_be_analysis <- function(nca_res, pk_data, col_map, be_settings, nca_settings,
+                            detected_design = NULL, exclusions = NULL,
+                            data_unexcluded = NULL, lz_overrides = NULL) {
+  s <- be_settings
+  cm <- col_map
+  settings <- nca_settings
+  messages <- list()
+  notify <- function(text, type, duration) {
+    messages[[length(messages) + 1]] <<- list(text = text, type = type, duration = duration)
+  }
+  halt <- function(text) list(result = NULL, messages = messages,
+                              stop = list(text = text, type = "error", duration = NULL))
+
+  # Merge with design info: one row per NCA profile (subject x treatment
+  # x period), with the Sequence column attached. See build_be_data().
+  bd <- tryCatch(build_be_data(nca_res, pk_data, cm, reference = s$reference,
+                               exclusions = exclusions, covariates = s$covariates),
+                 error = function(e) e)
+  if (inherits(bd, "error")) return(halt(conditionMessage(bd)))
+  be_data     <- bd$data
+  trt_col_be  <- bd$trt_col
+  subj_col_be <- bd$subj_col
+  per_col     <- bd$per_col
+  seq_col     <- bd$seq_col
+  trt_levels  <- levels(be_data[[trt_col_be]])
+
+  if (length(trt_levels) != 2) {
+    return(halt(
+      paste0("Treatment column must have exactly 2 levels (found ",
+             length(trt_levels),
+             if (length(trt_levels) > 0) paste0(": ", paste(trt_levels, collapse = ", ")) else "",
+             "). Please ensure your Treatment column contains exactly two values ",
+             "(e.g., Test and Reference, or Drug A and Drug B).")))
+  }
+
+  params <- s$parameters
+  if (is.null(params) || length(params) == 0)
+    params <- c("CMAX","AUCLST")
+  if (isTRUE(s$is_steady_state)) {
+    # At steady state the exposure parameter is AUC from 0 to tau
+    swapped <- intersect(c("AUCLST","AUCIFO"), params)
+    params <- unique(c(setdiff(params, c("AUCLST","AUCIFO")), "AUCTAU"))
+    if (length(swapped) > 0)
+      notify(paste0("Steady state: AUC over the dosing interval (AUC\u03C4) is compared ",
+                    "instead of ", paste(sapply(swapped, friendly_name), collapse = " and "), "."),
+             "message", 10)
+  }
+  params <- intersect(params, names(nca_res))
+
+  # A single treatment order is a paired comparison whatever was selected;
+  # analyse it as one rather than fitting a confounded crossover model.
+  design_used <- resolve_be_design(s$design_selected, be_data,
+                                   subj_col = subj_col_be, trt_col = trt_col_be,
+                                   per_col = per_col, seq_col = seq_col)
+  # Warnings that change how the results are read also go into the
+  # checks on screen, the Checks sheet and the Analysis Record
+  run_warns <- character(0)
+  warn_run <- function(msg, duration) {
+    notify(msg, "warning", duration)
+    run_warns <<- c(run_warns, msg)
+  }
+  if (!is.null(design_used$note)) {
+    warn_run(design_used$note, 15)
+  } else {
+    mismatch <- check_design_against_data(s$design_selected, detected_design)
+    if (!is.null(mismatch)) warn_run(mismatch, 15)
+  }
+
+  # Warn when no Sequence column is mapped for crossover designs
+  if (is.null(seq_col) &&
+      be_design_model(design_used$design) == "crossover") {
+    warn_run(
+      paste0("No Sequence column is mapped. For a ", design_used$design,
+             " design the Sequence term is part of the standard ANOVA table ",
+             "(ln(PK) = Sequence + Subject(Sequence) + Period + Treatment). ",
+             "With subject as a fixed effect the ratio and confidence interval are the same ",
+             "without it, because each subject belongs to one sequence; only the test of the ",
+             "sequence effect is missing. If your data have a Sequence column, map it in the Upload step."),
+      15)
+  }
+
+  # ---- Balanced design pre-check ------------------------------------
+  # Check each subject appears in both treatment levels in the NCA result.
+  # be_data is at the NCA result grain (one row per subject-treatment),
+  # so this is design-agnostic, valid for 2x2, 3-period, and replicate.
+  # Missing subjects are listed by name and shown as a persistent alert.
+  # Analysis still proceeds (na.exclude handles missing data in lm/lme),
+  # but the user must be aware of the imbalance.
+  balance_subjects <- unique(be_data[[subj_col_be]])
+  # Parallel groups: every subject has one treatment by design
+  incomplete_subjects <- if (identical(be_design_model(design_used$design), "parallel")) character(0) else
+    Filter(function(sj) {
+      trts <- be_data[[trt_col_be]][be_data[[subj_col_be]] == sj]
+      !all(trt_levels %in% as.character(trts))
+    }, balance_subjects)
+
+  if (length(incomplete_subjects) > 0) {
+    n_total <- length(balance_subjects)
+    n_incomplete <- length(incomplete_subjects)
+    subj_list <- paste(head(incomplete_subjects, 10), collapse = ", ")
+    if (n_incomplete > 10) subj_list <- paste0(subj_list, ", ...")
+    notify(
+      paste0(n_incomplete, " of ", n_total,
+             " subject(s) have data for only one treatment: ", subj_list,
+             ". With fixed effects they do not contribute to the treatment comparison; the mixed ",
+             "model uses their data. ",
+             "Degrees of freedom are reduced accordingly."),
+      "warning", 15)
+    # Stored for the persistent alert (written once the result is stored)
+    balance_info <- list(n_incomplete = n_incomplete, n_total = n_total,
+                         subjects = incomplete_subjects)
+  } else {
+    balance_info <- NULL
+  }
+  # -------------------------------------------------------------------
+
+  # The approach in force: only what the analysed design allows
+  approach <- if (!is.null(s$approach) && s$approach %in% be_approach_choices(design_used$design)) s$approach else "standard"
+  # Only when the selector is on screen: a choice left over from an earlier study is not the user's current one
+  if (length(be_approach_choices(s$design_selected)) > 1 && !identical(s$approach, approach) &&
+      !is.null(s$approach) && s$approach != "standard") {
+    notify(paste0("The approach you chose is not available for the design analysed (",
+                  design_used$design, "), so the standard approach was used."), "warning", NULL)
+  }
+  ci_results <- list()
+  scaled_details <- list()
+  cov_coefs <- list(); cov_warns <- character(0)
+  welch_results <- list()
+  anova_results <- list()
+
+  # Warn once if Tmax is among the selected parameters
+  if ("TMAX" %in% params) {
+    warn_run(
+      paste0("Tmax is included in your analysis. Note: Tmax is a discrete ",
+             "variable that takes only values present in the sampling schedule. ",
+             "A parametric ANOVA model is not the usual analysis for Tmax. ",
+             "When a Tmax comparison is relevant (for example a claim of rapid release), ",
+             "the EMA guideline asks for a non-parametric analysis. ",
+             "The parametric CI shown here is provided for completeness only, ",
+             "carries no bioequivalence verdict, ",
+             "and should not be used as the primary Tmax analysis in a ",
+             "regulatory submission."),
+      20)
+  }
+
+  # Unit of an untransformed difference (TMAX, or any parameter when the
+  # log-transform is off), so the table never presents it as a ratio.
+  pauc_names <- if (is.null(settings$partial_aucs)) NULL else partial_auc_names(settings$partial_aucs)
+  supportive <- if (is.null(pauc_names)) character(0) else
+    unlist(pauc_names[settings$partial_aucs$role == "supportive", c("auc", "cmax")])
+  diff_unit_for <- function(param) {
+    if (startsWith(param, "AUC_")) return(paste0(s$conc_unit, "\u00B7", s$time_unit))
+    if (startsWith(param, "CMAX_")) return(s$conc_unit)
+    switch(param,
+           TMAX = , LAMZHL = s$time_unit,
+           CMAX = , CMIN_SS = , CTAU_SS = s$conc_unit,
+           AUCLST = , AUCTAU = , AUCIFO = , AUCIFP = paste0(s$conc_unit, "\u00B7", s$time_unit),
+           NULL)
+  }
+
+  fit_one <- function(dat, param) be_assess_parameter(
+      approach, dat, param,
+      design        = design_used$design,
+      model_type    = s$model_type,
+      trt_col       = trt_col_be,
+      subj_col      = subj_col_be,
+      per_col       = per_col,
+      seq_col       = seq_col,
+      log_transform = s$log_transform,
+      ci_level      = s$ci_level,
+      be_lower      = s$be_lower,
+      be_upper      = s$be_upper,
+      pe_constraint = !identical(s$pe_constraint, FALSE),
+      widened_scope = widened_scope_value(s$widened_scope),
+      diff_unit     = diff_unit_for(param),
+      verdict       = !param %in% supportive,
+      covariates    = bd$covariates)
+  stopped <- NULL
+  for (param in params) {
+    fit_out <- tryCatch(fit_one(be_data, param),
+      be_covariate_error = function(e) { stopped <<- conditionMessage(e); NULL },
+      be_scaled_error = function(e) { stopped <<- conditionMessage(e); NULL },
+      # Anything else must not end the session
+      error = function(e) {
+        stopped <<- paste0("The analysis of ", friendly_name(param), " stopped with an unexpected error: ",
+                           conditionMessage(e))
+        NULL
+      })
+    if (is.null(fit_out)) break
+    if (!is.na(fit_out$row$Model) && grepl("mixed model failed", fit_out$row$Model)) {
+      notify(paste0(friendly_name(param), ": the mixed model could not be fitted; ",
+                    "fixed effects were used instead. See the Model column in the downloads."),
+             "warning", 12)
+    }
+    if (!is.null(fit_out$reason)) {
+      notify(paste0("Could not compute BE results for ", friendly_name(param), ": ", fit_out$reason),
+             "error", NULL)
+    }
+    if (!is.null(fit_out$anova)) anova_results[[param]] <- fit_out$anova
+    ci_results[[param]] <- fit_out$row
+    welch_results[[param]] <- fit_out$estimate$welch
+    cov_coefs[[param]] <- fit_out$estimate$covariate_coefs
+    if (!is.null(fit_out$scaled)) scaled_details[[param]] <- fit_out$scaled
+    cov_warns <- c(cov_warns, fit_out$warnings)
+  }
+  if (!is.null(stopped)) return(halt(stopped))
+
+  ci_df <- do.call(rbind, ci_results)
+  # Parallel groups: the Welch interval next to the pooled one (supplementary)
+  if (length(welch_results) > 0) {
+    wval <- function(f) vapply(as.character(ci_df$Parameter), function(p) {
+      w <- welch_results[[p]]; if (is.null(w)) NA_real_ else round(w[[f]], 2)
+    }, numeric(1), USE.NAMES = FALSE)
+    ci_df$Welch_Lower <- wval("lo"); ci_df$Welch_Upper <- wval("hi"); ci_df$Welch_DF <- wval("df")
+  }
+
+  # Exclusions touch the comparison: the same analysis without any of
+  # them, as a sensitivity result next to the primary one. The ICH M13A
+  # checks always look at the data before exclusions.
+  has_excl <- nrow(active_exclusions(exclusions)) > 0
+  d_unexcl <- if (has_excl) data_unexcluded else pk_data
+  sens_df <- NULL
+  if (has_excl) {
+    s0 <- settings; s0$exclusions <- NULL
+    if (identical(settings$dose_source, "per_profile")) s0$dose <- suppressWarnings(dose_by_profile(d_unexcl, cm))
+    nca0 <- suppressWarnings(run_nca(d_unexcl, cm, s0, lz_overrides = lz_overrides))
+    bd0 <- if (is.null(nca0)) NULL else
+      tryCatch(build_be_data(nca0, d_unexcl, cm, reference = s$reference, covariates = s$covariates), error = function(e) NULL)
+    if (!is.null(bd0)) sens_df <- tryCatch(do.call(rbind, lapply(params, function(p) fit_one(bd0$data, p)$row)),
+                                           be_covariate_error = function(e) {
+                                             notify(paste0("The sensitivity analysis without your exclusions could not be run with the covariates. ",
+                                                           conditionMessage(e)), "warning", NULL)
+                                             NULL
+                                           })
+  }
+
+  # How many profiles of each treatment rest mainly on BLQ-derived values
+  # for that metric. A ratio can be driven by such a profile without any
+  # value being exactly zero, which the zero columns would not show.
+  blq_counts <- partial_auc_blq_counts(attr(nca_res, "partial_auc_blq"), be_data,
+                                       if (is.null(ci_df)) character(0) else ci_df$Parameter,
+                                       trt_col_be, trt_levels)
+  if (!is.null(blq_counts)) {
+    i <- match(ci_df$Parameter, blq_counts$Parameter)
+    ci_df$BLQ_Test <- blq_counts$BLQ_Test[i]
+    ci_df$BLQ_Ref  <- blq_counts$BLQ_Ref[i]
+  }
+
+  # Within-subject variability (replicate designs only; informational).
+  # Only for log-transformed ratio parameters, never TMAX.
+  cv_rows <- list()
+  if (isTRUE(s$log_transform)) {
+    for (param in setdiff(params, c("TMAX", BE_NO_VERDICT_PARAMS))) {
+      # No log-scale variability with zero values (see fit_be_parameter)
+      if (any(as.numeric(be_data[[param]]) == 0, na.rm = TRUE)) next
+      cv_rows[[param]] <- tryCatch(
+        be_variability_diagnostic(be_data, param, trt_col = trt_col_be,
+                                  subj_col = subj_col_be, per_col = per_col,
+                                  seq_col = seq_col),
+        error = function(e) NULL)
+    }
+  }
+  cv_df <- if (length(cv_rows) > 0) do.call(rbind, cv_rows) else NULL
+  if (!is.null(cv_df)) {
+    pe <- ci_df$Point_Est[match(cv_df$Parameter, ci_df$Parameter)]
+    cv_df$PE_within_80_125 <- ifelse(is.na(pe), NA,
+                                     ifelse(pe >= 80 & pe <= 125, "YES", "NO"))
+  }
+
+  result <- list(ci_table = ci_df, anova = anova_results, cv_table = cv_df, design = design_used$design,
+                 sensitivity = sens_df,
+                 covariates = bd$covariates, covariate_coefs = cov_coefs,
+                 approach = approach, scaled_details = scaled_details,
+                 covariate_balance = be_covariate_balance(be_data, bd$covariates, trt_col_be, subj_col_be),
+                 m13a = c(run_warns, unique(cov_warns), be_scaled_notes(ci_df, scaled_details), be_m13a_checks(d_unexcl, cm, nca_res,
+                                         ci_df[ci_df$Parameter %in% setdiff(params, c(supportive, BE_NO_VERDICT_PARAMS)), ],
+                                         isTRUE(s$is_steady_state)),
+                          if (has_excl && !setequal(
+                            be_m13a_checks(d_unexcl, cm, nca_res, NULL, isTRUE(s$is_steady_state)),
+                            be_m13a_checks(pk_data, cm, nca_res, NULL, isTRUE(s$is_steady_state))))
+                            paste0("These checks use the data before your exclusions; with the exclusions ",
+                                   "applied their outcome would differ."),
+                          if (identical(be_design_model(design_used$design), "parallel") && is.null(bd$covariates))
+                            parallel_welch_notes(be_data, setdiff(params, c("TMAX", BE_NO_VERDICT_PARAMS)), trt_col_be,
+                                                 s$be_lower, s$be_upper)))
+  list(result = result, params = params, design_used = design_used, approach = approach,
+       covariates = bd$covariates, balance_info = balance_info, messages = messages, stop = NULL)
+}
