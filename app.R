@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.8.0
+# Non-Compartmental Analysis Assistant v1.9.0
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # Designed by Rob ter Heine
@@ -21,7 +21,7 @@
 #   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.8.0"
+APP_VERSION <- "1.9.0"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 # Mirror APP_VERSION into the global environment. When RStudio runs a single-file
@@ -928,8 +928,22 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.8.0",
+            tags$h6(class = "fw-bold mb-1", "v1.9.0",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "October 2026"),
+            tags$p(class = "mb-1", tags$strong("Results of runs that proceed are unchanged from v1.8.0,"),
+                   " and tests prove it. One thing changes: a bioequivalence run now stops when the selected design does not fit the data. Version 1.8.0 showed a warning and analysed anyway."),
+            tags$ul(class = "mb-0",
+              tags$li(tags$strong("New: "), "the Analysis Record of a bioequivalence run recomputes the confidence intervals and the verdict. The script runs the app's own bioequivalence code with the recorded settings. The code ships with the record, and its SHA-256 is checked. The script compares the table, using the unrounded estimates, with the app's. The last line says MATCH only when the NCA part and the bioequivalence part both match"),
+              tags$li(tags$strong("Changed: "), "a design that does not fit the data is refused. The message says what the data have, what the design expects and what to do. This stops, for example, a 2\u00D72\u00D72 model on a study run in several groups, with sequence labels such as TR-G1 and TR-G2. A subject who misses a period is not refused, and a 2\u00D72\u00D74 replicate with four sequences is accepted"),
+              tags$li(tags$strong("Changed: "), "the bioequivalence run is one function that the app and the record script both call. Nine runs from v1.8.0 give identical results"),
+              tags$li("Validation: 627 automated and 84 manual tests (was 596 and 77), with tests that rebuild each record, change a value, a setting, the Reference treatment or the code, and run the script again, plus a section that compares nine bioequivalence runs with their v1.8.0 results")
+            )
+          ),
+
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.8.0"),
             tags$p(class = "text-muted mb-1", "October 2026"),
             tags$p(class = "mb-1", tags$strong("Results can differ from v1.7.0"),
                    " for fluctuation and swing at steady state when the highest concentration lies after \u03C4, for a manual half-life fit that included values set by a BLQ rule, for a profile with a single measurable concentration (now analysed), for partial AUCs in bioequivalence that pass a profile's last measurable concentration (now no verdict), for C\u03C4 when the trough was not drawn at exactly \u03C4, for Method B when a 2\u00D72 subject lacks one treatment, for files with a pre-dose sample at a negative time, for a Dose column per kg once a body-weight column is mapped, for an infinite or negative value in the bioequivalence data (now no verdict), for an RSABE point estimate between 125.005 and 125.05% (now outside the limits), and for a confidence limit or point estimate exactly halfway at the third decimal (now rounded up, as SAS does). The release adds an optional controlled mode for installations under GxP. Without it, the app works as before."),

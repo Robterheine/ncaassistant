@@ -900,8 +900,8 @@ check("EXP-DT-02", "Determinism: summary", { s1<-summarize_pk_params(theoph_resu
       "URS-EXP-01", method="Summary twice", expected="Identical", critical=TRUE)
 check("EXP-VR-01", "APP_VERSION queryable", nchar(APP_VERSION)>0&&APP_VERSION!="unknown",
       "URS-EXP-06", method="APP_VERSION from app.R", expected="Non-empty", critical=TRUE)
-check("EXP-VR-02", "APP_VERSION is 1.8.0", APP_VERSION=="1.8.0",
-      "URS-EXP-06", method="=='1.8.0'", expected="1.8.0", critical=FALSE)
+check("EXP-VR-02", "APP_VERSION is 1.9.0", APP_VERSION=="1.9.0",
+      "URS-EXP-06", method="=='1.9.0'", expected="1.9.0", critical=FALSE)
 check("EXP-VR-03", "Package versions", { v<-sapply(c("NonCompart","PowerTOST","nlme"),function(p)as.character(packageVersion(p))); all(nchar(v)>0) },
       "URS-EXP-06", method="packageVersion", expected="All return strings", critical=TRUE)
 check("EXP-SH-01", "SHA-256 computable", nchar(digest(file="validation/validation.R",algo="sha256"))==64,
@@ -1201,6 +1201,14 @@ skip_manual("MAN-61","Record and audit trail of a scaled run","After MAN-58: Dow
 skip_manual("MAN-62","Phone width","Set the browser to 375 px wide; repeat MAN-54 and MAN-58","No sideways scrolling of the page; the tables scroll inside their frame","URS-UI-01")
 skip_manual("MAN-63","Help, Methods page and Data Guide","Open the help buttons Which acceptance approach? and Adjusting for baseline characteristics?; the Statistical Methods page (Reference-scaled approaches, examples, references); the Data Guide (Parallel Groups, 2x2x4 replicate, example downloads)","The text matches the settings: RSABE not for 2x2x3, covariates for parallel groups only, 24 subjects, switch 0.294; both new example files download","URS-GEN-03, URS-UI-02")
 skip_manual("MAN-64","Settings that must not stay active unseen","Tick Advanced options, choose a log covariate, untick Advanced options; use RSABE on a replicate study, then load a parallel study and run; untick the point-estimate box with widened limits, reset the limits to 80 and 125 and run ABEL on Cmax with a point estimate outside 80-125%","The advanced choices clear; no warning about an approach on the parallel study; ABEL gives NO because the point estimate is outside 80-125%","URS-BE-13, URS-BE-15")
+
+skip_manual("MAN-65","BE records of the example datasets show the reproduction check","In the app load each BE example (crossover, parallel with covariates, replicate hvd), choose the design, run the analysis (ABEL and RSABE once on the replicate study) and click Download Analysis Record","The notification says 'Reproduction check: MATCH' for every record; the Records section of the summary says the script recomputes the bioequivalence statistics","URS-EXP-09, URS-EXP-02")
+skip_manual("MAN-66","A downloaded BE record reproduces in a fresh R session","Unzip one BE record, open a new R session in that folder without the app and run source('reproduce_analysis.R')","The output shows the NCA comparison, the BE comparison ('BE result: MATCH') and a last line 'Result: MATCH'; the zip itself holds no reproduced files before the script is run","URS-EXP-09, URS-EXP-04")
+skip_manual("MAN-67","A changed BE result in a record is detected","In an unzipped record change one confidence limit in app_be_reference.csv and run reproduce_analysis.R again; then restore it and append a comment to be_analysis.R","The first run ends 'Result: DIFFERENT' with 'BE result: DIFFERENT'; the second ends 'Result: DIFFERENT' with 'BE code (be_analysis.R): MISMATCH'","URS-EXP-09, URS-EXP-04")
+skip_manual("MAN-68","A study run in groups is refused with a readable message","Load the 2x2x2 example after labelling its sequences per group (TR-G1, RT-G1, TR-G2, RT-G2), choose 2x2x2 and click Run","The run stops with an error that names the selected design and the sequence count (4, expected 2); no results are shown; the message says to choose the matching design or check the Sequence column on the Upload page","URS-BE-02")
+skip_manual("MAN-69","Parallel groups on crossover data, and a crossover on parallel data, are refused","Choose Parallel groups on the 2x2x2 example and run; choose 2x2x2 on the parallel example and run","Both runs stop with a message that says what the data have, what the design expects and what to do; no results are shown","URS-BE-02")
+skip_manual("MAN-70","A subject missing a period is not refused","Delete the period 2 rows of subject 1 from the 2x2x2 example, upload it, choose 2x2x2 and run","The analysis runs and the note names the subject with data for only one treatment","URS-BE-02")
+skip_manual("MAN-71","The refusal fits a phone screen","At a width of 375 px repeat the refusal of MAN-68","The message is readable in full and the page does not scroll sideways","URS-BE-02, URS-UI-01")
 
 end_section("MAN")
 
@@ -6196,7 +6204,7 @@ for (i in seq_along(gld_cases)) local({
         (!sens || grepl("BE sensitivity result: MATCH", txt, fixed = TRUE)) &&
         !file.exists(file.path(d, "reproduced_be_results.csv"))
     }, error = function(e) FALSE),
-    "URS-EXP-02, URS-EXP-05", critical = TRUE,
+    "URS-EXP-09, URS-EXP-02, URS-EXP-05", critical = TRUE,
     method = paste0("The Analysis Record of ", gld_cases[[nm]]$file, " from the real module; reproduce_analysis.R run in a separate R process"),
     expected = "The script recomputes the NCA and the BE table from the recorded settings; both match; the last line is Result: MATCH")
 })
@@ -6207,7 +6215,7 @@ check("REC-BE-10", "A changed value in the app's BE results gives DIFFERENT",
     r <- read.csv(f, check.names = FALSE); r$CI_Upper[1] <- r$CI_Upper[1] + 0.5; write.csv(r, f, row.names = FALSE)
     out <- gld_run(d); identical(gld_final(out), "DIFFERENT") && any(grepl("^BE result: DIFFERENT", out))
   }, error = function(e) FALSE),
-  "URS-EXP-02, URS-EXP-04", critical = TRUE, method = "One confidence limit of app_be_reference.csv raised by 0.5 percentage points; script run",
+  "URS-EXP-09, URS-EXP-02, URS-EXP-04", critical = TRUE, method = "One confidence limit of app_be_reference.csv raised by 0.5 percentage points; script run",
   expected = "BE result: DIFFERENT and Result: DIFFERENT")
 
 check("REC-BE-11", "A changed setting (confidence level) gives DIFFERENT",
@@ -6215,7 +6223,7 @@ check("REC-BE-11", "A changed setting (confidence level) gives DIFFERENT",
     d <- gld_copy("crossover_fixed"); gld_edit(file.path(d, "analysis_settings.json"), function(x) sub('"ci_level": 90', '"ci_level": 95', x))
     identical(gld_final(gld_run(d)), "DIFFERENT")
   }, error = function(e) FALSE),
-  "URS-EXP-02, URS-EXP-03", critical = TRUE, method = "ci_level 90 changed to 95 in analysis_settings.json; script run",
+  "URS-EXP-09, URS-EXP-02, URS-EXP-03", critical = TRUE, method = "ci_level 90 changed to 95 in analysis_settings.json; script run",
   expected = "Result: DIFFERENT")
 
 check("REC-BE-12", "A changed Reference treatment gives DIFFERENT",
@@ -6223,7 +6231,7 @@ check("REC-BE-12", "A changed Reference treatment gives DIFFERENT",
     d <- gld_copy("crossover_fixed"); gld_edit(file.path(d, "analysis_settings.json"), function(x) sub('"reference": "Reference"', '"reference": "Test"', x))
     identical(gld_final(gld_run(d)), "DIFFERENT")
   }, error = function(e) FALSE),
-  "URS-EXP-02, URS-EXP-03", critical = TRUE, method = "be_run reference changed from Reference to Test; script run",
+  "URS-EXP-09, URS-EXP-02, URS-EXP-03", critical = TRUE, method = "be_run reference changed from Reference to Test; script run",
   expected = "Result: DIFFERENT (the ratio would be inverted)")
 
 check("REC-BE-13", "Changed BE code gives DIFFERENT even when the numbers agree",
@@ -6231,7 +6239,7 @@ check("REC-BE-13", "Changed BE code gives DIFFERENT even when the numbers agree"
     d <- gld_copy("crossover_fixed"); cat("\n# changed\n", file = file.path(d, "be_analysis.R"), append = TRUE)
     out <- gld_run(d); identical(gld_final(out), "DIFFERENT") && any(grepl("BE code (be_analysis.R): MISMATCH", out, fixed = TRUE))
   }, error = function(e) FALSE),
-  "URS-EXP-02, URS-EXP-04", critical = TRUE, method = "A comment appended to the shipped be_analysis.R; script run",
+  "URS-EXP-09, URS-EXP-02, URS-EXP-04", critical = TRUE, method = "A comment appended to the shipped be_analysis.R; script run",
   expected = "BE code (be_analysis.R): MISMATCH and Result: DIFFERENT")
 
 check("REC-BE-14", "A change below the rounding of the table is still detected (unrounded comparison)",
@@ -6243,7 +6251,7 @@ check("REC-BE-14", "A change below the rounding of the table is still detected (
     # the displayed point estimate (2 decimals) is untouched, the verdict is not MATCH
     identical(r$Point_Est[1], shown) && identical(gld_final(out), "CLOSE")
   }, error = function(e) FALSE),
-  "URS-EXP-02, URS-EXP-04", critical = TRUE, method = "Raw_Point_Est of app_be_reference.csv changed by 0.003% while the rounded column stays; script run",
+  "URS-EXP-09, URS-EXP-02, URS-EXP-04", critical = TRUE, method = "Raw_Point_Est of app_be_reference.csv changed by 0.003% while the rounded column stays; script run",
   expected = "Result: CLOSE: the unrounded estimate is compared, not the rounded one")
 
 check("REC-BE-15", "The BE comparison matches rows on Parameter, text exactly, and combines verdicts by their worst",
@@ -6264,7 +6272,7 @@ check("REC-BE-15", "The BE comparison matches rows on Parameter, text exactly, a
       identical(combine_verdicts("FAILED", "DIFFERENT", "MATCH"), "DIFFERENT") &&
       !any(grepl("[^ -~]", readLines(f, warn = FALSE)))
   }, error = function(e) FALSE),
-  "URS-EXP-02, URS-EXP-04", critical = TRUE, method = "compare_be_with_reference() and combine_verdicts() on small tables: shuffled rows, a changed verdict text, a parameter on one side only, a changed code hash, an empty table, a change of 0.0001; the reference file is ASCII",
+  "URS-EXP-09, URS-EXP-02, URS-EXP-04", critical = TRUE, method = "compare_be_with_reference() and combine_verdicts() on small tables: shuffled rows, a changed verdict text, a parameter on one side only, a changed code hash, an empty table, a change of 0.0001; the reference file is ASCII",
   expected = "MATCH for shuffled rows; DIFFERENT for text, a missing or extra parameter and a code mismatch; FAILED for nothing; CLOSE for a small change; worst verdict wins")
 
 check("REC-BE-16", "The recorded BE settings read back as the settings the run was given (parallel group with a covariate)",
@@ -6277,7 +6285,7 @@ check("REC-BE-16", "The recorded BE settings read back as the settings the run w
       isTRUE(all.equal(c(b$ci_level, b$be_lower, b$be_upper), c(90, 80, 125))) && isTRUE(b$log_transform) &&
       isTRUE(b$pe_constraint) && identical(b$model_type, "fixed") && is.null(b$approach) && identical(b$is_steady_state, FALSE)
   }, error = function(e) FALSE),
-  "URS-EXP-03", critical = TRUE, method = "analysis_settings.json of the parallel record read with simplifyDataFrame = FALSE and turned back by be_inputs_from_record()",
+  "URS-EXP-09, URS-EXP-03", critical = TRUE, method = "analysis_settings.json of the parallel record read with simplifyDataFrame = FALSE and turned back by be_inputs_from_record()",
   expected = "design, reference, parameters, covariate specification, level, limits and flags as they were given")
 
 check("REC-BE-17", "The record ships the BE code unchanged, with hashes, and no longer says the BE statistics are not recomputed",
@@ -6292,7 +6300,7 @@ check("REC-BE-17", "The record ships the BE code unchanged, with hashes, and no 
       grepl("app_be_reference.csv", man, fixed = TRUE) && is.null(rec$reproduction_scope) &&
       grepl("recomputes the NCA parameters and then the", html, fixed = TRUE) && !grepl("are not\nrecomputed by the script", html, fixed = TRUE)
   }, error = function(e) FALSE),
-  "URS-EXP-02, URS-EXP-04", critical = TRUE, method = "The RSABE record unzipped: shipped files against R/, hashes in the JSON and in the manifest, the summary text",
+  "URS-EXP-09, URS-EXP-02, URS-EXP-04", critical = TRUE, method = "The RSABE record unzipped: shipped files against R/, hashes in the JSON and in the manifest, the summary text",
   expected = "Exact copies of the four code files, their SHA-256 in the settings and the manifest, the reference file listed; no 'not recomputed' sentence")
 
 # ---- A design that does not fit the data is refused, not analysed ----------------
@@ -7956,7 +7964,7 @@ cat(paste(rep("=",72),collapse=""), "\n")
 # The counts in the documents are the counts of this run (this check included)
 
 all_urs <- c(paste0("URS-GEN-0",c(1,3:9)),paste0("URS-DAT-0",1:9),paste0("URS-NCA-",sprintf("%02d",1:15)),
-             paste0("URS-BE-0",1:9),"URS-BE-10","URS-BE-11","URS-BE-12","URS-BE-13","URS-BE-14","URS-BE-15",paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:8),paste0("URS-UI-0",1:5),
+             paste0("URS-BE-0",1:9),"URS-BE-10","URS-BE-11","URS-BE-12","URS-BE-13","URS-BE-14","URS-BE-15",paste0("URS-PWR-0",1:6),paste0("URS-EXP-0",1:9),paste0("URS-UI-0",1:5),
              paste0("URS-VIZ-0",1:9),paste0("URS-GXP-",sprintf("%02d",1:20)))
 start_section("DOC")
 check("DOC-06", "Every requirement ID in the URS document is in the list of tested requirements, and the list holds nothing the URS lacks",
