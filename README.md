@@ -31,7 +31,7 @@ Alongside the paths: a **Statistical Methods** page with wording to adapt for a 
 
 ## Intended use
 
-NCA Assistant is for pharmacokineticists doing non-compartmental analysis, bioequivalence testing and study planning. Average bioequivalence for every design, plus EMA ABEL and FDA RSABE for replicate designs. The FDA scaled test for narrow therapeutic index drugs is for planning only. The public instance and a standard installation have no audit trail, electronic signature or access control; a controlled installation on your own server adds them (see [Controlled mode](#controlled-mode)). The public instance on shinyapps.io is for evaluation and training, with synthetic or pseudonymised data. For regulated work, install a tagged release on your own system and qualify it there with the validation package. Responsibility for the analysis and its conclusions stays with the user. Not for dosing decisions for individual patients.
+NCA Assistant is for pharmacokineticists doing non-compartmental analysis, bioequivalence testing and study planning. Average bioequivalence for every design, plus EMA ABEL and FDA RSABE for replicate designs. The FDA scaled test for narrow therapeutic index drugs is for planning only. Studies run in several groups (ICH M13A, 2.2.3.5) are not modelled; a group column in the file is ignored. The public instance and a standard installation have no audit trail, electronic signature or access control; a controlled installation on your own server adds them (see [Controlled mode](#controlled-mode)). The public instance on shinyapps.io is for evaluation and training, with synthetic or pseudonymised data. For regulated work, install a tagged release on your own system and qualify it there with the validation package. Responsibility for the analysis and its conclusions stays with the user. Not for dosing decisions for individual patients.
 
 **Your data.** On the public instance, uploads are processed on shinyapps.io servers run by Posit PBC (USA). Upload only synthetic, example or anonymised data there. Pseudonymised trial data are still personal data under the GDPR. Sending them to a third-party host needs agreements your organisation must have in place, and may breach sponsor confidentiality. For real study data, run the app on your own computer.
 
@@ -145,7 +145,7 @@ The validation package in [`validation/`](validation/) follows a risk-based appr
 Rscript validation/validation.R
 ```
 
-This executes 590 automated tests (plus 77 manual tests defined for a running app) and writes a results CSV with per-section results and URS traceability, and an environment file with the R and package versions and the SHA-256 of every tested file. Each release also ships a manifest of file hashes and a package lockfile (`validation/release_manifest.csv`, `validation/renv.lock`), which the installation checks compare against.
+This executes 596 automated tests (plus 77 manual tests defined for a running app) and writes a results CSV with per-section results and URS traceability, and an environment file with the R and package versions and the SHA-256 of every tested file. Each release also ships a manifest of file hashes and a package lockfile (`validation/release_manifest.csv`, `validation/renv.lock`), which the installation checks compare against.
 
 **Validation deliverables:**
 

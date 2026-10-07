@@ -297,14 +297,27 @@ within_cv_from_be <- function(ci_table, param = "CMAX", unadjusted = FALSE) {
   100 * sqrt(exp(mse) - 1)
 }
 
+#' Round halves away from zero, as SAS ROUND does
+#'
+#' A value such as 125.005 is stored as 125.00499999..., so round() gives
+#' 125.00 while SAS, which allows for that storage error, gives 125.01. A value
+#' within a relative 1e-12 of a half is rounded as an exact half, away from
+#' zero, so the app and a SAS re-analysis round the same way.
+round_half_up <- function(x, digits = 2) {
+  s <- abs(x) * 10^digits
+  fl <- floor(s)
+  sign(x) * (fl + (s - fl >= 0.5 - 1e-12 * pmax(s, 1))) / 10^digits
+}
+
 #' Is a confidence interval within the acceptance limits?
 #'
 #' The limits are compared after rounding the CI to two decimals, as in FDA
 #' "Statistical Approaches to Establishing Bioequivalence" (May 2026): "the
 #' rounded confidence interval value should be at least 80.00 percent and not
-#' more than 125.00 percent". The table shows the same rounded values.
+#' more than 125.00 percent". Halves round up, as in SAS (round_half_up()).
+#' The table shows the same rounded values.
 be_limits_pass <- function(ci_lo, ci_hi, lower, upper) {
-  round(ci_lo, 2) >= lower && round(ci_hi, 2) <= upper
+  round_half_up(ci_lo, 2) >= lower && round_half_up(ci_hi, 2) <= upper
 }
 
 #' Parameters compared as a ratio without a bioequivalence verdict
@@ -734,7 +747,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
     if (!widened) {
       pe_status <- "not required"; be_pass <- ci_pass
     } else if (isTRUE(pe_constraint)) {
-      pe_ok <- round(pe, 2) >= 80 && round(pe, 2) <= 125
+      pe_ok <- pe_within_limits(pe)
       pe_status <- if (pe_ok) "YES" else "NO"; be_pass <- ci_pass && pe_ok
     } else {
       pe_status <- "not applied"; be_pass <- ci_pass
@@ -771,7 +784,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
     out$warnings <- cov_warnings
     unadj_lo <- round(unadj_lo, 2); unadj_hi <- round(unadj_hi, 2)
   }
-  out$row <- make_row(pe = round(pe, 2), lo = round(ci_lo_p, 2), hi = round(ci_hi_p, 2),
+  out$row <- make_row(pe = round_half_up(pe, 2), lo = round_half_up(ci_lo_p, 2), hi = round_half_up(ci_hi_p, 2),
                       n_t = n2, n_r = n1, o_t = o2, o_r = o1,
                       pe_status = pe_status, verdict = verdict,
                       mse = round(mse, 6), dfe = unname(dfe))

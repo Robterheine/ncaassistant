@@ -113,7 +113,8 @@ rsabe_assess <- function(be_data, param, design, trt_col, subj_col, per_col, seq
 #' Rounded to two decimals in percent (four in the ratio, as in FDA Appendix G
 #' step 3b, [0.8000, 1.2500]), the same at both edges. Rounding to four
 #' significant figures kept one decimal above 100% and so accepted 125.049%.
-pe_within_limits <- function(pe) round(pe, 2) >= 80 && round(pe, 2) <= 125
+#' Halves round up, as in SAS (round_half_up()).
+pe_within_limits <- function(pe) round_half_up(pe, 2) >= 80 && round_half_up(pe, 2) <= 125
 
 #' Assess one parameter with the chosen approach
 #'
@@ -190,7 +191,7 @@ be_assess_parameter <- function(approach = "standard", be_data, param, design, .
   } else {
     out$row$Bioequivalent <- if (r$pass) "YES" else "NO"
   }
-  out$row$Point_Est <- round(r$pe, 2); out$row$CI_Lower <- round(r$ci_lo, 2); out$row$CI_Upper <- round(r$ci_hi, 2)
+  out$row$Point_Est <- round_half_up(r$pe, 2); out$row$CI_Lower <- round_half_up(r$ci_lo, 2); out$row$CI_Upper <- round_half_up(r$ci_hi, 2)
   out$row$BE_Lower <- r$limit_lo; out$row$BE_Upper <- r$limit_hi
   out$row$PE_Constraint <- if (isFALSE(args$verdict)) "not applicable" else if (r$pe_ok) "YES" else "NO"
   out$row$N_Test <- r$n; out$row$N_Ref <- r$n; out$row$DF <- r$dfi; out$row$MSE <- round(r$mse_i, 6)

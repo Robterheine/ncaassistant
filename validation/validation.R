@@ -6771,6 +6771,21 @@ check("ARV-17", "Warnings that change how BE results are read reach the on-scree
   method = "Code inspection of R/mod_path_be.R",
   expected = "The design-mismatch, missing-Sequence and Tmax warnings are collected in run_warns and stored with the M13A checks, which feed the Checks sheet and the record")
 
+check("ARV-18", "Confidence limits and point estimates round halves up, as SAS does, before the comparison with the limits",
+  tryCatch({
+    be <- paste(readLines("R/be_analysis.R", warn = FALSE), collapse = "\n")
+    sc <- paste(readLines("R/be_scaled.R", warn = FALSE), collapse = "\n")
+    identical(round_half_up(c(125.005, 79.995, 125.0049, -1.005, 0.125, NA), 2), c(125.01, 80, 125, -1.01, 0.13, NA)) &&
+      !be_limits_pass(90, 125.005, 80, 125) && be_limits_pass(90, 125.0049, 80, 125) &&
+      be_limits_pass(79.995, 110, 80, 125) && !be_limits_pass(79.9949, 110, 80, 125) &&
+      !pe_within_limits(125.005) && pe_within_limits(79.995) &&
+      !grepl("round(ci_lo, 2)", be, fixed = TRUE) && !grepl("round(pe, 2)", be, fixed = TRUE) &&
+      grepl("lo = round_half_up(ci_lo_p, 2)", be, fixed = TRUE) && grepl("CI_Upper <- round_half_up(r$ci_hi, 2)", sc, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-BE-04", critical = TRUE,
+  method = "round_half_up(), be_limits_pass() and pe_within_limits() at the halves; code inspection of R/be_analysis.R and R/be_scaled.R",
+  expected = "125.005 rounds to 125.01 and fails, as in SAS (was 125.00 and a pass); 125.0049 passes; 79.995 rounds to 80.00; the table shows the same rounded values")
+
 end_section("ARV")
 
 # =============================================================================
@@ -7730,7 +7745,7 @@ check("DOC-07", "BLQ rules and AUC integration: the Methods page, the Upload lab
       grepl("rounded to two decimals at both limits", m, fixed = TRUE) && !grepl("four significant figures", m, fixed = TRUE) &&
       grepl("after the last \\u2192 missing, pre-dose \\u2192 0", up, fixed = TRUE) &&
       grepl("also in a profile with no quantifiable value", up, fixed = TRUE) &&
-      grepl("A BLQ pre-dose sample → 0. In a profile without any measurable value", hp, fixed = TRUE) &&
+      grepl("A BLQ pre-dose sample \u2192 0. In a profile without any measurable value", hp, fixed = TRUE) &&
       grepl("including a pre-dose sample and every value of a profile without a measurable concentration", hp, fixed = TRUE) &&
       grepl("any quantifiable concentration, the BLQ values other than the pre-dose sample", m, fixed = TRUE)
   }, error = function(e) FALSE),

@@ -16,7 +16,8 @@
 # the Statistical Methods page and the README use it; a validation test compares
 # the copies (README.md is static text and must match it exactly).
 BE_SCOPE_STATEMENT <- paste0("Average bioequivalence for every design, plus EMA ABEL and FDA RSABE for replicate designs. ",
-                             "The FDA scaled test for narrow therapeutic index drugs is for planning only.")
+                             "The FDA scaled test for narrow therapeutic index drugs is for planning only. ",
+                             "Studies run in several groups (ICH M13A, 2.2.3.5) are not modelled; a group column in the file is ignored.")
 
 BE_DESIGNS <- data.frame(
   code           = c("2x2x2", "2x2x3", "2x3x3", "2x2x4", "parallel", "paired"),
