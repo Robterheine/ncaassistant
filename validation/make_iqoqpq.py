@@ -60,7 +60,7 @@ set_text(para("This protocol defines"),
   f"reference and classification exactly as defined in validation.R ({len(auto)} automated, {len(man)} manual). "
   "Record the outcome of your own run in the Result column, or attach validation_results.csv.")
 for r in d.tables[0].rows:
-    if r.cells[0].text == "Date": set_cell(r.cells[1], "September 2026")
+    if r.cells[0].text == "Date": set_cell(r.cells[1], "October 2026")
 
 env = table_after(para("1.1 Test Environment"))
 names = [r.cells[0].text for r in env.rows]
