@@ -75,36 +75,56 @@ planner_designs <- function(method) {
   stats::setNames(BE_DESIGNS$label[keep], BE_DESIGNS$powertost_code[keep])
 }
 
+# Sequence counts a design also runs with. A 2x2x4 full replicate is usually
+# TRTR | RTRT, but four sequences (for example TRTR | RTRT | TRRT | RTTR) are the
+# same design with four periods and are analysed by the same model.
+BE_ALT_SEQUENCES <- list("2x2x4" = 4)
+
 #' Compare the selected design with the structure detected in the data
 #'
+#' The run is refused when this returns a message (run_be_analysis()).
 #' @param code Selected design code
 #' @param detected Output of detect_study_design()
+#' @param orders The treatment order each sequence label carries, named by
+#'   label (be_sequence_orders()); NULL when it cannot be read. Two labels with
+#'   the same order (TR-G1 and TR-G2) are reported as a study run in groups.
 #' @return NULL when consistent (or not checkable), otherwise a message
-check_design_against_data <- function(code, detected) {
+check_design_against_data <- function(code, detected, orders = NULL) {
   if (is.null(detected)) return(NULL)
   row <- BE_DESIGNS[BE_DESIGNS$code == code, ]
   if (nrow(row) != 1) return(NULL)
   if (row$model == "parallel") {
     if (isTRUE(detected$n_periods > 1))
-      return(paste0("Parallel groups was selected, but the data have ",
-                    detected$n_periods, " periods."))
+      return(paste0("Parallel groups was selected, but the data have ", detected$n_periods, " periods. ",
+                    "A parallel study has one period per subject. Select the crossover design that matches the ",
+                    "study, or check the Period column on the Upload page."))
     return(NULL)
   }
   if (row$model == "crossover" && isTRUE(detected$n_periods <= 1))
     return(paste0("The selected design (", row$label, ") is a crossover, but the data have one period ",
-                  "per subject (no Period column mapped, or a parallel-group study). Select Parallel groups, ",
-                  "or map the Period column on the Upload page."))
+                  "per subject. Either no Period column is mapped or the study is a parallel-group study. ",
+                  "Select Parallel groups, or map the Period column on the Upload page."))
   issues <- character(0)
   if (!is.na(row$n_periods) && !is.null(detected$n_periods) && detected$n_periods > 1 &&
       detected$n_periods != row$n_periods)
     issues <- c(issues, paste0(detected$n_periods, " periods (expected ", row$n_periods, ")"))
-  if (!is.na(row$n_sequences) && !is.null(detected$n_sequences) && detected$n_sequences > 1 &&
-      detected$n_sequences != row$n_sequences)
-    issues <- c(issues, paste0(detected$n_sequences, " sequences (expected ", row$n_sequences, ")"))
+  n_seq <- detected$n_sequences
+  if (!is.na(row$n_sequences) && !is.null(n_seq) && n_seq > 1 &&
+      !n_seq %in% c(row$n_sequences, BE_ALT_SEQUENCES[[code]]))
+    issues <- c(issues, paste0(n_seq, " sequences (expected ", row$n_sequences,
+                               if (!is.null(BE_ALT_SEQUENCES[[code]])) paste0(" or ", BE_ALT_SEQUENCES[[code]]), ")"))
+  if (length(issues) == 0 && length(orders) > length(unique(orders))) {
+    dup <- unique(orders[duplicated(orders) | duplicated(orders, fromLast = TRUE)])
+    shared <- vapply(dup, function(o) paste(names(orders)[orders == o], collapse = " and "), "")
+    return(paste0("The data have ", detected$n_sequences, " sequence labels, but some carry the same treatment order: ",
+                  paste(shared, collapse = "; "), ". ",
+                  "That looks like a study run in several groups, which this analysis does not model. ",
+                  "Check the Sequence column on the Upload page."))
+  }
   if (length(issues) == 0) return(NULL)
   paste0("The selected design (", row$label, ") does not match the data: ",
-         paste(issues, collapse = " and "), ". Check the design selection and the ",
-         "Period and Sequence columns.")
+         paste(issues, collapse = " and "), ". Choose the design that fits the study, or check the ",
+         "Period and Sequence columns on the Upload page.")
 }
 
 #' The CV argument for PowerTOST, as a fraction

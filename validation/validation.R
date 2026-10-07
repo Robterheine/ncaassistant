@@ -6294,6 +6294,84 @@ check("REC-BE-17", "The record ships the BE code unchanged, with hashes, and no 
   }, error = function(e) FALSE),
   "URS-EXP-02, URS-EXP-04", critical = TRUE, method = "The RSABE record unzipped: shipped files against R/, hashes in the JSON and in the manifest, the summary text",
   expected = "Exact copies of the four code files, their SHA-256 in the settings and the manifest, the reference file listed; no 'not recomputed' sentence")
+
+# ---- A design that does not fit the data is refused, not analysed ----------------
+gld_csv <- function(df) { f <- tempfile(fileext = ".csv"); write.csv(df, f, row.names = FALSE); f }
+gld_refused <- function(df, design, inputs = list()) {
+  r <- be_golden_run(list(file = gld_csv(df), inputs = utils::modifyList(list(be_design = design), inputs)))
+  list(none = is.null(r$be_result), text = paste(vapply(r$notifications, `[[`, "", "text"), collapse = " | "),
+       type = vapply(r$notifications, `[[`, "", "type"), res = r)
+}
+gld_xo <- read.csv("data/example_be_crossover.csv"); gld_rep <- read.csv("data/example_be_replicate_2x2x4.csv")
+# a study run in two groups: the sequence labels carry the group, as in TR-G1 and TR-G2
+gld_groups <- function(d) { g <- ave(d$Subject, d$Sequence, FUN = function(v) as.integer(factor(v)) %% 2)
+                            d$Sequence <- paste0(d$Sequence, "-G", ifelse(g == 0, 1, 2)); d }
+
+check("REP-DES-06", "A study run in groups is refused: the run stops, no result is written, and the message names the labels",
+  tryCatch({
+    a <- gld_refused(gld_groups(gld_xo), "2x2x2"); b <- gld_refused(gld_groups(gld_rep), "2x2x4")
+    cm <- list(subject = "Subject", time = "Time", conc = "Concentration", treatment = "Treatment", period = "Period", sequence = "Sequence")
+    a$none && b$none && "error" %in% a$type && "error" %in% b$type && !any(grepl("analysis complete", c(a$text, b$text))) &&
+      grepl("4 sequences (expected 2)", a$text, fixed = TRUE) && grepl("TRTR-G1 and TRTR-G2", b$text, fixed = TRUE) &&
+      grepl("several groups", b$text, fixed = TRUE) &&
+      is.null(check_design_against_data("2x2x4", detect_study_design(gld_rep, cm)))
+  }, error = function(e) FALSE),
+  "URS-BE-02", critical = TRUE, method = "The 2x2x2 and the 2x2x4 example with Sequence labelled per group (TR-G1, TR-G2, ...) run through the real BE module",
+  expected = "Error message; be_result() stays empty; no 'analysis complete'")
+
+check("REP-DES-07", "Parallel on crossover data and a crossover on one-period data are refused",
+  tryCatch({
+    a <- gld_refused(gld_xo, "parallel")
+    b <- gld_refused(read.csv("data/example_be_parallel.csv"), "2x2x2")
+    a$none && b$none && grepl("Parallel groups was selected, but the data have 2 periods", a$text, fixed = TRUE) &&
+      grepl("is a crossover, but the data have one period", b$text, fixed = TRUE) && grepl("Upload page", paste(a$text, b$text), fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-BE-02", critical = TRUE, method = "Parallel selected on the 2x2x2 example; 2x2x2 selected on the parallel example; both through the real module",
+  expected = "Both refused with the design, what was found and what to do; no result")
+
+check("REP-DES-08", "A subject who misses a period, and a four-sequence replicate, are not refused",
+  tryCatch({
+    d <- gld_xo[!(gld_xo$Subject == 1 & gld_xo$Period == 2), ]
+    a <- gld_refused(d, "2x2x2")
+    r23 <- read.csv("validation/fixtures/rsabe_datasets.csv"); r23 <- r23[r23$dataset == "rds23", ]
+    cm <- list(subject = "subject", treatment = "treatment", period = "period", sequence = "sequence")
+    !a$none && any(grepl("only one treatment", a$text)) &&
+      is.null(check_design_against_data("2x2x4", detect_study_design(r23, cm), be_sequence_orders(r23, "subject", "treatment", "period", "sequence")))
+  }, error = function(e) FALSE),
+  "URS-BE-02", critical = TRUE, method = "2x2x2 example without subject 1 period 2, through the real module; the four-sequence 2x2x4 fixture rds23 against the check",
+  expected = "The first runs with the incomplete-subject note; rds23 (RTRT, RTTR, TRRT, TRTR) matches 2x2x4")
+
+check("REP-DES-09", "A single treatment order is still analysed as a paired comparison, with its note",
+  tryCatch({
+    d <- gld_xo[gld_xo$Sequence == "TR", ]
+    a <- gld_refused(d, "2x2x2")
+    !a$none && identical(a$res$be_result$design, "paired") && any(grepl("paired", a$res$be_result$m13a, ignore.case = TRUE))
+  }, error = function(e) FALSE),
+  "URS-BE-02", critical = FALSE, method = "The 2x2x2 example reduced to sequence TR, run through the real module",
+  expected = "A result with design paired and the note; not a refusal")
+
+check("REP-DES-10", "Survey: every bundled dataset is accepted with its own design, and only the multi-group files are refused",
+  tryCatch({
+    cmf <- function(raw) { cm <- auto_detect_columns(names(raw)); cm[!vapply(cm, function(v) is.null(v) || identical(v, ""), TRUE)] }
+    chk <- function(raw, design) { cm <- cmf(raw); prof <- unique(raw[intersect(c(cm$subject, cm$treatment, cm$period, cm$sequence), names(raw))])
+      check_design_against_data(design, detect_study_design(raw, cm), be_sequence_orders(prof, cm$subject, cm$treatment, cm$period, cm$sequence)) }
+    own <- c("example_be_crossover.csv" = "2x2x2", "example_be_parallel.csv" = "parallel", "example_be_parallel_covariates.csv" = "parallel",
+             "example_be_replicate_2x2x4.csv" = "2x2x4", "example_be_replicate_hvd.csv" = "2x2x4")
+    ok <- vapply(names(own), function(f) is.null(chk(read.csv(file.path("data", f)), own[[f]])), TRUE)
+    fx <- c("be_2x2x2_crossover.csv" = "2x2x2", "be_2x2x3_full_replicate.csv" = "2x2x3", "be_2x2x4_full_replicate.csv" = "2x2x4",
+            "be_2x2x4_highly_variable.csv" = "2x2x4", "be_2x3x3_partial_replicate.csv" = "2x3x3", "flat_equivalent.csv" = "2x2x2",
+            "cov_parallel_data.csv" = "parallel")
+    okf <- vapply(names(fx), function(f) is.null(chk(read.csv(file.path("validation", "fixtures", f)), fx[[f]])), TRUE)
+    rs <- read.csv("validation/fixtures/rsabe_datasets.csv")
+    okr <- vapply(unique(rs$dataset), function(u) { d <- rs[rs$dataset == u, ]
+      is.null(chk(d, if (u %in% c("rds02", "rds04", "rds07", "rds30")) "2x3x3" else "2x2x4")) }, TRUE)
+    pb <- read.csv("validation/fixtures/parallel_be_datasets.csv")
+    okp <- vapply(unique(pb$dataset), function(u) is.null(chk(pb[pb$dataset == u, ], "parallel")), TRUE)
+    all(ok) && all(okf) && all(okr) && all(okp) &&
+      !is.null(chk(gld_groups(gld_xo), "2x2x2")) && !is.null(chk(gld_groups(gld_rep), "2x2x4"))
+  }, error = function(e) FALSE),
+  "URS-BE-02", critical = TRUE, method = "check_design_against_data() with the sequence orders for every BE dataset in data/ and validation/fixtures/ (including the 4-sequence replicates rds23, rds24) against its own design, and for the two examples run in groups",
+  expected = "All bundled datasets accepted with their own design; the two multi-group versions refused")
 end_section("GLD")
 
 # =============================================================================
@@ -6925,7 +7003,7 @@ check("ARV-17", "Warnings that change how BE results are read reach the on-scree
   tryCatch({
     be <- paste(readLines("R/mod_path_be.R", warn = FALSE), collapse = "\n")
     ba <- paste(readLines("R/be_analysis.R", warn = FALSE), collapse = "\n")
-    grepl("warn_run(design_used$note, 15)", ba, fixed = TRUE) && grepl("if (!is.null(mismatch)) warn_run(mismatch, 15)", ba, fixed = TRUE) &&
+    grepl("warn_run(design_used$note, 15)", ba, fixed = TRUE) && !grepl("warn_run(mismatch", ba, fixed = TRUE) &&
       grepl('warn_run(\n      paste0("No Sequence column is mapped.', ba, fixed = TRUE) &&
       grepl('warn_run(\n      paste0("Tmax is included in your analysis.', ba, fixed = TRUE) &&
       grepl("m13a = c(run_warns, ", ba, fixed = TRUE) &&
@@ -6933,7 +7011,7 @@ check("ARV-17", "Warnings that change how BE results are read reach the on-scree
   }, error = function(e) FALSE),
   "URS-EXP-04", critical = FALSE,
   method = "Code inspection of run_be_analysis() in R/be_analysis.R and of R/mod_path_be.R",
-  expected = "The design-mismatch, missing-Sequence and Tmax warnings are collected in run_warns and stored with the M13A checks, which feed the Checks sheet and the record")
+  expected = "The paired-comparison note, the missing-Sequence and Tmax warnings are collected in run_warns and stored with the M13A checks, which feed the Checks sheet and the record")
 
 check("ARV-18", "Confidence limits and point estimates round halves up, as SAS does, before the comparison with the limits",
   tryCatch({

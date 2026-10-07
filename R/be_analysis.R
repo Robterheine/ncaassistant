@@ -1277,8 +1277,10 @@ run_be_analysis <- function(nca_res, pk_data, col_map, be_settings, nca_settings
   if (!is.null(design_used$note)) {
     warn_run(design_used$note, 15)
   } else {
-    mismatch <- check_design_against_data(s$design_selected, detected_design)
-    if (!is.null(mismatch)) warn_run(mismatch, 15)
+    # A design that does not fit the data is refused: the model would be fitted to a study it does not describe
+    mismatch <- check_design_against_data(s$design_selected, detected_design,
+                                          be_sequence_orders(be_data, subj_col_be, trt_col_be, per_col, seq_col))
+    if (!is.null(mismatch)) return(halt(paste("The analysis was not run.", mismatch)))
   }
 
   # Warn when no Sequence column is mapped for crossover designs
@@ -1558,4 +1560,27 @@ be_inputs_from_record <- function(rec) {
                transform = vapply(cov, function(x) x$transform, ""), stringsAsFactors = FALSE)
   b$parameters <- unlist(b$parameters)
   b
+}
+
+#' The treatment order each sequence label carries
+#'
+#' For every label of the Sequence column, the treatments in period order of the
+#' subjects who have every period (the most common order when they differ).
+#' Two labels with the same order are one sequence split by group.
+#' @return named character vector (label -> "T|R|T|R"), or NULL without Period or Sequence
+be_sequence_orders <- function(be_data, subj_col, trt_col, per_col, seq_col) {
+  if (is.null(per_col) || is.null(seq_col) || !all(c(subj_col, trt_col, per_col, seq_col) %in% names(be_data))) return(NULL)
+  d <- be_data[!is.na(be_data[[per_col]]) & !is.na(be_data[[seq_col]]), , drop = FALSE]
+  if (nrow(d) == 0) return(NULL)
+  p <- suppressWarnings(as.numeric(as.character(d[[per_col]])))
+  if (anyNA(p)) p <- as.numeric(factor(as.character(d[[per_col]])))
+  n_per <- length(unique(p))
+  d <- d[order(d[[subj_col]], p), , drop = FALSE]
+  by_subject <- split(seq_len(nrow(d)), as.character(d[[subj_col]]))
+  by_subject <- by_subject[vapply(by_subject, length, 1L) == n_per]
+  if (length(by_subject) == 0) return(NULL)
+  pat <- vapply(by_subject, function(i) paste(as.character(d[[trt_col]])[i], collapse = "|"), "")
+  lab <- vapply(by_subject, function(i) as.character(d[[seq_col]])[i[1]], "")
+  out <- vapply(split(pat, lab), function(x) names(sort(table(x), decreasing = TRUE))[1], "")
+  out[order(names(out))]
 }
