@@ -937,7 +937,7 @@ server <- function(input, output, session) {
               tags$li(tags$strong("New: "), "the Analysis Record of a bioequivalence run recomputes the confidence intervals and the verdict. The script runs the app's own bioequivalence code with the recorded settings. The code ships with the record, and its SHA-256 is checked. The script compares the table, using the unrounded estimates, with the app's. The last line says MATCH only when the NCA part and the bioequivalence part both match"),
               tags$li(tags$strong("Changed: "), "a design that does not fit the data is refused. The message says what the data have, what the design expects and what to do. This stops, for example, a 2\u00D72\u00D72 model on a study run in several groups, with sequence labels such as TR-G1 and TR-G2. A subject who misses a period is not refused, and a 2\u00D72\u00D74 replicate with four sequences is accepted"),
               tags$li(tags$strong("Changed: "), "the bioequivalence run is one function that the app and the record script both call. Nine runs from v1.8.0 give identical results"),
-              tags$li("Validation: 627 automated and 84 manual tests (was 596 and 77), with tests that rebuild each record, change a value, a setting, the Reference treatment or the code, and run the script again, plus a section that compares nine bioequivalence runs with their v1.8.0 results")
+              tags$li("Validation: 629 automated and 82 manual tests (was 596 and 77), with tests that rebuild each record, change a value, a setting, the Reference treatment or the code, and run the script again, plus a section that compares nine bioequivalence runs with their v1.8.0 results")
             )
           ),
 

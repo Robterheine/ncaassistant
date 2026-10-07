@@ -1203,12 +1203,10 @@ skip_manual("MAN-63","Help, Methods page and Data Guide","Open the help buttons 
 skip_manual("MAN-64","Settings that must not stay active unseen","Tick Advanced options, choose a log covariate, untick Advanced options; use RSABE on a replicate study, then load a parallel study and run; untick the point-estimate box with widened limits, reset the limits to 80 and 125 and run ABEL on Cmax with a point estimate outside 80-125%","The advanced choices clear; no warning about an approach on the parallel study; ABEL gives NO because the point estimate is outside 80-125%","URS-BE-13, URS-BE-15")
 
 skip_manual("MAN-65","BE records of the example datasets show the reproduction check","In the app load each BE example (crossover, parallel with covariates, replicate hvd), choose the design, run the analysis (ABEL and RSABE once on the replicate study) and click Download Analysis Record","The notification says 'Reproduction check: MATCH' for every record; the Records section of the summary says the script recomputes the bioequivalence statistics","URS-EXP-09, URS-EXP-02")
-skip_manual("MAN-66","A downloaded BE record reproduces in a fresh R session","Unzip one BE record, open a new R session in that folder without the app and run source('reproduce_analysis.R')","The output shows the NCA comparison, the BE comparison ('BE result: MATCH') and a last line 'Result: MATCH'; the zip itself holds no reproduced files before the script is run","URS-EXP-09, URS-EXP-04")
 skip_manual("MAN-67","A changed BE result in a record is detected","In an unzipped record change one confidence limit in app_be_reference.csv and run reproduce_analysis.R again; then restore it and append a comment to be_analysis.R","The first run ends 'Result: DIFFERENT' with 'BE result: DIFFERENT'; the second ends 'Result: DIFFERENT' with 'BE code (be_analysis.R): MISMATCH'","URS-EXP-09, URS-EXP-04")
-skip_manual("MAN-68","A study run in groups is refused with a readable message","Load the 2x2x2 example after labelling its sequences per group (TR-G1, RT-G1, TR-G2, RT-G2), choose 2x2x2 and click Run","The run stops with an error that names the selected design and the sequence count (4, expected 2); no results are shown; the message says to choose the matching design or check the Sequence column on the Upload page","URS-BE-02")
 skip_manual("MAN-69","Parallel groups on crossover data, and a crossover on parallel data, are refused","Choose Parallel groups on the 2x2x2 example and run; choose 2x2x2 on the parallel example and run","Both runs stop with a message that says what the data have, what the design expects and what to do; no results are shown","URS-BE-02")
 skip_manual("MAN-70","A subject missing a period is not refused","Delete the period 2 rows of subject 1 from the 2x2x2 example, upload it, choose 2x2x2 and run","The analysis runs and the note names the subject with data for only one treatment","URS-BE-02")
-skip_manual("MAN-71","The refusal fits a phone screen","At a width of 375 px repeat the refusal of MAN-68","The message is readable in full and the page does not scroll sideways","URS-BE-02, URS-UI-01")
+skip_manual("MAN-71","The refusal fits a phone screen","At a width of 375 px load the 2x2x2 example with its sequences labelled per group (TR-G1, RT-G1, TR-G2, RT-G2), choose 2x2x2 and click Run, as in the automated test REP-DES-11","The message is readable in full and the page does not scroll sideways","URS-BE-02, URS-UI-01")
 
 end_section("MAN")
 
@@ -6303,6 +6301,27 @@ check("REC-BE-17", "The record ships the BE code unchanged, with hashes, and no 
   "URS-EXP-09, URS-EXP-02, URS-EXP-04", critical = TRUE, method = "The RSABE record unzipped: shipped files against R/, hashes in the JSON and in the manifest, the summary text",
   expected = "Exact copies of the four code files, their SHA-256 in the settings and the manifest, the reference file listed; no 'not recomputed' sentence")
 
+check("REC-BE-18", "A downloaded BE record, unpacked into an empty folder, reproduces with source() in a fresh R session without the app",
+  tryCatch({
+    d <- file.path(tempdir(), "gld_unpacked"); unlink(d, recursive = TRUE); be_golden_record(gld_cases$crossover_fixed, d)
+    before <- list.files(d)
+    owd <- setwd(d); on.exit(setwd(owd), add = TRUE)
+    out <- suppressWarnings(system2(file.path(R.home("bin"), "Rscript"), c("-e", shQuote('source("reproduce_analysis.R")')), stdout = TRUE, stderr = TRUE))
+    setwd(owd)
+    last <- tail(grep("^Result: ", out), 1); be_line <- grep("^BE result: ", out)
+    all(c("analysis_settings.json", "reproduce_analysis.R", "app_results_reference.csv", "app_be_reference.csv", "nca_pipeline.R",
+          "be_analysis.R", "be_scaled.R", "designs.R", "utils.R", "data_integrity.txt", "reproduction_check.txt") %in% before) &&
+      !any(grepl("^reproduced", before)) &&
+      any(grepl("^Pipeline code: MATCH", out)) && any(grepl("^Data file: MATCH", out)) &&
+      any(grepl("Max relative difference: 0 -> MATCH", out, fixed = TRUE)) &&
+      sum(grepl("^BE code \\(.*\\): MATCH", out)) == 4 && length(be_line) == 1 && grepl("MATCH", out[be_line]) &&
+      length(last) == 1 && last > be_line && identical(out[last], "Result: MATCH") &&
+      all(c("reproduced_results.csv", "reproduced_be_results.csv") %in% list.files(d))
+  }, error = function(e) FALSE),
+  "URS-EXP-09, URS-EXP-04", critical = TRUE,
+  method = "The real record of the 2x2x2 example (Run, then the Analysis Record download) unpacked into an empty folder; source('reproduce_analysis.R') in a separate Rscript session",
+  expected = "The NCA comparison, the four code files, 'BE result: MATCH' and, as the last line, 'Result: MATCH'; the zip holds no reproduced files, the script writes its own")
+
 # ---- A design that does not fit the data is refused, not analysed ----------------
 gld_csv <- function(df) { f <- tempfile(fileext = ".csv"); write.csv(df, f, row.names = FALSE); f }
 gld_refused <- function(df, design, inputs = list()) {
@@ -6380,6 +6399,28 @@ check("REP-DES-10", "Survey: every bundled dataset is accepted with its own desi
   }, error = function(e) FALSE),
   "URS-BE-02", critical = TRUE, method = "check_design_against_data() with the sequence orders for every BE dataset in data/ and validation/fixtures/ (including the 4-sequence replicates rds23, rds24) against its own design, and for the two examples run in groups",
   expected = "All bundled datasets accepted with their own design; the two multi-group versions refused")
+check("REP-DES-11", "A study run in groups is refused with the complete message, and the results outputs stay blank",
+  tryCatch({
+    f <- gld_csv(gld_groups(gld_xo)); shared <- be_golden_shared(f); notes <- list(); view <- NULL
+    assign("showNotification", function(ui, ..., type = "default", duration = 5, id = NULL)
+      notes[[length(notes) + 1]] <<- list(text = paste(as.character(ui), collapse = " "), type = type), envir = globalenv())
+    on.exit(rm("showNotification", envir = globalenv()), add = TRUE)
+    suppressWarnings(shiny::testServer(path_be_server, args = list(shared = shared), {
+      do.call(session$setInputs, utils::modifyList(be_golden_defaults, list(be_design = "2x2x2")))
+      session$setInputs(run_be = 1)
+      blank <- function(id) tryCatch({ output[[id]]; FALSE }, error = function(e) inherits(e, "shiny.silent.error"))
+      view <<- list(none = is.null(be_result()), ci = blank("ci_table"), forest = blank("forest_plot"), record = is.null(be_record_data()))
+    }))
+    label <- BE_DESIGNS$label[BE_DESIGNS$code == "2x2x2"]
+    msg <- paste0("The analysis was not run. The selected design (", label, ") does not match the data: 4 sequences (expected 2). ",
+                  "Choose the design that fits the study, or check the Period and Sequence columns on the Upload page.")
+    errs <- vapply(notes[vapply(notes, function(n) identical(n$type, "error"), TRUE)], `[[`, "", "text")
+    view$none && view$ci && view$forest && view$record && identical(errs, msg) &&
+      !any(vapply(notes, function(n) grepl("analysis complete", n$text), TRUE))
+  }, error = function(e) FALSE),
+  "URS-BE-02", critical = TRUE,
+  method = "The 2x2x2 example with its sequences labelled per group, as an uploaded file, design 2x2x2, Run, through the real module; the notifications and the outputs of the results tables and the forest plot",
+  expected = "Exactly one error, with the full message; the table and the forest plot are blank; no result and no record data are stored")
 end_section("GLD")
 
 # =============================================================================
