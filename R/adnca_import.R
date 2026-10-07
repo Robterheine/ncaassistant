@@ -72,7 +72,7 @@ adnca_inspect <- function(d) {
     datetime_vars = intersect(c("ADTM", "ADT", "PCDTC", "EXSTDTC"), names(d)),
     units       = lapply(stats::setNames(nm = intersect(c("AVALU", "PCSTRESU", "RRLTU", "DOSEU"), names(d))), vals),
     lloq        = if ("PCLLOQ" %in% names(d)) sort(unique(d$PCLLOQ[!is.na(d$PCLLOQ)])) else numeric(0),
-    n_anl01fl_excluded = if ("ANL01FL" %in% names(d)) sum(is.na(d$ANL01FL) | d$ANL01FL != "Y") else NA_integer_,
+    n_anl01fl_excluded = if ("ANL01FL" %in% names(d)) sum(is.na(d$ANL01FL) | toupper(trimws(d$ANL01FL)) != "Y") else NA_integer_,
     n_not_done  = if ("PCSTAT" %in% names(d)) sum(!is.na(d$PCSTAT) & toupper(d$PCSTAT) == "NOT DONE") else 0L,
     n_derived   = if ("DTYPE" %in% names(d)) sum(!is.na(d$DTYPE) & trimws(d$DTYPE) != "") else 0L,
     treatment_var = .first_present(d, c("TRTP", "TRTA", "TRT01P", "TRT01A")),
@@ -116,7 +116,11 @@ adnca_convert <- function(d, time, paramcd = NULL, pcspec = NULL, zero_predose =
 
   # --- Record selection -----------------------------------------------------
   if ("ANL01FL" %in% names(d)) {
-    keep <- !is.na(d$ANL01FL) & d$ANL01FL == "Y"
+    keep <- !is.na(d$ANL01FL) & toupper(trimws(d$ANL01FL)) == "Y"
+    if (!any(keep))
+      refuse("no record has ANL01FL = \"Y\" (values found: ",
+             paste(utils::head(unique(ifelse(is.na(d$ANL01FL), "missing", d$ANL01FL)), 5), collapse = ", "),
+             "), so nothing is selected for analysis.")
     notes <- c(notes, sprintf("ANL01FL: kept %d record(s) with ANL01FL = \"Y\"; dropped %d.",
                               sum(keep), sum(!keep)))
     d <- d[keep, , drop = FALSE]

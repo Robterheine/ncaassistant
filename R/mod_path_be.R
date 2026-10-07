@@ -731,24 +731,31 @@ path_be_server <- function(id, shared) {
         design_used <- resolve_be_design(input$be_design, be_data,
                                          subj_col = subj_col_be, trt_col = trt_col_be,
                                          per_col = per_col, seq_col = seq_col)
+        # Warnings that change how the results are read also go into the
+        # checks on screen, the Checks sheet and the Analysis Record
+        run_warns <- character(0)
+        warn_run <- function(msg, duration) {
+          showNotification(msg, type = "warning", duration = duration)
+          run_warns <<- c(run_warns, msg)
+        }
         if (!is.null(design_used$note)) {
-          showNotification(design_used$note, type = "warning", duration = 15)
+          warn_run(design_used$note, 15)
         } else {
           mismatch <- check_design_against_data(input$be_design, shared$study_info$design)
-          if (!is.null(mismatch)) showNotification(mismatch, type = "warning", duration = 15)
+          if (!is.null(mismatch)) warn_run(mismatch, 15)
         }
         
         # Warn when no Sequence column is mapped for crossover designs
         if (is.null(seq_col) &&
             be_design_model(design_used$design) == "crossover") {
-          showNotification(
+          warn_run(
             paste0("No Sequence column is mapped. For a ", design_used$design,
                    " design the Sequence term is part of the standard ANOVA table ",
                    "(ln(PK) = Sequence + Subject(Sequence) + Period + Treatment). ",
                    "With subject as a fixed effect the ratio and confidence interval are the same ",
                    "without it, because each subject belongs to one sequence; only the test of the ",
                    "sequence effect is missing. If your data have a Sequence column, map it in the Upload step."),
-            type = "warning", duration = 15)
+            15)
         }
 
         # ---- Balanced design pre-check ------------------------------------
@@ -801,7 +808,7 @@ path_be_server <- function(id, shared) {
         
         # Warn once if Tmax is among the selected parameters
         if ("TMAX" %in% params) {
-          showNotification(
+          warn_run(
             paste0("Tmax is included in your analysis. Note: Tmax is a discrete ",
                    "variable that takes only values present in the sampling schedule. ",
                    "A parametric ANOVA model is not the usual analysis for Tmax. ",
@@ -811,7 +818,7 @@ path_be_server <- function(id, shared) {
                    "carries no bioequivalence verdict, ",
                    "and should not be used as the primary Tmax analysis in a ",
                    "regulatory submission."),
-            type = "warning", duration = 20)
+            20)
         }
 
         # Unit of an untransformed difference (TMAX, or any parameter when the
@@ -978,7 +985,7 @@ path_be_server <- function(id, shared) {
                        covariates = bd$covariates, covariate_coefs = cov_coefs,
                        approach = approach, scaled_details = scaled_details,
                        covariate_balance = be_covariate_balance(be_data, bd$covariates, trt_col_be, subj_col_be),
-                       m13a = c(unique(cov_warns), be_scaled_notes(ci_df, scaled_details), be_m13a_checks(d_unexcl, shared$col_map, nca_res,
+                       m13a = c(run_warns, unique(cov_warns), be_scaled_notes(ci_df, scaled_details), be_m13a_checks(d_unexcl, shared$col_map, nca_res,
                                                ci_df[ci_df$Parameter %in% setdiff(params, c(supportive, BE_NO_VERDICT_PARAMS)), ],
                                                isTRUE(input$is_ss)),
                                 if (has_excl && !setequal(

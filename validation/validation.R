@@ -6746,6 +6746,31 @@ check("ARV-15", "The BE run turns any unexpected error in the model fit into a m
   expected = "The tryCatch around be_assess_parameter() has a general error handler after the two classed ones")
 
 
+check("ARV-16", "ADNCA: ANL01FL is read in any case, and a dataset where no record has ANL01FL = Y is refused by name",
+  tryCatch({
+    d <- data.frame(USUBJID = "S1", ARRLT = c(0, 1, 2, 4, 8), AVAL = c(1, 2, 3, 2, 1), ANL01FL = "y", PARAMCD = "DRUG")
+    lower <- adnca_convert(d, time = "ARRLT"); d$ANL01FL <- "Y"; upper <- adnca_convert(d, time = "ARRLT")
+    d$ANL01FL <- "N"; none <- tryCatch(adnca_convert(d, time = "ARRLT"), error = function(e) conditionMessage(e))
+    nrow(lower$flat) == 5 && identical(lower$flat, upper$flat) && is.character(none) && grepl("ANL01FL", none) &&
+      grepl("values found: N", none, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-DAT-03", critical = TRUE,
+  method = "adnca_convert() on five records with ANL01FL y, Y and N",
+  expected = "y keeps the same five records as Y (was 0 records and a misleading 'Dataset has 0 rows'); all N is refused with the values found")
+
+check("ARV-17", "Warnings that change how BE results are read reach the on-screen checks, the Checks sheet and the Analysis Record",
+  tryCatch({
+    be <- paste(readLines("R/mod_path_be.R", warn = FALSE), collapse = "\n")
+    grepl("warn_run(design_used$note, 15)", be, fixed = TRUE) && grepl("if (!is.null(mismatch)) warn_run(mismatch, 15)", be, fixed = TRUE) &&
+      grepl('warn_run(\n            paste0("No Sequence column is mapped.', be, fixed = TRUE) &&
+      grepl('warn_run(\n            paste0("Tmax is included in your analysis.', be, fixed = TRUE) &&
+      grepl("m13a = c(run_warns, ", be, fixed = TRUE) &&
+      grepl("record_checks(shared$qc_result, c(be_result()$m13a", be, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-EXP-04", critical = FALSE,
+  method = "Code inspection of R/mod_path_be.R",
+  expected = "The design-mismatch, missing-Sequence and Tmax warnings are collected in run_warns and stored with the M13A checks, which feed the Checks sheet and the record")
+
 end_section("ARV")
 
 # =============================================================================
@@ -7251,7 +7276,7 @@ check("RSA-03", "Consistency with the planner: the pass rate of the assessment e
   method = "3000 seeded studies per case (2x2x4 n=30 CV 45% GMR 0.90; 2x2x4 n=24 CV 60% GMR 1.00; 2x3x3 n=36 CV 50% GMR 0.95) assessed with rsabe_assess(); PowerTOST::power.RSABE with 1e5 simulations",
   expected = "Pass rates equal within four binomial standard errors of the simulation (cases chosen far above the switch, so the ABE fall-back plays no part)")
 
-check("RSA-04", "The switch at s_WR 0.294 and the point-estimate limits: just below and above, four significant figures",
+check("RSA-04", "The switch at s_WR 0.294 and the point-estimate limits: just below and above, two decimals at both edges",
   tryCatch({
     lo <- rsa_run(rsa_synth(0.2939, 100), "2x2x4"); hi <- rsa_run(rsa_synth(0.2941, 100), "2x2x4")
     abs(lo$sWR - 0.2939) < 1e-6 && abs(hi$sWR - 0.2941) < 1e-6 && !lo$scaled && hi$scaled && !lo$pass &&
@@ -7259,11 +7284,11 @@ check("RSA-04", "The switch at s_WR 0.294 and the point-estimate limits: just be
       { a <- rsa_run(rsa_synth(0.6, 124.99), "2x2x4"); b <- rsa_run(rsa_synth(0.6, 125.04), "2x2x4")
         c2 <- rsa_run(rsa_synth(0.6, 125.06), "2x2x4"); d2 <- rsa_run(rsa_synth(0.6, 79.996), "2x2x4")
         e2 <- rsa_run(rsa_synth(0.6, 79.99), "2x2x4")
-        a$critbound <= 0 && a$pass && b$pass && !c2$pass && c2$critbound <= 0 && d2$pass && !e2$pass &&
+        a$critbound <= 0 && a$pass && !b$pass && !c2$pass && c2$critbound <= 0 && d2$pass && !e2$pass &&
           abs(a$pe - 124.99) < 0.01 }
   }, error = function(e) FALSE),
   "URS-BE-14", critical = TRUE, method = "Synthetic 2x2x4 studies with exactly known s_WR and point estimate",
-  expected = "Scaling starts at 0.294; 125.04% passes (125.0 to four figures), 125.06% fails; 79.996% passes (80.00), 79.99% fails")
+  expected = "Scaling starts at 0.294; 124.99% passes, 125.04% and 125.06% fail; 79.996% passes (80.00), 79.99% fails")
 
 check("RSA-05", "Complete cases: a subject missing a period leaves the contrast, N is reported; unbalanced sequences work; excluded profiles are left out",
   tryCatch({
@@ -7467,6 +7492,33 @@ check("RSA-14", "Interface audit fixes: a level other than 90% gives no scaled i
   }, error = function(e) FALSE),
   "URS-BE-14, URS-BE-13", critical = TRUE, method = "Findings of the adversarial audit of the interface, each with the input that triggered it",
   expected = "At 95% the interval and the estimate are the standard ones with no scaled verdict; the limits check runs first; unticking Advanced options clears them; the balance and the coefficient table say natural log")
+
+check("RSA-15", "The RSABE point-estimate constraint rounds to two decimals at both edges (was four significant figures, which accepted 125.049%)",
+  tryCatch({
+    args <- list(trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
+    pe_ok <- function(pct) rsabe_assess(rsa_synth(0.6, pct), "CMAX", "2x2x4", "Treatment", "Subject", "Period", "Sequence")$pe_ok
+    up <- do.call(be_assess_parameter, c(list("rsabe", rsa_synth(0.6, 125.03), "CMAX", "2x2x4"), args))
+    src <- paste(readLines("R/be_scaled.R", warn = FALSE), collapse = "\n")
+    !pe_ok(125.03) && pe_ok(125.004) && pe_ok(79.996) && !pe_ok(79.99) &&
+      up$row$PE_Constraint == "NO" && up$row$Bioequivalent == "NO" &&
+      pe_within_limits(125.0049) && !pe_within_limits(125.049) && !grepl("signif(pe", src, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-BE-14", critical = TRUE,
+  method = "rsabe_assess() on synthetic 2x2x4 studies with s_WR 0.6 and point estimates 125.03, 125.004, 79.996 and 79.99%; pe_within_limits() at 125.0049 and 125.049%",
+  expected = "125.03% fails the constraint and the verdict is NO (was YES); 125.004 and 79.996% pass; 79.99% fails; no signif() left")
+
+check("RSA-16", "Below the switch, the RSABE results say the ordinary test used the app's model and not the FDA replicate model",
+  tryCatch({
+    args <- list(trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
+    lo <- do.call(be_assess_parameter, c(list("rsabe", rsa_synth(0.2, 100), "CMAX", "2x2x4"), args))
+    hi <- do.call(be_assess_parameter, c(list("rsabe", rsa_synth(0.6, 100), "CMAX", "2x2x4"), args))
+    n_lo <- be_scaled_notes(lo$row, list(CMAX = lo$scaled)); n_hi <- be_scaled_notes(hi$row, list(CMAX = hi$scaled))
+    any(grepl("Appendix C", n_lo)) && any(grepl("Satterthwaite", n_lo)) && !any(grepl("Appendix C", n_hi)) &&
+      grepl("not the FDA replicate model", be_scaled_explain(lo$row, "Cmax"), fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-BE-14", critical = FALSE,
+  method = "be_scaled_notes() and be_scaled_explain() for synthetic studies with s_WR 0.2 (below the switch) and 0.6",
+  expected = "The note names Appendix C and the FDA model's features below the switch only; the one-line explanation says which model ran")
 
 end_section("RSA")
 

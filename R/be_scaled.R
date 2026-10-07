@@ -99,7 +99,7 @@ rsabe_assess <- function(be_data, param, design, trt_col, subj_col, per_col, seq
   y <- -RSABE_THETA * s2wr; boundy <- y * dfd / qchisq(0.95, dfd)
   crit <- (x + y) + sqrt((boundx - x)^2 + (boundy - y)^2)
   pe <- 100 * exp(est)
-  pe_ok <- signif(pe, 4) >= 80 && signif(pe, 4) <= 125
+  pe_ok <- pe_within_limits(pe)
   scaled <- swr >= RSABE_SWITCH
   list(ok = TRUE, n = n, n_incomplete = cc$n_incomplete, seqs = m,
        pe = pe, ci_lo = 100 * exp(lcl), ci_hi = 100 * exp(ucl), est = est, se = se, dfi = dfi, mse_i = mse_i,
@@ -107,6 +107,13 @@ rsabe_assess <- function(be_data, param, design, trt_col, subj_col, per_col, seq
        scaled = scaled, pe_ok = pe_ok, pass = scaled && crit <= 0 && pe_ok,
        limit_lo = 100 * exp(-log(1.25) * swr / RSABE_SIGMA_W0), limit_hi = 100 * exp(log(1.25) * swr / RSABE_SIGMA_W0))
 }
+
+#' Point-estimate constraint of RSABE and ABEL: the ratio within 80.00-125.00%
+#'
+#' Rounded to two decimals in percent (four in the ratio, as in FDA Appendix G
+#' step 3b, [0.8000, 1.2500]), the same at both edges. Rounding to four
+#' significant figures kept one decimal above 100% and so accepted 125.049%.
+pe_within_limits <- function(pe) round(pe, 2) >= 80 && round(pe, 2) <= 125
 
 #' Assess one parameter with the chosen approach
 #'
@@ -205,7 +212,7 @@ be_assess_parameter <- function(approach = "standard", be_data, param, design, .
 be_scaled_explain <- function(row, name, ci_level = 90) {
   if (!"Route" %in% names(row) || !row$Bioequivalent %in% c("YES", "NO")) return(NULL)
   pe <- row$Point_Est; inside <- function(v) if (isTRUE(v)) "inside" else "outside"
-  pe_ok <- signif(pe, 4) >= 80 && signif(pe, 4) <= 125
+  pe_ok <- pe_within_limits(pe)
   near <- is.finite(row$s_WR) && abs(row$s_WR - RSABE_SWITCH) <= 0.02
   tail <- if (near) " s_WR is close to the switch, so a small change in the data can change the route." else ""
   met <- if (row$Bioequivalent == "YES") "Bioequivalence concluded." else "Bioequivalence not concluded."
@@ -214,7 +221,7 @@ be_scaled_explain <- function(row, name, ci_level = 90) {
       return(sprintf("%s: s_WR %.3f at or above %.3f, scaled route; criterion bound %.4f %s 0; point estimate %.1f%% %s 80 to 125%%. %s%s",
                      name, row$s_WR, RSABE_SWITCH, row$Crit_Bound, if (row$Crit_Bound <= 0) "at or below" else "above",
                      pe, inside(pe_ok), met, tail))
-    return(sprintf("%s: s_WR %.3f below %.3f, so no scaling: the standard test against 80 to 125%% (%s%% CI %.2f to %.2f%%). %s%s",
+    return(sprintf("%s: s_WR %.3f below %.3f, so no scaling: the standard test against 80 to 125%% with the model chosen under Statistical model, not the FDA replicate model (%s%% CI %.2f to %.2f%%). %s%s",
                    name, row$s_WR, RSABE_SWITCH, ci_level, row$CI_Lower, row$CI_Upper, met, tail))
   }
   if (!is.finite(row$s_WR))
@@ -247,6 +254,19 @@ be_scaled_notes <- function(ci_df, details) {
     if (any(lost > 0))
       out <- c(out, sprintf(paste0("Subjects who lack a value in one or more periods are left out of the RSABE contrasts ",
                                    "(up to %d subject(s)); the numbers of subjects used are in the downloads."), max(lost)))
+    below <- ci_df$Approach == "FDA RSABE" & ci_df$Route == "Standard" & is.finite(ci_df$s_WR) &
+      ci_df$Bioequivalent %in% c("YES", "NO")
+    if (any(below)) {
+      nm <- as.character(ci_df$Parameter[below])
+      if (exists("friendly_name")) nm <- vapply(nm, friendly_name, character(1), USE.NAMES = FALSE)
+      out <- c(out, paste0("Below the switch (s_WR under 0.294), FDA RSABE falls back to the ordinary test, and the app ",
+                           "runs it with the model chosen under Statistical model (EMA Method A or the mixed model). ",
+                           "For replicate designs the FDA prescribes another model (Appendix C), with separate Test and ",
+                           "Reference variances, a subject-by-formulation interaction and Satterthwaite degrees of freedom. ",
+                           "The two can give different intervals, most of all with unbalanced sequences or unequal Test and ",
+                           "Reference variability. For an FDA submission, check these rows with the FDA model: ",
+                           paste(nm, collapse = ", "), "."))
+    }
   }
   out
 }
