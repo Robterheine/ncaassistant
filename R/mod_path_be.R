@@ -1192,7 +1192,7 @@ path_be_server <- function(id, shared) {
         class = "alert alert-warning py-2 small mb-2",
         icon("triangle-exclamation", class = "me-1"),
         tags$strong("BLQ rule: "),
-        "ICH M13A sets values below the LLOQ to zero in bioequivalence analyses (Rules 1 and 2 do this). ",
+        "ICH M13A sets values below the LLOQ to zero in bioequivalence analyses, as Rule 2 does. Rule 1 differs only after the last quantifiable concentration, which leaves the BE parameters unchanged. ",
         "The rule used here (", sub("rule", "Rule ", si$blq_rule), ") needs a justification in the protocol."
       )
     })

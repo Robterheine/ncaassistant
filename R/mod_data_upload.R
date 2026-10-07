@@ -137,9 +137,9 @@ data_upload_ui <- function(id) {
                              tags$span("Standard:", tags$span(class="text-muted", " pre-first = 0, post-last = missing (Rule 1, default)")),
                              tags$span("All BLQ \u2192 zero", tags$span(class="text-muted", " (Rule 2)")),
                              tags$span("All BLQ \u2192 excluded", tags$span(class="text-muted", " (Rule 3)")),
-                             tags$span("Before and between measurable \u2192 LLOQ/2, after the last \u2192 missing", tags$span(class="text-muted", " (Rule 4)")),
+                             tags$span("Before and between measurable \u2192 LLOQ/2, after the last \u2192 missing, pre-dose \u2192 0", tags$span(class="text-muted", " (Rule 4)")),
                              tags$span("Before peak \u2192 zero, after peak \u2192 excluded", tags$span(class="text-muted", " (Rule 5)")),
-                             tags$span("Before first quantifiable \u2192 LLOQ/2, rest \u2192 zero", tags$span(class="text-muted", " (Rule 6)"))
+                             tags$span("Before first quantifiable \u2192 LLOQ/2, all other BLQ \u2192 zero (also in a profile with no quantifiable value)", tags$span(class="text-muted", " (Rule 6)"))
                            ),
                            choiceValues = c("rule1", "rule2", "rule3", "rule4", "rule5", "rule6"),
                            selected = "rule1")

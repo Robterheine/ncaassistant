@@ -7713,6 +7713,31 @@ check("DOC-06", "Every requirement ID in the URS document is in the list of test
   method = "The requirement IDs in the tables of validation/NCA_Assistant_URS.docx against all_urs, the list behind the coverage line",
   expected = "The same 95 IDs on both sides; a new requirement cannot be left out of the coverage line")
 
+check("DOC-07", "BLQ rules and AUC integration: the Methods page, the Upload labels and the popover say what the pipeline does",
+  tryCatch({
+    raw <- read_pk_file("data/example_blq.csv"); cm <- auto_detect_columns(names(raw))
+    st <- list(admin_route = "extravascular", dose = 320, dose_unit = "mg", time_unit = "h", conc_unit = "mg/L",
+               trap_method = "log", r2adj_threshold = 0.7, is_steady_state = FALSE)
+    r <- lapply(c("rule1", "rule2"), function(rule)
+      suppressWarnings(run_nca(prepare_pk_dataset(raw, cm, list(lloq = 0.5, blq_rule = rule))$data, cm, st)))
+    same <- all(vapply(c("CMAX", "TLST", "AUCLST", "AUCIFO", "LAMZHL"), function(k) isTRUE(all.equal(r[[1]][[k]], r[[2]][[k]])), logical(1)))
+    m <- gsub("\\s+", " ", doc_methods()); up <- doc_rd("R/mod_data_upload.R"); hp <- doc_rd("R/help_system.R")
+    be <- doc_rd("R/mod_path_be.R")
+    same && !isTRUE(all.equal(r[[1]]$AUCALL, r[[2]]$AUCALL)) &&
+      grepl("which is what Rule 2 does", m, fixed = TRUE) && !grepl("as Rules 1 and 2 do", m, fixed = TRUE) &&
+      !grepl("Rules 1 and 2 do this", be, fixed = TRUE) &&
+      grepl("ends at zero (a value set by a BLQ rule) has no logarithm", m, fixed = TRUE) &&
+      grepl("rounded to two decimals at both limits", m, fixed = TRUE) && !grepl("four significant figures", m, fixed = TRUE) &&
+      grepl("after the last \\u2192 missing, pre-dose \\u2192 0", up, fixed = TRUE) &&
+      grepl("also in a profile with no quantifiable value", up, fixed = TRUE) &&
+      grepl("A BLQ pre-dose sample → 0. In a profile without any measurable value", hp, fixed = TRUE) &&
+      grepl("including a pre-dose sample and every value of a profile without a measurable concentration", hp, fixed = TRUE) &&
+      grepl("any quantifiable concentration, the BLQ values other than the pre-dose sample", m, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-GEN-03, URS-DAT-04", critical = FALSE,
+  method = "Rules 1 and 2 on data/example_blq.csv; the rendered Methods page, R/mod_data_upload.R, R/help_system.R and R/mod_path_be.R",
+  expected = "Rules 1 and 2 give the same Cmax, Tlast, AUClast, AUCinf and half-life, and a different AUCall; the texts state the M13A rule, the Rule 4 and Rule 6 exceptions, the zero segment and the rounding as the code does")
+
 check("DOC-05", "The counts in the READMEs, the version history and the protocol equal the counts of this run",
   tryCatch({
     rs <- do.call(rbind, results)
