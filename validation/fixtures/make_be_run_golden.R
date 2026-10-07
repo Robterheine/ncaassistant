@@ -21,8 +21,12 @@ be_golden_env <- function() {
   for (f in c("R/pipeline.R", "R/utils.R", "R/cdisc_terms.R", "R/nca_helpers.R", "R/interlocks.R",
               "R/data_quality.R", "R/designs.R", "R/be_analysis.R", "R/be_scaled.R", "R/help_system.R",
               "R/mod_partial_auc.R", "R/mod_lz_rules.R", "R/mod_exclusions.R", "R/gxp_audit.R",
-              "R/mod_path_be.R"))
+              "R/export_record.R", "R/mod_path_be.R"))
     source(f, local = FALSE)
+  # The record helpers read these two from the global environment (app.R sets them)
+  if (!exists("APP_VERSION", envir = globalenv())) assign("APP_VERSION", "golden", envir = globalenv())
+  if (!exists("PIPELINE_SHA256", envir = globalenv()))
+    assign("PIPELINE_SHA256", digest::digest(file = "R/pipeline.R", algo = "sha256"), envir = globalenv())
   invisible(TRUE)
 }
 
@@ -75,17 +79,20 @@ be_golden_shared <- function(file, exclusions = NULL) {
     exclusion_request = NULL)
 }
 
+#' The exclusion register of a case: the first profile of the file, or none
+be_golden_exclusions <- function(case) {
+  if (!isTRUE(case$exclude_first_profile)) return(NULL)
+  raw <- read_pk_file(case$file, list())
+  as_exclusions(data.frame(id = "ex1", level = "profile", subject = as.character(raw[[1]][1]),
+                           treatment = as.character(raw$Treatment[1]), period = as.character(raw$Period[1]),
+                           time = NA_real_, category = "protocol deviation", detail = "golden case",
+                           protocol_section = "", after_be = FALSE, created_utc = "2026-01-01 00:00:00",
+                           created_by = "golden", stringsAsFactors = FALSE))
+}
+
 #' Run one case through the real module; returns what the app stored
 be_golden_run <- function(case) {
-  excl <- NULL
-  if (isTRUE(case$exclude_first_profile)) {
-    raw <- read_pk_file(case$file, list())
-    excl <- as_exclusions(data.frame(id = "ex1", level = "profile", subject = as.character(raw[[1]][1]),
-                                     treatment = as.character(raw$Treatment[1]), period = as.character(raw$Period[1]),
-                                     time = NA_real_, category = "protocol deviation", detail = "golden case",
-                                     protocol_section = "", after_be = FALSE, created_utc = "2026-01-01 00:00:00",
-                                     created_by = "golden", stringsAsFactors = FALSE))
-  }
+  excl <- be_golden_exclusions(case)
   shared <- be_golden_shared(case$file, excl)
   notes <- list()
   assign("showNotification", function(ui, ..., type = "default", duration = 5, id = NULL)
@@ -108,6 +115,26 @@ be_golden_run <- function(case) {
     out <<- list(be_result = be_result(), be_run_settings = be_run_settings(), notifications = notes)
   }))
   out
+}
+
+#' Run one case, click Run and download the real Analysis Record into `dir`
+#' @return the folder with the unzipped record
+be_golden_record <- function(case, dir) {
+  shared <- be_golden_shared(case$file, be_golden_exclusions(case))
+  dir.create(dir, showWarnings = FALSE, recursive = TRUE)
+  suppressWarnings(shiny::testServer(path_be_server, args = list(shared = shared), {
+    do.call(session$setInputs, utils::modifyList(be_golden_defaults, case$inputs))
+    if (!is.null(case$partial_aucs)) {
+      p <- case$partial_aucs
+      session$setInputs(`pauc-n` = nrow(p))
+      for (i in seq_len(nrow(p)))
+        do.call(session$setInputs, stats::setNames(list(p$start[i], p$end[i], p$cmax[i], p$role[i]),
+                paste0("pauc-", c("start", "end", "cmax", "role"), i)))
+    }
+    session$setInputs(run_be = 1, record_study = "GLD", record_analyst = "QA")
+    utils::unzip(output$dl_record, exdir = dir)
+  }))
+  dir
 }
 
 if (sys.nframe() == 0) {

@@ -1342,6 +1342,7 @@ run_be_analysis <- function(nca_res, pk_data, col_map, be_settings, nca_settings
   cov_coefs <- list(); cov_warns <- character(0)
   welch_results <- list()
   anova_results <- list()
+  estimates <- list()
 
   # Warn once if Tmax is among the selected parameters
   if ("TMAX" %in% params) {
@@ -1414,6 +1415,7 @@ run_be_analysis <- function(nca_res, pk_data, col_map, be_settings, nca_settings
     if (!is.null(fit_out$anova)) anova_results[[param]] <- fit_out$anova
     ci_results[[param]] <- fit_out$row
     welch_results[[param]] <- fit_out$estimate$welch
+    estimates[[param]] <- fit_out$estimate
     cov_coefs[[param]] <- fit_out$estimate$covariate_coefs
     if (!is.null(fit_out$scaled)) scaled_details[[param]] <- fit_out$scaled
     cov_warns <- c(cov_warns, fit_out$warnings)
@@ -1434,19 +1436,20 @@ run_be_analysis <- function(nca_res, pk_data, col_map, be_settings, nca_settings
   # checks always look at the data before exclusions.
   has_excl <- nrow(active_exclusions(exclusions)) > 0
   d_unexcl <- if (has_excl) data_unexcluded else pk_data
-  sens_df <- NULL
+  sens_df <- NULL; sens_fits <- NULL
   if (has_excl) {
     s0 <- settings; s0$exclusions <- NULL
     if (identical(settings$dose_source, "per_profile")) s0$dose <- suppressWarnings(dose_by_profile(d_unexcl, cm))
     nca0 <- suppressWarnings(run_nca(d_unexcl, cm, s0, lz_overrides = lz_overrides))
     bd0 <- if (is.null(nca0)) NULL else
       tryCatch(build_be_data(nca0, d_unexcl, cm, reference = s$reference, covariates = s$covariates), error = function(e) NULL)
-    if (!is.null(bd0)) sens_df <- tryCatch(do.call(rbind, lapply(params, function(p) fit_one(bd0$data, p)$row)),
-                                           be_covariate_error = function(e) {
-                                             notify(paste0("The sensitivity analysis without your exclusions could not be run with the covariates. ",
-                                                           conditionMessage(e)), "warning", NULL)
-                                             NULL
-                                           })
+    if (!is.null(bd0)) sens_fits <- tryCatch(lapply(params, function(p) fit_one(bd0$data, p)),
+                                             be_covariate_error = function(e) {
+                                               notify(paste0("The sensitivity analysis without your exclusions could not be run with the covariates. ",
+                                                             conditionMessage(e)), "warning", NULL)
+                                               NULL
+                                             })
+    if (!is.null(sens_fits)) sens_df <- do.call(rbind, lapply(sens_fits, function(f) f$row))
   }
 
   # How many profiles of each treatment rest mainly on BLQ-derived values
@@ -1499,5 +1502,60 @@ run_be_analysis <- function(nca_res, pk_data, col_map, be_settings, nca_settings
                             parallel_welch_notes(be_data, setdiff(params, c("TMAX", BE_NO_VERDICT_PARAMS)), trt_col_be,
                                                  s$be_lower, s$be_upper)))
   list(result = result, params = params, design_used = design_used, approach = approach,
-       covariates = bd$covariates, balance_info = balance_info, messages = messages, stop = NULL)
+       covariates = bd$covariates, balance_info = balance_info,
+       raw = list(main = be_raw_table(estimates),
+                  sensitivity = if (is.null(sens_fits)) NULL else be_raw_table(stats::setNames(lapply(sens_fits, function(f) f$estimate), params))),
+       messages = messages, stop = NULL)
+}
+
+#' The unrounded estimates behind a CI table
+#'
+#' The CI table shows point estimates and limits rounded half up (and MSE to
+#' six places). The Analysis Record compares the unrounded values, so a
+#' difference below the rounding step cannot hide behind a MATCH.
+#' @param estimates named list (by parameter) of the `estimate` elements of be_assess_parameter()
+#' @return data frame, one row per parameter, columns Raw_*
+be_raw_table <- function(estimates) {
+  num <- function(x) if (is.null(x) || length(x) == 0) NA_real_ else as.numeric(x)[1]
+  do.call(rbind, lapply(names(estimates), function(p) {
+    e <- estimates[[p]]; w <- e$welch; u <- e$unadjusted
+    data.frame(Parameter = p, Raw_Point_Est = num(e$pe), Raw_CI_Lower = num(e$ci_lo), Raw_CI_Upper = num(e$ci_hi),
+               Raw_MSE = num(e$mse), Raw_DF = num(e$dfe),
+               Raw_Welch_Lower = num(w$lo), Raw_Welch_Upper = num(w$hi), Raw_Welch_DF = num(w$df),
+               Raw_Unadj_Point_Est = num(u$pe), Raw_Unadj_Lower = num(u$ci_lo), Raw_Unadj_Upper = num(u$ci_hi),
+               stringsAsFactors = FALSE)
+  }))
+}
+
+#' The table the Analysis Record stores as the app's BE result
+#'
+#' The CI table as shown plus the unrounded estimates, matched on Parameter.
+#' Used both when the record is made and when the reproduction script
+#' recomputes the analysis, so the two tables are built the same way.
+#' @param ci_table CI table of the run
+#' @param raw be_raw_table() of the same run
+be_reference_table <- function(ci_table, raw) {
+  if (is.null(ci_table)) return(NULL)
+  out <- cbind(ci_table, raw[match(ci_table$Parameter, raw$Parameter), setdiff(names(raw), "Parameter"), drop = FALSE])
+  # Text such as "Difference T\u2212R (h)" or a treatment label from the file is written as
+  # <U+XXXX> where it is not ASCII, so the file is the same in every locale (write.csv
+  # writes a non-ASCII character as itself in one locale and as an escape in another)
+  for (cn in names(out)) if (is.character(out[[cn]]))
+    out[[cn]] <- iconv(enc2utf8(out[[cn]]), "UTF-8", "ASCII", sub = "Unicode")
+  out
+}
+
+#' The settings of a recorded bioequivalence run, as run_be_analysis() takes them
+#'
+#' analysis_settings.json is read without simplification, so the covariate
+#' specification arrives as a list of records and the parameters as a list.
+#' @param rec the record, read with jsonlite::fromJSON(simplifyDataFrame = FALSE)
+be_inputs_from_record <- function(rec) {
+  b <- rec$be_run
+  cov <- b$covariates
+  b$covariates <- if (length(cov) == 0) NULL else
+    data.frame(name = vapply(cov, function(x) x$name, ""), type = vapply(cov, function(x) x$type, ""),
+               transform = vapply(cov, function(x) x$transform, ""), stringsAsFactors = FALSE)
+  b$parameters <- unlist(b$parameters)
+  b
 }

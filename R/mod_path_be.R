@@ -495,6 +495,7 @@ path_be_server <- function(id, shared) {
     be_nca_result  <- reactiveVal(NULL)
     be_result      <- reactiveVal(NULL)
     balance_result <- reactiveVal(NULL)   # stores imbalance info for persistent alert
+    be_record_data <- reactiveVal(NULL)   # what the Analysis Record needs to repeat the BE run: the inputs and the unrounded estimates
     # Settings exactly as used by the last completed run. The Analysis Record is
     # built from this snapshot, not from the inputs at download time, which may
     # have changed since (and which never held the per-subject dose vector).
@@ -515,7 +516,7 @@ path_be_server <- function(id, shared) {
                     input$pe_constraint, input$widened_scope, pauc_spec(), lzr(),
                     input$be_covariates, input$cov_categorical, input$cov_log, input$be_approach)),
       has_result = function() !is.null(be_result()) || !is.null(be_nca_result()),
-      clear = function() { be_result(NULL); be_nca_result(NULL); be_run_settings(NULL); balance_result(NULL) },
+      clear = function() { be_result(NULL); be_nca_result(NULL); be_run_settings(NULL); balance_result(NULL); be_record_data(NULL) },
       id = "be_stale")
 
     # Offer (and select) the interval metrics as soon as the intervals are
@@ -720,6 +721,7 @@ path_be_server <- function(id, shared) {
                        details = list(trigger = "run", path = "be", nca_settings = settings,
                                       be_settings = audit_be))) return()
         be_result(run$result)
+        be_record_data(list(inputs = be_in, raw = run$raw))
         be_run_settings(list(
           nca = settings,
           be  = list(
@@ -1307,7 +1309,7 @@ path_be_server <- function(id, shared) {
       lz_state$overrides_log <- list(); lz_state$fits <- list()
       lz_state$override <- NULL
       # Results of the previous file must not be shown or exported with the new one
-      be_result(NULL); be_nca_result(NULL); be_run_settings(NULL); balance_result(NULL)
+      be_result(NULL); be_nca_result(NULL); be_run_settings(NULL); balance_result(NULL); be_record_data(NULL)
     }, ignoreNULL = FALSE)
     observeEvent(shared$exclusions, {
       gone <- prune_overrides(lz_state, shared$exclusions)
@@ -1315,7 +1317,7 @@ path_be_server <- function(id, shared) {
         showNotification(paste0("Manual half-life fit removed for ", paste(gone, collapse = ", "),
                                 ": an exclusion changed that profile."), type = "message", duration = 8)
       if (!is.null(be_result()) || !is.null(be_nca_result())) {
-        be_result(NULL); be_nca_result(NULL); be_run_settings(NULL); balance_result(NULL)
+        be_result(NULL); be_nca_result(NULL); be_run_settings(NULL); balance_result(NULL); be_record_data(NULL)
         showNotification("Exclusions changed, so the results were cleared. Run the analysis again.",
                          type = "message", duration = 6, id = "be_stale")
       }
@@ -1498,7 +1500,7 @@ path_be_server <- function(id, shared) {
         shared$nca_results <- r
         # The confidence intervals came from the old NCA: they, their
         # downloads and the record must not be shown next to the new values
-        be_result(NULL); balance_result(NULL)
+        be_result(NULL); balance_result(NULL); be_record_data(NULL)
       }
     }
 
@@ -1625,6 +1627,7 @@ path_be_server <- function(id, shared) {
             study_name     = if (nchar(input$record_study) > 0) input$record_study else "Untitled Study",
             be_results     = be_result(),
             be_settings    = run$be,
+            be_record      = be_record_data(),
             lz_overrides   = if (length(lz_state$overrides_log) > 0) lz_state$overrides_log else NULL,
             viz_settings   = shared$viz_settings,
             read_args      = read_args,

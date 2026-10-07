@@ -145,7 +145,7 @@ generate_summary_html <- function(settings, col_map, file_name, file_hash,
                                    blq_rule, lloq, analyst, study_name,
                                    n_subjects, n_obs, analysis_type = "NCA",
                                    lz_overrides = NULL, reproduction = NULL, checks = NULL,
-                                   data_source = NULL, exclusions = NULL) {
+                                   data_source = NULL, exclusions = NULL, be_recomputed = FALSE) {
   
   ver <- tryCatch(get("APP_VERSION", envir = globalenv()), error = function(e) "?")
   r_ver <- tryCatch(R.version.string, error = function(e) "R")
@@ -220,9 +220,12 @@ This is a code lookup only; the results are not an SDTM PP dataset and no claim 
 CDISC standards is made.
 
 ', if (identical(analysis_type, "Bioequivalence")) paste0('<br><br>
-<strong>Scope:</strong> the script recomputes the NCA parameters. The bioequivalence
-statistics (ANOVA, confidence intervals and verdict) are recorded in <code>results.xlsx</code>
-and <code>analysis_settings.json</code> but are not recomputed by the script.
+<strong>Scope:</strong> ', if (be_recomputed) 'the script recomputes the NCA parameters and then the
+bioequivalence statistics (confidence intervals and verdict) from the settings in
+<code>analysis_settings.json</code>, and compares both with the app\'s results.' else
+'the script recomputes the NCA parameters. The bioequivalence statistics (ANOVA, confidence intervals
+and verdict) are recorded in <code>results.xlsx</code> and <code>analysis_settings.json</code> but are not
+recomputed by the script.', '
 ') else '', '
 </div>
 
@@ -418,6 +421,9 @@ together with the other files in this package.
 #' @param be_results Optional BE results list
 #' @param be_settings Optional list of the BE settings used (design, model,
 #'   CI level, limits, point-estimate constraint, parameters)
+#' @param be_record Optional list(inputs, raw): everything run_be_analysis() was
+#'   given from the settings, and the unrounded estimates of the run. With it
+#'   the reproduction script recomputes the bioequivalence statistics too.
 create_analysis_record <- function(output_path, results, settings, col_map,
                                     original_file_path, original_file_name,
                                     blq_rule, lloq, analyst = "Analyst",
@@ -425,6 +431,7 @@ create_analysis_record <- function(output_path, results, settings, col_map,
                                     summary_stats = NULL,
                                     be_results = NULL,
                                     be_settings = NULL,
+                                    be_record = NULL,
                                     lz_overrides = NULL,
                                     viz_settings = NULL,
                                     read_args = NULL,
@@ -460,6 +467,7 @@ create_analysis_record <- function(output_path, results, settings, col_map,
   }, error = function(e) warning("Could not copy data file: ", e$message))
   pipeline_sha256 <- .ship_pipeline(rec_dir)
   shipped_adnca <- .ship_adnca(rec_dir, adnca, original_file_path)
+  shipped_be <- if (!is.null(be_record)) .ship_be_code(rec_dir) else list(sha256 = NULL, manifest = list())
 
   # 1. Results Excel
   tryCatch({
@@ -516,6 +524,20 @@ create_analysis_record <- function(output_path, results, settings, col_map,
               row.names = FALSE)
   }, error = function(e) warning("Could not write app_results_reference.csv: ", e$message))
 
+  # 1c. The app's bioequivalence table with the unrounded estimates, for the
+  #     bioequivalence part of the reproduction
+  be_ref_files <- list()
+  if (!is.null(be_record)) tryCatch({
+    write.csv(be_reference_table(be_results$ci_table, be_record$raw$main),
+              file.path(rec_dir, "app_be_reference.csv"), row.names = FALSE)
+    be_ref_files[["BE reference results"]] <- file.path(rec_dir, "app_be_reference.csv")
+    if (!is.null(be_results$sensitivity) && !is.null(be_record$raw$sensitivity)) {
+      write.csv(be_reference_table(be_results$sensitivity, be_record$raw$sensitivity),
+                file.path(rec_dir, "app_be_sensitivity_reference.csv"), row.names = FALSE)
+      be_ref_files[["BE sensitivity reference results"]] <- file.path(rec_dir, "app_be_sensitivity_reference.csv")
+    }
+  }, error = function(e) warning("Could not write the BE reference results: ", e$message))
+
   # 2. Settings JSON
   tryCatch({
     settings_export <- list(
@@ -570,10 +592,11 @@ create_analysis_record <- function(output_path, results, settings, col_map,
     }
     if (!is.null(be_results)) {
       settings_export$bioequivalence <- be_settings
-      settings_export$reproduction_scope <- paste(
-        "reproduce_analysis.R recomputes the NCA parameters only. The bioequivalence",
-        "statistics (ANOVA, confidence intervals, verdict) are recorded in results.xlsx",
-        "and are not recomputed by the script.")
+      if (!is.null(be_record)) {
+        # Everything run_be_analysis() is given, so the script repeats the run
+        settings_export$be_run <- be_record$inputs
+        settings_export$be_code_sha256 <- shipped_be$sha256
+      }
     }
     if (!is.null(lz_overrides) && length(lz_overrides) > 0) {
       settings_export$lz_overrides <- lz_overrides
@@ -586,7 +609,8 @@ create_analysis_record <- function(output_path, results, settings, col_map,
   
   # 3. Reproducibility R script (generic: sources nca_pipeline.R, reads the JSON)
   tryCatch({
-    writeLines(generate_nca_script(), file.path(rec_dir, "reproduce_analysis.R"))
+    writeLines(if (is.null(be_record)) generate_nca_script() else generate_be_script(),
+               file.path(rec_dir, "reproduce_analysis.R"))
   }, error = function(e) warning("Could not create R script: ", e$message))
 
   # 4. Data integrity manifest (source data, settings, results, pipeline code)
@@ -598,11 +622,12 @@ create_analysis_record <- function(output_path, results, settings, col_map,
       "Reference results" = file.path(rec_dir, "app_results_reference.csv"),
       "Pipeline code"     = file.path(rec_dir, "nca_pipeline.R"),
       "Reproduction script" = file.path(rec_dir, "reproduce_analysis.R")
-    ), shipped_adnca$manifest))
+    ), be_ref_files, shipped_be$manifest, shipped_adnca$manifest))
   }, error = function(e) warning("Could not create integrity file: ", e$message))
 
   # 5. Run the reproduction now, so the user knows before download
-  verdict <- run_reproduction_check(rec_dir, "reproduce_analysis.R")
+  verdict <- run_reproduction_check(rec_dir, "reproduce_analysis.R",
+                                    outputs = c("reproduced_results.csv", "reproduced_be_results.csv"))
 
   # 6. Summary HTML
   tryCatch({
@@ -610,7 +635,8 @@ create_analysis_record <- function(output_path, results, settings, col_map,
                                    data_sha256, blq_rule, lloq, analyst,
                                    study_name, n_subjects, n_obs, analysis_type,
                                    lz_overrides, reproduction = verdict, checks = checks,
-                                   data_source = data_source, exclusions = settings$exclusions)
+                                   data_source = data_source, exclusions = settings$exclusions,
+                                   be_recomputed = !is.null(be_record))
     writeLines(html, file.path(rec_dir, "analysis_summary.html"))
   }, error = function(e) warning("Could not create summary HTML: ", e$message))
 
@@ -1021,11 +1047,9 @@ create_viz_record <- function(output_path, plot_obj, viz_settings, col_map,
 ')
 }
 
-#' Reproduction script for batch and bioequivalence NCA records
-generate_nca_script <- function() {
-  paste0(.script_header("NCA Analysis Reproducibility Script",
-                        "Re-runs the NCA and compares every parameter with the app's results.",
-                        "reproduce_analysis.R"), r"---(
+#' The part of the batch and bioequivalence reproduction scripts that reads
+#' the data and reruns the NCA (shared, so the two scripts cannot differ)
+.nca_script_prefix <- function() r"---(
 for (pkg in c("NonCompart", "jsonlite", "digest", "readxl")) {
   if (!requireNamespace(pkg, quietly = TRUE))
     install.packages(pkg, repos = "https://cloud.r-project.org")
@@ -1060,10 +1084,67 @@ result <- run_nca(ds$data, ds$col_map, record_nca_settings(rec, ds$data, ds$col_
                   lz_overrides = rec$lz_overrides)
 write.csv(result, "reproduced_results.csv", row.names = FALSE)
 cat("Profiles analysed:", nrow(result), "\n")
+)---"
 
+#' Reproduction script for batch NCA records
+generate_nca_script <- function() {
+  paste0(.script_header("NCA Analysis Reproducibility Script",
+                        "Re-runs the NCA and compares every parameter with the app's results.",
+                        "reproduce_analysis.R"), .nca_script_prefix(), r"---(
 # 4. Compare with the app's results shipped in this record
 compare_with_reference(result, "app_results_reference.csv", integrity = integrity)
-if (!is.null(rec$reproduction_scope)) cat("Scope:", rec$reproduction_scope, "\n")
+)---")
+}
+
+
+#' Reproduction script for bioequivalence records
+#'
+#' The NCA part is the same as in generate_nca_script(). Then it calls
+#' run_be_analysis(), the function the app called, with the recorded settings,
+#' and compares the table with the app's. The last line is the verdict of both.
+generate_be_script <- function() {
+  paste0(.script_header("Bioequivalence Reproducibility Script",
+                        "Re-runs the NCA and the bioequivalence analysis and compares both with the app's results.",
+                        "reproduce_analysis.R"), .nca_script_prefix(), r"---(
+# 4. Compare the NCA with the app's results shipped in this record
+nca_verdict <- compare_with_reference(result, "app_results_reference.csv", integrity = integrity)
+
+# 5. The bioequivalence code must be the code the app ran
+for (f in c("utils.R", "designs.R", "be_analysis.R", "be_scaled.R")) {
+  nm <- paste0("BE code (", f, ")")
+  integrity[[nm]] <- if (identical(digest::digest(file = f, algo = "sha256"), rec$be_code_sha256[[f]])) "MATCH" else "MISMATCH"
+  cat(nm, ": ", integrity[[nm]], "\n", sep = "")
+  source(f)
+}
+
+# 6. Run the bioequivalence analysis with the recorded settings: the app's own function
+has_excl <- nrow(active_exclusions(rec$exclusions)) > 0
+ds_all <- if (has_excl) prepare_pk_dataset(inp$raw, rec$column_mapping,
+                                           list(lloq = rec$lloq, blq_rule = rec$blq_rule, read_args = inp$read_args)) else NULL
+nca_settings <- record_nca_settings(rec, ds$data, ds$col_map)
+nca_settings$dose_source <- rec$dose_source
+be_run <- tryCatch(
+  run_be_analysis(result, ds$data, ds$col_map, be_inputs_from_record(rec), nca_settings,
+                  detected_design = ds$design, exclusions = as_exclusions(rec$exclusions),
+                  data_unexcluded = if (has_excl) ds_all$data else NULL, lz_overrides = rec$lz_overrides),
+  error = function(e) { cat("The bioequivalence analysis failed:", conditionMessage(e), "\n"); NULL })
+
+# 7. Compare with the app's bioequivalence results shipped in this record
+if (is.null(be_run) || !is.null(be_run$stop)) {
+  if (!is.null(be_run)) cat("The bioequivalence analysis stopped:", be_run$stop$text, "\n")
+  be_verdict <- "FAILED"
+} else {
+  be_table <- be_reference_table(be_run$result$ci_table, be_run$raw$main)
+  write.csv(be_table, "reproduced_be_results.csv", row.names = FALSE)
+  be_verdict <- compare_be_with_reference(be_table, "app_be_reference.csv", integrity = integrity)
+  if (!is.null(be_run$result$sensitivity) || file.exists("app_be_sensitivity_reference.csv")) {
+    sens_table <- if (is.null(be_run$result$sensitivity)) NULL else
+      be_reference_table(be_run$result$sensitivity, be_run$raw$sensitivity)
+    be_verdict <- combine_verdicts(be_verdict, compare_be_with_reference(
+      sens_table, "app_be_sensitivity_reference.csv", integrity = integrity, label = "BE sensitivity result"))
+  }
+}
+cat("Result: ", combine_verdicts(nca_verdict, be_verdict), "\n", sep = "")
 )---")
 }
 
@@ -1205,6 +1286,21 @@ write_record_fallback <- function(raw, path, read_args = list()) {
   if (!file.exists(src)) stop("R/pipeline.R not found; the record cannot be made reproducible.")
   file.copy(src, file.path(rec_dir, "nca_pipeline.R"), overwrite = TRUE)
   sha256_or_na(file.path(rec_dir, "nca_pipeline.R"))
+}
+
+#' Copy the code of the bioequivalence run into a record folder
+#'
+#' The files run_be_analysis() needs, each an exact copy, with their SHA-256 so
+#' the script can refuse code that is not the code the app ran.
+#' @return list(sha256 = named list of hashes, manifest = entries for the integrity file)
+.ship_be_code <- function(rec_dir) {
+  files <- c("be_analysis.R", "be_scaled.R", "designs.R", "utils.R")
+  src <- file.path("R", files)
+  if (!all(file.exists(src))) stop("The BE code files in R/ were not found; the record cannot be made reproducible.")
+  file.copy(src, file.path(rec_dir, files), overwrite = TRUE)
+  paths <- file.path(rec_dir, files)
+  list(sha256 = as.list(stats::setNames(vapply(paths, sha256_or_na, ""), files)),
+       manifest = as.list(stats::setNames(paths, paste0("BE code (", files, ")"))))
 }
 
 #' Ship the ADNCA import with a record: code, choices and conversion log

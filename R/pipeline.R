@@ -1903,6 +1903,68 @@ record_nca_settings <- function(rec, data, col_map) {
        partial_auc_blq_fraction = rec$partial_auc_blq_fraction)
 }
 
+#' Compare a reproduced bioequivalence table with the app's
+#'
+#' Rows are matched on Parameter, never on order. Numbers use the same rule as
+#' compare_with_reference() (relative difference below 1e-6 is MATCH, below 1e-3
+#' CLOSE); text columns (verdict, route, model, constraint) must be identical. A
+#' parameter or column on one side only is DIFFERENT.
+#' @param table reproduced table (be_reference_table())
+#' @param ref_file app_be_reference.csv or app_be_sensitivity_reference.csv
+#' @param integrity named vector of file checks; a MISMATCH makes the result DIFFERENT
+#' @param label what the table is, for the printed line
+#' @return "MATCH", "CLOSE", "DIFFERENT", "FAILED" or "NOT COMPARED"; prints "<label>: ..."
+compare_be_with_reference <- function(table, ref_file = "app_be_reference.csv", integrity = NULL,
+                                      label = "BE result") {
+  out <- function(v, why = NULL) {
+    cat(label, ": ", v, if (!is.null(why)) paste0(" (", why, ")"), "\n", sep = "")
+    invisible(v)
+  }
+  changed <- names(integrity)[integrity %in% "MISMATCH"]
+  if (is.null(table) || nrow(table) == 0) return(out("FAILED", "the reproduction produced no bioequivalence table"))
+  if (!file.exists(ref_file)) return(out("NOT COMPARED", paste0(ref_file, " not found")))
+  ref <- read.csv(ref_file, stringsAsFactors = FALSE, check.names = FALSE)
+  if (anyDuplicated(table$Parameter) || anyDuplicated(ref$Parameter) || !setequal(table$Parameter, ref$Parameter))
+    return(out("DIFFERENT", paste0("parameters differ: ", paste(union(setdiff(table$Parameter, ref$Parameter),
+                                                                       setdiff(ref$Parameter, table$Parameter)), collapse = ", "))))
+  col_diff <- union(setdiff(names(table), names(ref)), setdiff(names(ref), names(table)))
+  if (length(col_diff) > 0)
+    return(out("DIFFERENT", paste0("columns on one side only: ", paste(head(col_diff, 10), collapse = ", "))))
+  ref <- ref[match(table$Parameter, ref$Parameter), , drop = FALSE]
+  max_rel <- 0; n_cmp <- 0; na_mismatch <- 0; text_diff <- character(0)
+  for (cn in setdiff(names(table), "Parameter")) {
+    if (is.numeric(table[[cn]])) {
+      a <- as.numeric(table[[cn]]); b <- suppressWarnings(as.numeric(as.character(ref[[cn]])))
+      na_mismatch <- na_mismatch + sum(is.finite(a) != is.finite(b))
+      both <- is.finite(a) & is.finite(b)
+      if (!any(both)) next
+      n_cmp <- n_cmp + sum(both)
+      max_rel <- max(max_rel, max(abs(a[both] - b[both]) / pmax(abs(b[both]), 1e-12)))
+    } else {
+      a <- as.character(table[[cn]]); b <- as.character(ref[[cn]])
+      if (!all((is.na(a) & is.na(b)) | (!is.na(a) & !is.na(b) & a == b))) text_diff <- c(text_diff, cn)
+    }
+  }
+  verdict <- if (na_mismatch > 0 || length(text_diff) > 0) "DIFFERENT" else if (max_rel < 1e-6) "MATCH" else
+             if (max_rel < 1e-3) "CLOSE" else "DIFFERENT"
+  cat(sprintf("Compared %d numeric values in %d row(s). Max relative difference: %.3g\n", n_cmp, nrow(table), max_rel))
+  if (na_mismatch > 0) cat(na_mismatch, "value(s) are missing in one table but not the other.\n")
+  if (length(text_diff) > 0) cat("Text differs in: ", paste(text_diff, collapse = ", "), "\n", sep = "")
+  if (length(changed) > 0)
+    return(out("DIFFERENT", paste0(paste(changed, collapse = " and "), " not the one analysed; the numbers were ", verdict)))
+  out(verdict)
+}
+
+#' The one verdict of a record that was checked in parts
+#'
+#' MATCH only when every part is MATCH; otherwise the worst, in the order
+#' DIFFERENT, FAILED, CLOSE, NOT COMPARED.
+combine_verdicts <- function(...) {
+  v <- unlist(list(...))
+  for (w in c("DIFFERENT", "FAILED", "CLOSE", "NOT COMPARED")) if (w %in% v) return(w)
+  if (length(v) > 0 && all(v == "MATCH")) "MATCH" else "FAILED"
+}
+
 #' Compare reproduced results with the app's results shipped in the record
 #'
 #' @param result Reproduced NCA table (data frame) or single-profile vector

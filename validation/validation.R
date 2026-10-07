@@ -1765,7 +1765,6 @@ check("REG-REP-02", "BE record with per-subject doses reproduces and records BE 
     identical(js$dose_source, "per_subject") &&
       identical(js$bioequivalence$design_analysed, "crossover_2x2") &&
       isTRUE(js$bioequivalence$pe_constraint) &&
-      !is.null(js$reproduction_scope) &&
       any(grepl("-> MATCH", out)) && !any(grepl("DIFFERENT", out))
   }, error = function(e) FALSE),
   "URS-EXP-04", critical = TRUE,
@@ -2174,9 +2173,16 @@ rec_build <- function(raw_csv_lines = NULL, df = NULL, cm, st, lloq = 0, rule = 
   ds <- prepare_pk_dataset(read_pk_file(f, read_args), cm, list(lloq = lloq, blq_rule = rule, read_args = read_args))
   res <- suppressWarnings(run_nca(ds$data, cm, st, lz_overrides = overrides))
   zp <- file.path(wd, "rec.zip")
+  # A BE record carries a real BE run: the same function the app calls
+  be_in <- list(design_selected = "2x2x4", reference = "Reference", parameters = c("CMAX", "AUCLST"), approach = NULL,
+                model_type = "fixed", log_transform = TRUE, ci_level = 90, be_lower = 80, be_upper = 125,
+                pe_constraint = TRUE, widened_scope = "cmax", covariates = NULL, conc_unit = st$conc_unit,
+                time_unit = st$time_unit, is_steady_state = FALSE)
+  be_run <- if (be) run_be_analysis(res, ds$data, cm, be_in, st, detected_design = ds$design, lz_overrides = overrides)
   out <- suppressWarnings(create_analysis_record(zp, res, st, cm, f, "input.csv", blq_rule = rule,
     lloq = lloq, analyst = "QA", study_name = "REC", lz_overrides = overrides, read_args = read_args,
-    be_results = if (be) list(ci_table = data.frame(Parameter = "CMAX"), anova = list()) else NULL))
+    be_results = if (be) be_run$result else NULL, be_settings = if (be) list(ci_level = 90) else NULL,
+    be_record = if (be) list(inputs = be_in, raw = be_run$raw) else NULL))
   list(zip = zp, ex = rec_unzip(zp), result = res, out = out)
 }
 
@@ -2224,11 +2230,11 @@ check("REC-04", "Replicate BE record with per-subject doses and an override repr
                period = "3", time_used = c(4, 6, 8)))
     r <- rec_build(df = d, cm = cm, st = st, lloq = 0.5, overrides = ov, be = TRUE)
     js <- jsonlite::fromJSON(file.path(r$ex, "analysis_settings.json"), simplifyDataFrame = FALSE)
-    grepl("Result: MATCH", rec_check_text(r$ex)) && identical(js$dose_source, "per_subject") &&
-      identical(as.numeric(js$lz_overrides[[1]]$time_used), c(4, 6, 8))
+    grepl("Result: MATCH", rec_check_text(r$ex)) && grepl("BE result: MATCH", rec_check_text(r$ex), fixed = TRUE) &&
+      identical(js$dose_source, "per_subject") && identical(as.numeric(js$lz_overrides[[1]]$time_used), c(4, 6, 8))
   }, error = function(e) FALSE),
-  "URS-EXP-07", critical = TRUE, method = "2x2x4 fixture, dose = subject x 10, override on one administration",
-  expected = "MATCH; per-subject dose and override time points recorded")
+  "URS-EXP-07", critical = TRUE, method = "2x2x4 fixture, dose = subject x 10, override on one administration, with a real BE run in the record",
+  expected = "NCA and BE both MATCH; per-subject dose and override time points recorded")
 check("REC-05", "The check detects a changed data file",
   tryCatch({
     r <- rec_build(df = theoph, cm = theoph_cm, st = theoph_settings)
@@ -6156,6 +6162,138 @@ for (i in seq_along(gld_cases)) local({
                     "; be_result(), be_run_settings() and the notifications against the stored file"),
     expected = "identical() to the golden file: the table, ANOVA, verdicts, checks and messages")
 })
+
+# ---- The Analysis Record of a BE run reproduces the BE statistics and the verdict ----
+# Each record is made by the real module (Run, then the Analysis Record download) and its
+# reproduce_analysis.R is run in a separate R process, as a recipient would run it.
+gld_rec <- function(nm) {
+  d <- file.path(tempdir(), paste0("gldrec_", nm))
+  if (!dir.exists(d)) be_golden_record(gld_cases[[nm]], d)
+  d
+}
+gld_copy <- function(nm) {
+  d <- file.path(tempdir(), paste0("gldcopy_", nm, "_", as.integer(runif(1, 1, 1e7))))
+  dir.create(d); file.copy(list.files(gld_rec(nm), full.names = TRUE), d); d
+}
+gld_run <- function(d) {
+  owd <- setwd(d); on.exit(setwd(owd))
+  suppressWarnings(system2(file.path(R.home("bin"), "Rscript"), "reproduce_analysis.R", stdout = TRUE, stderr = TRUE))
+}
+gld_final <- function(out) {
+  v <- regmatches(out, regexpr("(?<=^Result: )[A-Z ]+", out, perl = TRUE)); if (length(v)) trimws(tail(v, 1)) else "NONE"
+}
+gld_edit <- function(f, fn) writeLines(fn(readLines(f, warn = FALSE)), f)
+
+for (i in seq_along(gld_cases)) local({
+  nm <- names(gld_cases)[i]
+  check(sprintf("REC-BE-%02d", i), sprintf("BE record '%s' reproduces the BE statistics and the verdict", nm),
+    tryCatch({
+      d <- gld_rec(nm); txt <- rec_check_text(d)
+      sens <- identical(nm, "replicate_excl")
+      grepl("BE result: MATCH", txt, fixed = TRUE) && identical(gld_final(strsplit(txt, "\n")[[1]]), "MATCH") &&
+        file.exists(file.path(d, "app_be_reference.csv")) &&
+        identical(file.exists(file.path(d, "app_be_sensitivity_reference.csv")), sens) &&
+        (!sens || grepl("BE sensitivity result: MATCH", txt, fixed = TRUE)) &&
+        !file.exists(file.path(d, "reproduced_be_results.csv"))
+    }, error = function(e) FALSE),
+    "URS-EXP-02, URS-EXP-05", critical = TRUE,
+    method = paste0("The Analysis Record of ", gld_cases[[nm]]$file, " from the real module; reproduce_analysis.R run in a separate R process"),
+    expected = "The script recomputes the NCA and the BE table from the recorded settings; both match; the last line is Result: MATCH")
+})
+
+check("REC-BE-10", "A changed value in the app's BE results gives DIFFERENT",
+  tryCatch({
+    d <- gld_copy("crossover_fixed"); f <- file.path(d, "app_be_reference.csv")
+    r <- read.csv(f, check.names = FALSE); r$CI_Upper[1] <- r$CI_Upper[1] + 0.5; write.csv(r, f, row.names = FALSE)
+    out <- gld_run(d); identical(gld_final(out), "DIFFERENT") && any(grepl("^BE result: DIFFERENT", out))
+  }, error = function(e) FALSE),
+  "URS-EXP-02, URS-EXP-04", critical = TRUE, method = "One confidence limit of app_be_reference.csv raised by 0.5 percentage points; script run",
+  expected = "BE result: DIFFERENT and Result: DIFFERENT")
+
+check("REC-BE-11", "A changed setting (confidence level) gives DIFFERENT",
+  tryCatch({
+    d <- gld_copy("crossover_fixed"); gld_edit(file.path(d, "analysis_settings.json"), function(x) sub('"ci_level": 90', '"ci_level": 95', x))
+    identical(gld_final(gld_run(d)), "DIFFERENT")
+  }, error = function(e) FALSE),
+  "URS-EXP-02, URS-EXP-03", critical = TRUE, method = "ci_level 90 changed to 95 in analysis_settings.json; script run",
+  expected = "Result: DIFFERENT")
+
+check("REC-BE-12", "A changed Reference treatment gives DIFFERENT",
+  tryCatch({
+    d <- gld_copy("crossover_fixed"); gld_edit(file.path(d, "analysis_settings.json"), function(x) sub('"reference": "Reference"', '"reference": "Test"', x))
+    identical(gld_final(gld_run(d)), "DIFFERENT")
+  }, error = function(e) FALSE),
+  "URS-EXP-02, URS-EXP-03", critical = TRUE, method = "be_run reference changed from Reference to Test; script run",
+  expected = "Result: DIFFERENT (the ratio would be inverted)")
+
+check("REC-BE-13", "Changed BE code gives DIFFERENT even when the numbers agree",
+  tryCatch({
+    d <- gld_copy("crossover_fixed"); cat("\n# changed\n", file = file.path(d, "be_analysis.R"), append = TRUE)
+    out <- gld_run(d); identical(gld_final(out), "DIFFERENT") && any(grepl("BE code (be_analysis.R): MISMATCH", out, fixed = TRUE))
+  }, error = function(e) FALSE),
+  "URS-EXP-02, URS-EXP-04", critical = TRUE, method = "A comment appended to the shipped be_analysis.R; script run",
+  expected = "BE code (be_analysis.R): MISMATCH and Result: DIFFERENT")
+
+check("REC-BE-14", "A change below the rounding of the table is still detected (unrounded comparison)",
+  tryCatch({
+    d <- gld_copy("crossover_fixed"); f <- file.path(d, "app_be_reference.csv")
+    r <- read.csv(f, check.names = FALSE); shown <- r$Point_Est[1]
+    r$Raw_Point_Est[1] <- r$Raw_Point_Est[1] * (1 + 3e-5); write.csv(r, f, row.names = FALSE)
+    out <- gld_run(d)
+    # the displayed point estimate (2 decimals) is untouched, the verdict is not MATCH
+    identical(r$Point_Est[1], shown) && identical(gld_final(out), "CLOSE")
+  }, error = function(e) FALSE),
+  "URS-EXP-02, URS-EXP-04", critical = TRUE, method = "Raw_Point_Est of app_be_reference.csv changed by 0.003% while the rounded column stays; script run",
+  expected = "Result: CLOSE: the unrounded estimate is compared, not the rounded one")
+
+check("REC-BE-15", "The BE comparison matches rows on Parameter, text exactly, and combines verdicts by their worst",
+  tryCatch({
+    ci <- data.frame(Parameter = c("CMAX", "AUCLST"), Point_Est = c(100.12, 95.5), Bioequivalent = c("YES", "NO"),
+                     Scale = "Difference T\u2212R", stringsAsFactors = FALSE)
+    f <- tempfile(fileext = ".csv"); write.csv(be_reference_table(ci, data.frame(Parameter = ci$Parameter, Raw_Point_Est = c(100.1234, 95.5))),
+                                                f, row.names = FALSE)
+    tab <- be_reference_table(ci, data.frame(Parameter = ci$Parameter, Raw_Point_Est = c(100.1234, 95.5)))
+    run <- function(t, integrity = NULL) { v <- NULL; capture.output(v <- compare_be_with_reference(t, f, integrity)); v }
+    shuffled <- tab[2:1, ]; txt <- tab; txt$Bioequivalent[1] <- "NO"; extra <- rbind(tab, transform(tab[1, ], Parameter = "TMAX"))
+    ph <- tab; ph$Point_Est[2] <- 95.5001
+    identical(run(tab), "MATCH") && identical(run(shuffled), "MATCH") && identical(run(txt), "DIFFERENT") && identical(run(extra), "DIFFERENT") &&
+      identical(run(tab, c("BE code (be_analysis.R)" = "MISMATCH")), "DIFFERENT") && identical(run(NULL), "FAILED") &&
+      identical(run(ph), "CLOSE") &&
+      identical(combine_verdicts("MATCH", "MATCH"), "MATCH") && identical(combine_verdicts("MATCH", "CLOSE"), "CLOSE") &&
+      identical(combine_verdicts("CLOSE", "NOT COMPARED"), "CLOSE") && identical(combine_verdicts("NOT COMPARED", "FAILED"), "FAILED") &&
+      identical(combine_verdicts("FAILED", "DIFFERENT", "MATCH"), "DIFFERENT") &&
+      !any(grepl("[^ -~]", readLines(f, warn = FALSE)))
+  }, error = function(e) FALSE),
+  "URS-EXP-02, URS-EXP-04", critical = TRUE, method = "compare_be_with_reference() and combine_verdicts() on small tables: shuffled rows, a changed verdict text, a parameter on one side only, a changed code hash, an empty table, a change of 0.0001; the reference file is ASCII",
+  expected = "MATCH for shuffled rows; DIFFERENT for text, a missing or extra parameter and a code mismatch; FAILED for nothing; CLOSE for a small change; worst verdict wins")
+
+check("REC-BE-16", "The recorded BE settings read back as the settings the run was given (parallel group with a covariate)",
+  tryCatch({
+    d <- gld_rec("parallel_cov")
+    rec <- jsonlite::fromJSON(file.path(d, "analysis_settings.json"), simplifyDataFrame = FALSE)
+    b <- be_inputs_from_record(rec)
+    identical(b$design_selected, "parallel") && identical(b$reference, "Reference") && identical(b$parameters, c("CMAX", "AUCLST")) &&
+      identical(b$covariates, data.frame(name = "Weight", type = "auto", transform = "none", stringsAsFactors = FALSE)) &&
+      isTRUE(all.equal(c(b$ci_level, b$be_lower, b$be_upper), c(90, 80, 125))) && isTRUE(b$log_transform) &&
+      isTRUE(b$pe_constraint) && identical(b$model_type, "fixed") && is.null(b$approach) && identical(b$is_steady_state, FALSE)
+  }, error = function(e) FALSE),
+  "URS-EXP-03", critical = TRUE, method = "analysis_settings.json of the parallel record read with simplifyDataFrame = FALSE and turned back by be_inputs_from_record()",
+  expected = "design, reference, parameters, covariate specification, level, limits and flags as they were given")
+
+check("REC-BE-17", "The record ships the BE code unchanged, with hashes, and no longer says the BE statistics are not recomputed",
+  tryCatch({
+    d <- gld_rec("hvd_rsabe"); rec <- jsonlite::fromJSON(file.path(d, "analysis_settings.json"), simplifyDataFrame = FALSE)
+    files <- c("be_analysis.R", "be_scaled.R", "designs.R", "utils.R")
+    man <- paste(readLines(file.path(d, "data_integrity.txt"), warn = FALSE), collapse = "\n")
+    html <- paste(readLines(file.path(d, "analysis_summary.html"), warn = FALSE), collapse = "\n")
+    all(vapply(files, function(f) identical(unname(tools::md5sum(file.path(d, f))), unname(tools::md5sum(file.path("R", f)))) &&
+                 identical(rec$be_code_sha256[[f]], digest::digest(file = file.path("R", f), algo = "sha256")) &&
+                 grepl(rec$be_code_sha256[[f]], man, fixed = TRUE), TRUE)) &&
+      grepl("app_be_reference.csv", man, fixed = TRUE) && is.null(rec$reproduction_scope) &&
+      grepl("recomputes the NCA parameters and then the", html, fixed = TRUE) && !grepl("are not\nrecomputed by the script", html, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-EXP-02, URS-EXP-04", critical = TRUE, method = "The RSABE record unzipped: shipped files against R/, hashes in the JSON and in the manifest, the summary text",
+  expected = "Exact copies of the four code files, their SHA-256 in the settings and the manifest, the reference file listed; no 'not recomputed' sentence")
 end_section("GLD")
 
 # =============================================================================
@@ -6424,7 +6562,8 @@ check("EXC-08", "A sensitivity analysis without the exclusions is computed, show
     create_analysis_record(zf, r, exc_st(), exc_cm, f, "crossover.csv", blq_rule = "rule1", lloq = 0,
                            be_results = list(ci_table = ci, sensitivity = ci), be_settings = list(ci_level = 90))
     utils::unzip(zf, exdir = td)
-    grepl("sens_df <- tryCatch(do.call(rbind, lapply(params, function(p) fit_one(bd0$data, p)$row)),", ba, fixed = TRUE) &&
+    grepl("sens_fits <- tryCatch(lapply(params, function(p) fit_one(bd0$data, p)),", ba, fixed = TRUE) &&
+      grepl("sens_df <- do.call(rbind, lapply(sens_fits, function(f) f$row))", ba, fixed = TRUE) &&
       grepl("sensitivity = sens_df", ba, fixed = TRUE) && grepl("Sensitivity analysis: without your exclusions", be, fixed = TRUE) &&
       "BE_Without_Exclusions" %in% openxlsx::getSheetNames(file.path(td, "results.xlsx"))
   }, error = function(e) FALSE),
@@ -7472,7 +7611,7 @@ check("RSA-12", "Module wiring: the selector exists only for replicate designs, 
     ba <- paste(readLines("R/be_analysis.R", warn = FALSE), collapse = "\n"); has_ba <- function(x) grepl(x, ba, fixed = TRUE)
     has('output$approach_ui <- renderUI({') && has("if (length(ch) < 2) return(NULL)") &&
       has_ba("fit_one <- function(dat, param) be_assess_parameter(") && has_ba("fit_out <- tryCatch(fit_one(be_data, param),") &&
-      has_ba("fit_one(bd0$data, p)$row") && length(gregexpr("approach, dat, param,", ba, fixed = TRUE)[[1]]) == 1 &&
+      has_ba("fit_one(bd0$data, p)") && length(gregexpr("approach, dat, param,", ba, fixed = TRUE)[[1]]) == 1 &&
       !has("be_assess_parameter(") &&
       has_ba("be_scaled_error = function(e)") && has("input$cov_log, input$be_approach)),") &&
       has('!isTRUE(input$be_lower == 80) || !isTRUE(input$be_upper == 125)') && has("limits_differ") &&
