@@ -180,7 +180,7 @@ exclusions_server <- function(id, shared) {
                      choices = c("Samples of this profile (treated as never collected)" = "sample",
                                  "The whole profile (kept in the NCA listing, left out of summaries, mean curves and bioequivalence)" = "profile")),
         uiOutput(ns("dlg_samples")),
-        selectInput(ns("dlg_category"), "Reason", choices = NULL),
+        selectInput(ns("dlg_category"), "Reason", choices = EXCLUSION_CATEGORIES$sample),
         textInput(ns("dlg_detail"), "Detail (required for Other, protocol, dosing and adverse-event reasons)"),
         tags$div(class = "d-flex gap-3",
           radioButtons(ns("dlg_prespecified"), "Pre-specified in the protocol?", c("Yes" = "yes", "No" = "no"),

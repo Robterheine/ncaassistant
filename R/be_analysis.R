@@ -664,9 +664,13 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
   subj_ref <- unique(as.character(be_data[[subj_col]][has_ref]))
   subj_tst <- unique(as.character(be_data[[subj_col]][has_tst]))
   if (model_family != "parallel" && !inherits(fit, "lme")) {
-    # With subject as a fixed effect only subjects observed under both
-    # treatments contribute to the comparison; count those
-    both <- intersect(subj_ref, subj_tst); n1 <- length(both); n2 <- length(both)
+    # With subject as a fixed effect only subjects with >= 2 non-missing
+    # observations contribute to the model; in 2x2 crossovers single-treatment
+    # subjects were already dropped above
+    obs_per_subj <- table(as.character(be_data[[subj_col]][!is.na(be_data$.response)]))
+    contrib_subj <- names(obs_per_subj)[obs_per_subj >= 2L]
+    n1 <- length(intersect(subj_ref, contrib_subj))
+    n2 <- length(intersect(subj_tst, contrib_subj))
   } else {
     n1 <- length(subj_ref); n2 <- length(subj_tst)
   }
@@ -782,7 +786,7 @@ fit_be_parameter <- function(be_data, param, design, model_type = "fixed",
                                     dfe = unname(fit0$df.residual), mse = unadj_mse)
     out$estimate$covariate_coefs <- be_covariate_coefs(fit, covariates, trt_col, alpha)
     out$warnings <- cov_warnings
-    unadj_lo <- round(unadj_lo, 2); unadj_hi <- round(unadj_hi, 2)
+    unadj_lo <- round_half_up(unadj_lo, 2); unadj_hi <- round_half_up(unadj_hi, 2)
   }
   out$row <- make_row(pe = round_half_up(pe, 2), lo = round_half_up(ci_lo_p, 2), hi = round_half_up(ci_hi_p, 2),
                       n_t = n2, n_r = n1, o_t = o2, o_r = o1,
@@ -1043,8 +1047,16 @@ predose_above_5pct_note <- function(pk_data, col_map, verdict = TRUE) {
            ". A pre-dose concentration also points to carry-over or an endogenous level.")
 }
 
-be_m13a_checks <- function(pk_data, col_map, nca_res, ci_df, is_ss = FALSE) {
+be_m13a_checks <- function(pk_data, col_map, nca_res, ci_df, is_ss = FALSE, exclusions = NULL) {
   out <- character(0)
+  if (!is.null(exclusions)) {
+    excl_p <- resolve_exclusions(pk_data, col_map, exclusions)$profiles
+    if (length(excl_p) > 0) {
+      pk_data <- pk_data[!(profile_key(pk_data, col_map)$key %in% excl_p), , drop = FALSE]
+      if (!is.null(nca_res) && "EXCL" %in% names(nca_res))
+        nca_res <- nca_res[!(nca_res$EXCL %in% 1), , drop = FALSE]
+    }
+  }
   pk <- profile_key(pk_data, col_map)
   if (!isTRUE(is_ss)) out <- c(out, predose_above_5pct_note(pk_data, col_map))
   # Profiles without an NCA result, and periods with very low exposure: M13A
@@ -1147,7 +1159,12 @@ planner_cv_offer <- function(be_results, analysis_type, planner_design, param = 
 #' more variable one. When the Welch CI would give a different verdict, a
 #' message reports it; the pooled result stays the primary one.
 #' @return character vector of messages (empty when they agree)
-parallel_welch_notes <- function(be_data, params, trt_col, be_lower = 80, be_upper = 125) {
+parallel_welch_notes <- function(be_data, params, trt_col, be_lower = 80, be_upper = 125,
+                                 widened_scope = "all", pe_constraint = FALSE,
+                                 ci_level = 90, log_transform = TRUE) {
+  if (!isTRUE(log_transform) || !isTRUE(all.equal(as.numeric(ci_level), 90))) return(character(0))
+  if ("EXCLUDED" %in% names(be_data))
+    be_data <- be_data[is.na(be_data$EXCLUDED) | !nzchar(be_data$EXCLUDED), , drop = FALSE]
   lv <- levels(factor(be_data[[trt_col]]))
   if (length(lv) != 2) return(character(0))
   out <- character(0)
@@ -1156,13 +1173,27 @@ parallel_welch_notes <- function(be_data, params, trt_col, be_lower = 80, be_upp
     ok <- is.finite(y)
     r <- y[ok & be_data[[trt_col]] == lv[1]]; t <- y[ok & be_data[[trt_col]] == lv[2]]
     if (length(r) < 2 || length(t) < 2) next
-    ci <- function(var_equal) 100 * exp(stats::t.test(t, r, var.equal = var_equal, conf.level = 0.90)$conf.int)
-    pooled <- ci(TRUE); welch <- ci(FALSE)
-    if (be_limits_pass(pooled[1], pooled[2], be_lower, be_upper) != be_limits_pass(welch[1], welch[2], be_lower, be_upper))
+    widened <- be_lower < 80 || be_upper > 125
+    widen_here <- identical(widened_scope, "all") || p == "CMAX" ||
+      (identical(widened_scope, "cmax_pauc") && length(partial_auc_cols(p)) == 1)
+    lo_p <- if (widened && !widen_here) 80 else be_lower
+    hi_p <- if (widened && !widen_here) 125 else be_upper
+    widened_p <- lo_p < 80 || hi_p > 125
+    eval_arm <- function(var_equal) {
+      tt <- stats::t.test(t, r, var.equal = var_equal, conf.level = 0.90)
+      ci <- 100 * exp(as.numeric(tt$conf.int))
+      pe <- 100 * exp(unname(tt$estimate[[1]] - tt$estimate[[2]]))
+      pass <- be_limits_pass(ci[1], ci[2], lo_p, hi_p) &&
+        (!widened_p || !isTRUE(pe_constraint) || pe_within_limits(pe))
+      list(ci = round_half_up(ci, 2), pass = pass)
+    }
+    pooled <- eval_arm(TRUE); welch <- eval_arm(FALSE)
+    if (pooled$pass != welch$pass)
       out <- c(out, sprintf(paste0("%s: the Welch interval (unequal variances), %.2f-%.2f%%, gives a different ",
                                    "conclusion from the pooled-variance interval, %.2f-%.2f%%. The groups differ in ",
                                    "size or variability; discuss this sensitivity result."),
-                            if (exists("friendly_name")) friendly_name(p) else p, welch[1], welch[2], pooled[1], pooled[2]))
+                            if (exists("friendly_name")) friendly_name(p) else p,
+                            welch$ci[1], welch$ci[2], pooled$ci[1], pooled$ci[2]))
   }
   out
 }
@@ -1303,11 +1334,12 @@ run_be_analysis <- function(nca_res, pk_data, col_map, be_settings, nca_settings
   # Missing subjects are listed by name and shown as a persistent alert.
   # Analysis still proceeds (na.exclude handles missing data in lm/lme),
   # but the user must be aware of the imbalance.
-  balance_subjects <- unique(be_data[[subj_col_be]])
+  excl_ok <- if ("EXCLUDED" %in% names(be_data)) is.na(be_data$EXCLUDED) | !nzchar(be_data$EXCLUDED) else rep(TRUE, nrow(be_data))
+  balance_subjects <- unique(be_data[[subj_col_be]][excl_ok])
   # Parallel groups: every subject has one treatment by design
   incomplete_subjects <- if (identical(be_design_model(design_used$design), "parallel")) character(0) else
     Filter(function(sj) {
-      trts <- be_data[[trt_col_be]][be_data[[subj_col_be]] == sj]
+      trts <- be_data[[trt_col_be]][excl_ok & be_data[[subj_col_be]] == sj]
       !all(trt_levels %in% as.character(trts))
     }, balance_subjects)
 
@@ -1316,11 +1348,12 @@ run_be_analysis <- function(nca_res, pk_data, col_map, be_settings, nca_settings
     n_incomplete <- length(incomplete_subjects)
     subj_list <- paste(head(incomplete_subjects, 10), collapse = ", ")
     if (n_incomplete > 10) subj_list <- paste0(subj_list, ", ...")
+    xo_2x2 <- design_used$design %in% c("2x2x2", "crossover_2x2", "crossover_fixed_order")
     notify(
       paste0(n_incomplete, " of ", n_total,
              " subject(s) have data for only one treatment: ", subj_list,
-             ". With fixed effects they do not contribute to the treatment comparison; the mixed ",
-             "model uses their data. ",
+             if (xo_2x2) ". In a 2\u00D72 crossover they leave both fixed- and mixed-effects comparisons. "
+             else ". In a replicate design the mixed model uses all remaining periods, whereas fixed effects retain subjects with at least two observations. ",
              "Degrees of freedom are reduced accordingly."),
       "warning", 15)
     # Stored for the persistent alert (written once the result is stored)
@@ -1427,10 +1460,10 @@ run_be_analysis <- function(nca_res, pk_data, col_map, be_settings, nca_settings
   ci_df <- do.call(rbind, ci_results)
   # Parallel groups: the Welch interval next to the pooled one (supplementary)
   if (length(welch_results) > 0) {
-    wval <- function(f) vapply(as.character(ci_df$Parameter), function(p) {
-      w <- welch_results[[p]]; if (is.null(w)) NA_real_ else round(w[[f]], 2)
+    wval <- function(f, half_up = TRUE) vapply(as.character(ci_df$Parameter), function(p) {
+      w <- welch_results[[p]]; if (is.null(w)) NA_real_ else if (half_up) round_half_up(w[[f]], 2) else round(w[[f]], 2)
     }, numeric(1), USE.NAMES = FALSE)
-    ci_df$Welch_Lower <- wval("lo"); ci_df$Welch_Upper <- wval("hi"); ci_df$Welch_DF <- wval("df")
+    ci_df$Welch_Lower <- wval("lo", TRUE); ci_df$Welch_Upper <- wval("hi", TRUE); ci_df$Welch_DF <- wval("df", FALSE)
   }
 
   # Exclusions touch the comparison: the same analysis without any of
@@ -1438,7 +1471,7 @@ run_be_analysis <- function(nca_res, pk_data, col_map, be_settings, nca_settings
   # checks always look at the data before exclusions.
   has_excl <- nrow(active_exclusions(exclusions)) > 0
   d_unexcl <- if (has_excl) data_unexcluded else pk_data
-  sens_df <- NULL; sens_fits <- NULL
+  nca0 <- NULL; sens_df <- NULL; sens_fits <- NULL
   if (has_excl) {
     s0 <- settings; s0$exclusions <- NULL
     if (identical(settings$dose_source, "per_profile")) s0$dose <- suppressWarnings(dose_by_profile(d_unexcl, cm))
@@ -1453,6 +1486,7 @@ run_be_analysis <- function(nca_res, pk_data, col_map, be_settings, nca_settings
                                              })
     if (!is.null(sens_fits)) sens_df <- do.call(rbind, lapply(sens_fits, function(f) f$row))
   }
+  nca_unexcl <- if (has_excl && !is.null(nca0)) nca0 else nca_res
 
   # How many profiles of each treatment rest mainly on BLQ-derived values
   # for that metric. A ratio can be driven by such a profile without any
@@ -1470,9 +1504,10 @@ run_be_analysis <- function(nca_res, pk_data, col_map, be_settings, nca_settings
   # Only for log-transformed ratio parameters, never TMAX.
   cv_rows <- list()
   if (isTRUE(s$log_transform)) {
+    unexcl_rows <- if ("EXCLUDED" %in% names(be_data)) is.na(be_data$EXCLUDED) | !nzchar(be_data$EXCLUDED) else rep(TRUE, nrow(be_data))
     for (param in setdiff(params, c("TMAX", BE_NO_VERDICT_PARAMS))) {
-      # No log-scale variability with zero values (see fit_be_parameter)
-      if (any(as.numeric(be_data[[param]]) == 0, na.rm = TRUE)) next
+      # No log-scale variability with zero values in unexcluded rows (see fit_be_parameter)
+      if (any(as.numeric(be_data[[param]][unexcl_rows]) == 0, na.rm = TRUE)) next
       cv_rows[[param]] <- tryCatch(
         be_variability_diagnostic(be_data, param, trt_col = trt_col_be,
                                   subj_col = subj_col_be, per_col = per_col,
@@ -1492,17 +1527,21 @@ run_be_analysis <- function(nca_res, pk_data, col_map, be_settings, nca_settings
                  covariates = bd$covariates, covariate_coefs = cov_coefs,
                  approach = approach, scaled_details = scaled_details,
                  covariate_balance = be_covariate_balance(be_data, bd$covariates, trt_col_be, subj_col_be),
-                 m13a = c(run_warns, unique(cov_warns), be_scaled_notes(ci_df, scaled_details), be_m13a_checks(d_unexcl, cm, nca_res,
+                 m13a = c(run_warns, unique(cov_warns), be_scaled_notes(ci_df, scaled_details), be_m13a_checks(d_unexcl, cm, nca_unexcl,
                                          ci_df[ci_df$Parameter %in% setdiff(params, c(supportive, BE_NO_VERDICT_PARAMS)), ],
                                          isTRUE(s$is_steady_state)),
                           if (has_excl && !setequal(
-                            be_m13a_checks(d_unexcl, cm, nca_res, NULL, isTRUE(s$is_steady_state)),
-                            be_m13a_checks(pk_data, cm, nca_res, NULL, isTRUE(s$is_steady_state))))
+                            be_m13a_checks(d_unexcl, cm, nca_unexcl, NULL, isTRUE(s$is_steady_state)),
+                            be_m13a_checks(pk_data, cm, nca_res, NULL, isTRUE(s$is_steady_state), exclusions = exclusions)))
                             paste0("These checks use the data before your exclusions; with the exclusions ",
                                    "applied their outcome would differ."),
                           if (identical(be_design_model(design_used$design), "parallel") && is.null(bd$covariates))
-                            parallel_welch_notes(be_data, setdiff(params, c("TMAX", BE_NO_VERDICT_PARAMS)), trt_col_be,
-                                                 s$be_lower, s$be_upper)))
+                            parallel_welch_notes(be_data, setdiff(params, c("TMAX", supportive, BE_NO_VERDICT_PARAMS)), trt_col_be,
+                                                 s$be_lower, s$be_upper,
+                                                 widened_scope = widened_scope_value(s$widened_scope),
+                                                 pe_constraint = !identical(s$pe_constraint, FALSE),
+                                                 ci_level = s$ci_level,
+                                                 log_transform = isTRUE(s$log_transform))))
   list(result = result, params = params, design_used = design_used, approach = approach,
        covariates = bd$covariates, balance_info = balance_info,
        raw = list(main = be_raw_table(estimates),

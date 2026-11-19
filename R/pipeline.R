@@ -913,7 +913,7 @@ fix_log_down_zeros <- function(r, time, conc, adm, down, dur = 0, ss = FALSE) {
   s_p <- if (ss) NA_real_ else ratio(ifp, old$ifp)
   for (n in c("CLFO", "VZFO", "CLO", "VZO")) put(n, get(n) * s_o)
   for (n in c("CLFP", "VZFP", "CLP", "VZP")) put(n, get(n) * s_p)
-  mrt_lst <- aumc / lst
+  mrt_lst <- if (is.finite(lst) && lst > 0) aumc / lst else NA_real_
   if (toupper(adm) == "EXTRAVASCULAR") {
     put("MRTEVLST", mrt_lst)
     put("MRTEVIFO", if (ss) NA_real_ else aumc_ifo / ifo)
@@ -1001,8 +1001,9 @@ run_single_nca <- function(time, conc, settings, time_used = NULL, is_blq = NULL
   if (length(time_used) >= 2) {
     keep <- !(is.na(t_num) | is.na(c_num))
     xf <- t_num[keep]; yf <- c_num[keep]
+    blq_k <- if (is.null(is_blq)) rep(FALSE, sum(keep)) else is_blq[keep] %in% TRUE
     tu <- as.numeric(unlist(time_used))
-    use <- which(yf > 0 & vapply(xf, function(t) any(abs(t - tu) <= 1e-9 * max(1, abs(t))), logical(1)))
+    use <- which(yf > 0 & !blq_k & vapply(xf, function(t) any(abs(t - tu) <= 1e-9 * max(1, abs(t))), logical(1)))
     if (length(use) < 2) use <- NULL
   }
   # Without a manual selection, keep values set by a BLQ rule out of the fit

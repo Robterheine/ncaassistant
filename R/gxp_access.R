@@ -62,14 +62,24 @@ audited_check <- function() {
     # The typed ID goes into the trail and the system log: bounded, no control characters
     user <- substr(gsub("[[:cntrl:]]", " ", .or(user, "")), 1, 64)
     store <- tryCatch(gxp_store_read(), error = function(e) NULL)
-    known <- !is.null(store) && user %in% store$credentials$user
+    if (is.null(store)) {
+      tryCatch(audit_append("login_failed", object = user, user = user, role = "unknown user",
+                            details = list(expired = FALSE, known_user = FALSE, error = "user_store_unreadable")),
+               error = function(e) NULL)
+      return(list(result = FALSE, expired = FALSE, authorized = FALSE))
+    }
+    known <- user %in% store$credentials$user
     locked <- known && gxp_is_locked(user, store)
     # Any attempt on a locked account, with the right password or not, is its own event (and an alert)
     event <- if (locked) "login_locked" else if (isTRUE(res$result)) "login_ok" else "login_failed"
     role <- if (known) store$credentials$roles[store$credentials$user == user] else "unknown user"
-    tryCatch(audit_append(event, object = user, user = user, role = role,
-                          details = list(expired = isTRUE(res$expired), known_user = known)),
-             error = function(e) NULL)
+    logged <- tryCatch({
+      audit_append(event, object = user, user = user, role = role,
+                   details = list(expired = isTRUE(res$expired), known_user = known))
+      TRUE
+    }, error = function(e) FALSE)
+    if (!logged)
+      return(list(result = FALSE, expired = FALSE, authorized = FALSE))
     if (event == "login_locked") {
       gxp_alert("login_locked", user, session = NULL)
       # shinymanager shows its "not authorized" message (relabelled: locked) and counts nothing

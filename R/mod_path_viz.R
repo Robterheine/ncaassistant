@@ -453,7 +453,7 @@ path_viz_server <- function(id, shared) {
     blq_n_summary <- reactive({
       req(plot_data())
       d <- plot_data()
-      sum(!is.na(d$.conc) & d$.conc <= 0)
+      sum(!d$.excl & !is.na(d$.conc) & d$.conc <= 0)
     })
 
     # Alerts
@@ -512,9 +512,11 @@ path_viz_server <- function(id, shared) {
       norm  <- isTRUE(input$dose_norm) &&
                  !is.null(cm$dose) && cm$dose %in% names(d)
 
-      n_subj    <- length(unique(d[[cm$subject]]))
-      n_obs     <- nrow(d)
-      blq_excl  <- blq_n_summary()
+      n_subj     <- length(unique(d[[cm$subject]]))
+      excl_p     <- resolve_exclusions(d, cm, shared$exclusions)$profiles
+      n_subj_sum <- length(unique(d[[cm$subject]][!(profile_key(d, cm)$key %in% excl_p)]))
+      n_obs      <- nrow(d)
+      blq_excl   <- blq_n_summary()
 
       has_trt  <- !is.null(cm$treatment) && cm$treatment %in% names(d)
       trt_lvls <- if (has_trt)
@@ -542,9 +544,9 @@ path_viz_server <- function(id, shared) {
       else ""
 
       stat_desc <- if (stat == "geomean")
-        paste0("geometric mean \u00d7/\u00f7 geometric SD (n\u2009=\u2009", n_subj, " subjects; at each time point only positive concentrations are included, and a time point where more than half are \u2264 0 is not shown)")
+        paste0("geometric mean \u00d7/\u00f7 geometric SD (n\u2009=\u2009", n_subj_sum, " subjects; at each time point only positive concentrations are included, and a time point where more than half are \u2264 0 is not shown)")
       else
-        paste0("arithmetic mean \u00b1 SD (n\u2009=\u2009", n_subj, ")")
+        paste0("arithmetic mean \u00b1 SD (n\u2009=\u2009", n_subj_sum, ")")
 
       colour_desc <- switch(cb,
         "subject"   = "colour-coded by subject",
@@ -716,7 +718,8 @@ path_viz_server <- function(id, shared) {
 
         # Individual obs — drawn first (bottom layer)
         if (show_pts_ind) {
-          d_pos <- d[!is.na(d$.conc) & d$.conc > 0, ]
+          keep_ind <- !d$.excl & !is.na(d$.conc) & (if (isTRUE(input$y_scale == "log") || stat_type == "geomean") d$.conc > 0 else TRUE)
+          d_pos <- d[keep_ind, , drop = FALSE]
           d_pos$.treatment <- factor(d_pos$.treatment,
                                      levels = levels(summ$.treatment))
           p <- p + geom_point(
@@ -759,7 +762,8 @@ path_viz_server <- function(id, shared) {
         p <- ggplot(summ, aes(x = .time, y = .center))
 
         if (show_pts_ind) {
-          d_pos <- d[!is.na(d$.conc) & d$.conc > 0, ]
+          keep_ind <- !d$.excl & !is.na(d$.conc) & (if (isTRUE(input$y_scale == "log") || stat_type == "geomean") d$.conc > 0 else TRUE)
+          d_pos <- d[keep_ind, , drop = FALSE]
           p <- p + geom_point(
             data        = d_pos,
             aes(x = .time, y = .conc),
@@ -996,12 +1000,20 @@ path_viz_server <- function(id, shared) {
           # having fired yet)
           vs <- list(
             plot_type         = input$plot_type      %||% "spaghetti",
+            export_which      = input$export_which   %||% "spaghetti",
             color_by          = input$color_by       %||% "subject",
             y_scale           = input$y_scale        %||% "linear",
             summary_statistic = input$summary_stat   %||% "geomean",
             dose_normalized   = isTRUE(input$dose_norm),
             theme             = input$plot_theme     %||% "bw",
             colour_palette    = input$color_palette  %||% "default",
+            base_size         = as.integer(input$base_size %||% 11L),
+            x_label           = input$x_label        %||% "",
+            y_label           = input$y_label        %||% "",
+            plot_title        = input$plot_title     %||% "",
+            x_tick            = input$x_tick         %||% "",
+            show_points_spaghetti = isTRUE(input$show_points_spaghetti),
+            show_points_summary   = isTRUE(input$show_points_summary),
             figure_width_in   = as.numeric(input$export_width  %||% 7),
             figure_height_in  = as.numeric(input$export_height %||% 5),
             dpi               = as.integer(input$export_dpi    %||% 300),
@@ -1043,12 +1055,20 @@ path_viz_server <- function(id, shared) {
       req(shared$data_ready, plot_rendered())
       shared$viz_settings <- list(
         plot_type         = input$plot_type      %||% "spaghetti",
+        export_which      = input$export_which   %||% "spaghetti",
         color_by          = input$color_by       %||% "subject",
         y_scale           = input$y_scale        %||% "linear",
         summary_statistic = input$summary_stat   %||% "geomean",
         dose_normalized   = isTRUE(input$dose_norm),
         theme             = input$plot_theme     %||% "bw",
         colour_palette    = input$color_palette  %||% "default",
+        base_size         = as.integer(input$base_size %||% 11L),
+        x_label           = input$x_label        %||% "",
+        y_label           = input$y_label        %||% "",
+        plot_title        = input$plot_title     %||% "",
+        x_tick            = input$x_tick         %||% "",
+        show_points_spaghetti = isTRUE(input$show_points_spaghetti),
+        show_points_summary   = isTRUE(input$show_points_summary),
         figure_width_in   = as.numeric(input$export_width  %||% 7),
         figure_height_in  = as.numeric(input$export_height %||% 5),
         dpi               = as.integer(input$export_dpi    %||% 300),

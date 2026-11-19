@@ -545,7 +545,8 @@ path_multi_nca_server <- function(id, shared) {
     output$mean_plot <- renderPlotly({
       req(shared$pk_data, shared$col_map)
       d <- shared$pk_data; cm <- shared$col_map
-      d <- d[!is.na(d[[cm$conc]]) & !is.na(d[[cm$time]]), ]
+      excl_p <- resolve_exclusions(d, cm, shared$exclusions)$profiles
+      d <- d[!(profile_key(d, cm)$key %in% excl_p) & !is.na(d[[cm$conc]]) & !is.na(d[[cm$time]]), ]
       if (nrow(d) == 0) return(plotly_empty())
       # Treatments are averaged separately, never pooled
       d$.trt <- if (!is.null(cm$treatment) && cm$treatment %in% names(d)) as.character(d[[cm$treatment]]) else "All"
@@ -679,6 +680,7 @@ path_multi_nca_server <- function(id, shared) {
     output$boxplot <- renderPlotly({
       req(nca_result())
       r <- nca_result()
+      r <- r[!(r$EXCL %in% 1), , drop = FALSE]
       key <- intersect(c("CMAX","AUCLST","AUCIFO","LAMZHL"), names(r))
       if (length(key) == 0) return(plotly_empty())
       has_trt <- "Treatment" %in% names(r)
