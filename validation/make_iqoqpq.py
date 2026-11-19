@@ -60,7 +60,7 @@ set_text(para("This protocol defines"),
   f"reference and classification exactly as defined in validation.R ({len(auto)} automated, {len(man)} manual). "
   "Record the outcome of your own run in the Result column, or attach validation_results.csv.")
 for r in d.tables[0].rows:
-    if r.cells[0].text == "Date": set_cell(r.cells[1], "October 2026")
+    if r.cells[0].text == "Date": set_cell(r.cells[1], "November 2026")
 
 env = table_after(para("1.1 Test Environment"))
 names = [r.cells[0].text for r in env.rows]
@@ -90,7 +90,8 @@ sections = [("DAT", "Data Handling (OQ)"), ("NCA", "NCA (OQ/PQ)"), ("BE", "Bioeq
             ("EXC", "Exclusions with a Reason (OQ/PQ)"), ("ARV", "Adversarial Review of the App (OQ/PQ)"),
             ("PAR", "Parallel-Group Bioequivalence (OQ/PQ)"), ("COV", "Covariate Adjustment (OQ/PQ)"),
             ("RSA", "FDA Reference-Scaled Bioequivalence (OQ/PQ)"), ("ABL", "EMA Expanding Limits (OQ/PQ)"),
-            ("GLD", "BE Run and Record (OQ/PQ)"), ("DOC", "Text Matches the Code (OQ)")]
+            ("GLD", "BE Run and Record (OQ/PQ)"), ("AUD", "Statistical, Code and Stability Audit v1.9.1 (OQ/PQ)"),
+            ("DOC", "Text Matches the Code (OQ)")]
 known = {s for s, _ in sections} | {"IQ", "MAN"}
 assert {r["Section"] for r in rows} <= known, {r["Section"] for r in rows} - known
 

@@ -221,16 +221,18 @@ path_single_nca_server <- function(id, shared) {
     observeEvent(shared$pk_data, { nca_res(NULL); local$lz_override <- NULL }, ignoreInit = TRUE)
     observeEvent(input$btn_use_manual, { local$lz_override <- NULL }, ignoreInit = TRUE)
     
-    # Auto-fill dose from data when profile changes
-    observeEvent(input$sel_profile, {
-      if (!shared$data_ready || is.null(shared$col_map$dose)) return()
+    # Auto-fill dose from data when profile or dataset changes
+    observeEvent(list(shared$pk_data, input$sel_profile), {
+      if (!shared$data_ready || is.null(shared$col_map$dose) || is.null(input$sel_profile)) return()
       d <- shared$pk_data; cm <- shared$col_map; sel <- input$sel_profile
-      sub_d <- d[profile_data_rows(d, cm, sel), ]
-      dose_val <- max(sub_d[[cm$dose]], na.rm = TRUE)
+      rows <- profile_data_rows(d, cm, sel)
+      if (length(rows) == 0) return()
+      sub_d <- d[rows, , drop = FALSE]
+      dose_val <- suppressWarnings(max(as.numeric(sub_d[[cm$dose]]), na.rm = TRUE))
       if (is.finite(dose_val)) {
         updateNumericInput(session, "dose", value = dose_val)
       }
-    }, ignoreInit = TRUE)
+    }, ignoreInit = FALSE)
     
     # Dose hint
     output$dose_hint <- renderUI({

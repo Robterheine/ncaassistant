@@ -30,7 +30,7 @@ zip_record_dir <- function(rec_dir, output_path) {
     res
   }, error = function(e) {
     tryCatch({
-      if (requireNamespace("withr", quietly = TRUE)) {
+      rc <- if (requireNamespace("withr", quietly = TRUE)) {
         withr::with_dir(rec_dir, {
           utils::zip(abs_output, files = basename(files_to_zip), flags = "-j")
         })
@@ -39,10 +39,13 @@ zip_record_dir <- function(rec_dir, output_path) {
         on.exit(setwd(old_wd), add = TRUE)
         utils::zip(abs_output, files = basename(files_to_zip), flags = "-j")
       }
+      if (!is.null(rc) && rc != 0) stop("utils::zip returned non-zero exit")
     }, error = function(e2) {
-      warning("Could not create zip archive: ", e2$message)
+      stop("Could not create zip archive: ", conditionMessage(e2), call. = FALSE)
     })
   })
+  if (!file.exists(abs_output))
+    stop("Could not create zip archive: output file was not written.", call. = FALSE)
 
   invisible(output_path)
 }
@@ -473,11 +476,11 @@ create_analysis_record <- function(output_path, results, settings, col_map,
   tryCatch({
     wb <- openxlsx::createWorkbook()
     openxlsx::addWorksheet(wb, "Individual_Parameters")
-    openxlsx::writeData(wb, 1, rename_nca_columns(add_flag_text(results, lz_rules(settings)),
+    openxlsx::writeData(wb, "Individual_Parameters", rename_nca_columns(add_flag_text(results, lz_rules(settings)),
       units = list(dose = settings$dose_unit, time = settings$time_unit, conc = settings$conc_unit)))
     if (!is.null(summary_stats)) {
       openxlsx::addWorksheet(wb, "Summary_Statistics")
-      openxlsx::writeData(wb, 2, rename_summary_columns(summary_stats))
+      openxlsx::writeData(wb, "Summary_Statistics", rename_summary_columns(summary_stats))
     }
     if (!is.null(be_results)) {
       openxlsx::addWorksheet(wb, "BE_Confidence_Intervals")
@@ -492,7 +495,7 @@ create_analysis_record <- function(output_path, results, settings, col_map,
         openxlsx::writeData(wb, "Within_Subject_Variability", be_results$cv_table)
       }
       for (p in names(be_results$anova)) {
-        sn <- substr(paste0("ANOVA_", friendly_name(p)), 1, 31)
+        sn <- safe_excel_sheet_name(paste0("ANOVA_", friendly_name(p)), names(wb))
         openxlsx::addWorksheet(wb, sn)
         df <- as.data.frame(be_results$anova[[p]])
         df$Source <- rownames(df)
@@ -515,14 +518,14 @@ create_analysis_record <- function(output_path, results, settings, col_map,
       openxlsx::writeData(wb, "Exclusions", ex_sheet)
     }
     openxlsx::saveWorkbook(wb, file.path(rec_dir, "results.xlsx"), overwrite = TRUE)
-  }, error = function(e) warning("Could not create results.xlsx: ", e$message))
+  }, error = function(e) stop("Could not create results.xlsx: ", conditionMessage(e), call. = FALSE))
 
   # 1b. Machine-readable reference results (raw NonCompart columns) so the
   #     reproduce script can compare its output against the app automatically.
   tryCatch({
     write.csv(results, file.path(rec_dir, "app_results_reference.csv"),
               row.names = FALSE)
-  }, error = function(e) warning("Could not write app_results_reference.csv: ", e$message))
+  }, error = function(e) stop("Could not write app_results_reference.csv: ", conditionMessage(e), call. = FALSE))
 
   # 1c. The app's bioequivalence table with the unrounded estimates, for the
   #     bioequivalence part of the reproduction
@@ -1183,9 +1186,10 @@ if (identical(rec$data_source, "uploaded_file")) {
   rows <- profile_data_rows(ds$data, ds$col_map, rec$subject)
   time <- ds$data[[ds$col_map$time]][rows]
   conc <- ds$data[[ds$col_map$conc]][rows]
+  is_blq <- if (BLQ_FLAG_COLUMN %in% names(ds$data)) ds$data[[BLQ_FLAG_COLUMN]][rows] else NULL
 } else {
   manual <- read.csv(rec$input_file)
-  time <- manual$Time; conc <- manual$Concentration
+  time <- manual$Time; conc <- manual$Concentration; is_blq <- NULL
 }
 cat("Profile:", rec$subject, "-", length(time), "time points\n")
 
@@ -1197,7 +1201,7 @@ settings <- list(admin_route = rec$admin_route, dose = rec$dose, infusion_durati
                  partial_aucs = partial_auc_spec(rec$partial_aucs),
                  partial_auc_blq_fraction = rec$partial_auc_blq_fraction)
 time_used <- if (length(rec$lz_overrides) > 0) rec$lz_overrides[[1]]$time_used else NULL
-result <- run_single_nca(time, conc, settings, time_used = time_used)
+result <- run_single_nca(time, conc, settings, time_used = time_used, is_blq = is_blq)
 write.csv(data.frame(Parameter = names(result), Value = as.character(result)),
           "reproduced_results.csv", row.names = FALSE)
 
@@ -1364,6 +1368,7 @@ generate_viz_script <- function(viz_settings, col_map) {
 
   vs <- viz_settings
   plot_type  <- vs$plot_type        %||% "spaghetti"
+  eff_plot   <- if (identical(plot_type, "both")) (vs$export_which %||% "spaghetti") else plot_type
   y_scale    <- vs$y_scale          %||% "linear"
   color_by   <- vs$color_by         %||% "subject"
   summary_st <- vs$summary_statistic %||% "geomean"
@@ -1372,17 +1377,29 @@ generate_viz_script <- function(viz_settings, col_map) {
   height_in  <- vs$figure_height_in %||% 5
   dpi        <- vs$dpi              %||% 300
   fmt        <- vs$export_format    %||% "png"
+  theme_name <- vs$theme            %||% "bw"
+  base_sz    <- max(8L, min(18L, as.integer(vs$base_size %||% 11L)))
+  x_lab      <- if (nzchar(vs$x_label %||% "")) vs$x_label else "Time"
+  y_custom   <- vs$y_label          %||% ""
+  title_txt  <- vs$plot_title       %||% ""
+  x_tick_val <- suppressWarnings(as.numeric(vs$x_tick %||% NA))
+  show_pts_spag <- if (is.null(vs$show_points_spaghetti)) TRUE else isTRUE(vs$show_points_spaghetti)
+  show_pts_summ <- isTRUE(vs$show_points_summary)
 
   has_treat <- !is.null(col_map$treatment)
   has_dose  <- !is.null(col_map$dose)
 
-  # Map the colour-by choice to its source column
+  # Map the colour-by choice to its source column (NULL when 'none')
   color_col <- switch(color_by,
     "subject"   = col_map$subject,
     "treatment" = col_map$treatment %||% col_map$subject,
     "period"    = col_map$period    %||% col_map$subject,
     "sequence"  = col_map$sequence  %||% col_map$subject,
+    "none"      = NULL,
     col_map$subject)
+
+  y_default <- if (do_norm && has_dose) "Dose-normalised concentration (C/Dose)" else "Concentration"
+  y_lab <- if (nzchar(y_custom)) y_custom else y_default
 
   norm_section <- if (do_norm && has_dose) {
     paste0(
@@ -1390,13 +1407,16 @@ generate_viz_script <- function(viz_settings, col_map) {
 dose_vals <- suppressWarnings(as.numeric(d[[', deparse(col_map$dose), ']]))
 dose_vals[is.na(dose_vals) | dose_vals <= 0] <- NA
 d$.conc <- d$.conc / dose_vals
-y_label <- "Dose-normalised concentration (C/Dose)"
+y_label <- ', deparse(y_lab), '
 ')
   } else {
-    '\ny_label <- "Concentration"\n'
+    paste0('\ny_label <- ', deparse(y_lab), '\n')
   }
 
-  plot_section <- if (plot_type == "summary") {
+  labs_call <- paste0('ggplot2::labs(x = ', deparse(x_lab), ', y = y_label',
+                      if (nzchar(title_txt)) paste0(', title = ', deparse(title_txt)) else '', ')')
+
+  plot_section <- if (eff_plot == "summary") {
     grp <- if (has_treat) paste0('c(".time", ', deparse(col_map$treatment), ')') else 'c(".time")'
     stat_code <- if (summary_st == "geomean") {
 '# Geometric mean multiplied/divided by the geometric SD (positive concentrations
@@ -1426,37 +1446,69 @@ summ <- d[!is.na(d$.conc) & !d$.excl, ] |>
     .groups = "drop")
 '
     }
+    ind_pts <- if (show_pts_summ) {
+      pos_expr <- if (identical(y_scale, "log") || summary_st == "geomean") " & d$.conc > 0" else ""
+      if (has_treat) {
+        paste0('  ggplot2::geom_point(data = d[!d$.excl & !is.na(d$.conc)', pos_expr, ', ], ',
+               'ggplot2::aes(x = .time, y = .conc, colour = factor(.data[[', deparse(col_map$treatment), ']])), ',
+               'alpha = 0.18, size = 0.9, inherit.aes = FALSE) +\n')
+      } else {
+        paste0('  ggplot2::geom_point(data = d[!d$.excl & !is.na(d$.conc)', pos_expr, ', ], ',
+               'ggplot2::aes(x = .time, y = .conc), alpha = 0.18, size = 0.9, inherit.aes = FALSE) +\n')
+      }
+    } else ""
     paste0(
 'grp_cols <- ', grp, '
-', stat_code, '
-p <- ggplot2::ggplot(summ, ggplot2::aes(x = .time, y = .y',
-      if (has_treat) paste0(', colour = ', deparse(col_map$treatment),
-                            ', group = ', deparse(col_map$treatment)) else "",
+', stat_code,
+      if (identical(y_scale, "log")) 'summ$.lo[!is.na(summ$.lo) & summ$.lo <= 0] <- summ$.y[!is.na(summ$.lo) & summ$.lo <= 0]\n' else '',
+'p <- ggplot2::ggplot(summ, ggplot2::aes(x = .time, y = .y',
+      if (has_treat) paste0(', colour = factor(.data[[', deparse(col_map$treatment), ']]), ',
+                            'group = factor(.data[[', deparse(col_map$treatment), ']])') else "",
       ')) +
+', ind_pts,
+'  ggplot2::geom_errorbar(ggplot2::aes(ymin = .lo, ymax = .hi), width = 0.4) +
   ggplot2::geom_line() +
   ggplot2::geom_point() +
-  ggplot2::geom_errorbar(ggplot2::aes(ymin = .lo, ymax = .hi), width = 0) +
-  ggplot2::labs(x = "Time", y = y_label)
-', if (!is.null(partial_auc_spec(vs$shade_partial_aucs))) paste0('
+  ', labs_call,
+      if (has_treat) paste0(' +\n  ggplot2::labs(colour = "Treatment")') else '', '\n',
+      if (!is.null(partial_auc_spec(vs$shade_partial_aucs))) paste0('
 # Shaded partial AUC intervals (an end at t is drawn to the last time shown)
 iv <- partial_auc_shading(rec$visualization$shade_partial_aucs, max(summ$.time, na.rm = TRUE),
                           c(summ$.lo, summ$.hi, summ$.y), log = ', identical(y_scale, "log"), ')
 p$layers <- c(ggplot2::annotate("rect", xmin = iv$xmin, xmax = iv$xmax, ymin = iv$ymin, ymax = iv$ymax,
                                 fill = "grey50", alpha = 0.15), p$layers)
 ') else "")
+  } else if (!is.null(color_col)) {
+    paste0(
+'p <- ggplot2::ggplot(d, ggplot2::aes(x = .time, y = .conc,
+       group = profile_group(d, ds$col_map), colour = factor(.data[[', deparse(color_col), ']]))) +
+  ggplot2::geom_line(alpha = 0.7) +
+', if (show_pts_spag) '  ggplot2::geom_point(size = 1) +\n' else '',
+'  ', labs_call, ' +
+  ggplot2::labs(colour = ', deparse(color_by), ')
+')
   } else {
     paste0(
 'p <- ggplot2::ggplot(d, ggplot2::aes(x = .time, y = .conc,
-       group = profile_group(d, ds$col_map), colour = factor(', deparse(color_col), '))) +
-  ggplot2::geom_line(alpha = 0.7) +
-  ggplot2::geom_point(size = 1) +
-  ggplot2::labs(x = "Time", y = y_label, colour = ', deparse(color_by), ')
+       group = profile_group(d, ds$col_map))) +
+  ggplot2::geom_line(colour = "#2C3E50", alpha = 0.45) +
+', if (show_pts_spag) '  ggplot2::geom_point(colour = "#2C3E50", alpha = 0.7, size = 1) +\n' else '',
+'  ', labs_call, '
 ')
   }
 
-  scale_section <- if (y_scale == "log") {
-    '\np <- p + ggplot2::scale_y_log10()  # semi-log; non-positive values dropped\n'
-  } else ""
+  scale_section <- paste0(
+    if (y_scale == "log") '\np <- p + ggplot2::scale_y_log10()  # semi-log; non-positive values dropped\n' else "",
+    if (!is.na(x_tick_val) && x_tick_val > 0) paste0(
+      'max_t <- max(', if (eff_plot == "summary") 'summ$.time' else 'd$.time', ', na.rm = TRUE)\n',
+      'p <- p + ggplot2::scale_x_continuous(breaks = seq(0, ceiling(max_t / ', x_tick_val, ') * ', x_tick_val, ', by = ', x_tick_val, '))\n'
+    ) else ""
+  )
+
+  theme_fn <- switch(theme_name,
+    "classic" = "ggplot2::theme_classic",
+    "minimal" = "ggplot2::theme_minimal",
+    "ggplot2::theme_bw")
 
   paste0(
 '# ============================================================================
@@ -1512,9 +1564,9 @@ d$.excl <- profile_key(d, ds$col_map)$key %in% ds$excluded$profiles
 
 
 # --- Step 4: Build the figure -----------------------------------------------
-# Plot type: ', plot_type, ' | Y-axis: ', y_scale, '
+# Plot type: ', eff_plot, ' | Y-axis: ', y_scale, '
 ', plot_section, scale_section, '
-p <- p + ggplot2::theme_bw()
+p <- p + ', theme_fn, '(base_size = ', base_sz, ')
 
 
 # --- Step 5: Save -----------------------------------------------------------

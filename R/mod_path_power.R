@@ -680,10 +680,22 @@ path_power_server <- function(id, shared) {
       cv_wr_dec  <- if (atype %in% c("abel", "rsabe", "ntid"))
                       pct_to_dec(input$cv_wr) else cv_dec
 
-      n_range <- seq(4, 200, by = 2)
-      powers  <- sapply(n_range, function(n) {
-        compute_power(n, atype, alpha, theta0_dec, theta1, theta2,
-                      cv_dec, cv_wr_dec, design)
+      r_cur   <- calc_result()
+      n_focus <- as.integer(r_cur[["Sample size"]] %||% r_cur$n %||% input$n_subjects %||% 24L)
+      n_max   <- max(200L, 2L * as.integer(ceiling((if (is.finite(n_focus)) max(n_focus + 20L, 40L) else 200L) / 2)))
+      n_range <- if (atype %in% c("abel", "rsabe", "ntid")) {
+        step <- max(8L, 2L * as.integer(ceiling(n_max / 50)))
+        sort(unique(c(seq(6L, n_max, by = step),
+                      if (is.finite(n_focus) && n_focus >= 4L) n_focus else integer(0))))
+      } else {
+        seq(4L, n_max, by = 2L)
+      }
+      powers <- withProgress(message = "Computing power curve...", value = 0, {
+        vapply(seq_along(n_range), function(i) {
+          incProgress(1 / length(n_range))
+          compute_power(n_range[i], atype, alpha, theta0_dec, theta1, theta2,
+                        cv_dec, cv_wr_dec, design)
+        }, numeric(1))
       })
 
       df <- data.frame(N = n_range, Power = powers)

@@ -153,7 +153,7 @@ path_be_ui <- function(id) {
                           tagList("Statistical model", help_mixed_effects),
                           choices = c(
                             "Fixed effects (all terms fixed)" = "fixed",
-                            "Mixed effects (subject random; also uses subjects with one period)" = "mixed"
+                            "Mixed effects (subject random; uses single-period subjects in replicate designs)" = "mixed"
                           )),
               
               checkboxGroupInput(ns("be_params"), "Parameters to compare",
@@ -806,9 +806,10 @@ path_be_server <- function(id, shared) {
         tags$br(),
         tags$span(class = "text-muted",
                   paste0("Affected subjects: ", subj_list, ". "),
-                  "These subjects contribute to one arm only. Degrees of freedom ",
-                  "are reduced and confidence intervals may be wider than expected. ",
-                  "Verify that missing profiles are not due to a data preparation error.")
+                  "In a 2\u00D72 crossover these subjects leave both models; in a replicate design ",
+                  "the mixed model uses their remaining periods (and fixed effects retain subjects with ",
+                  "at least two observations). Degrees of freedom are reduced and confidence intervals ",
+                  "may be wider than expected. Verify that missing profiles are not due to a data preparation error.")
       )
     })
 
@@ -1523,14 +1524,14 @@ path_be_server <- function(id, shared) {
         req(be_result())
         wb <- createWorkbook()
         addWorksheet(wb, "Confidence_Intervals")
-        writeData(wb, 1, rename_be_columns(be_result()$ci_table, ci_level = run_ci_level()))
+        writeData(wb, "Confidence_Intervals", rename_be_columns(be_result()$ci_table, ci_level = run_ci_level()))
         if (!is.null(be_result()$sensitivity)) {
           addWorksheet(wb, "Without_Exclusions")
           writeData(wb, "Without_Exclusions", rename_be_columns(be_result()$sensitivity, ci_level = run_ci_level()))
         }
         if (!is.null(be_nca_result())) {
           addWorksheet(wb, "NCA_Parameters")
-          writeData(wb, 2, rename_nca_columns(add_flag_text(be_nca_result(), lz_rules(be_nca_settings())),
+          writeData(wb, "NCA_Parameters", rename_nca_columns(add_flag_text(be_nca_result(), lz_rules(be_nca_settings())),
                     units = list(dose = input$dose_unit, time = input$time_unit, conc = input$conc_unit)))
         }
         if (!is.null(be_nca_result())) {
@@ -1543,7 +1544,7 @@ path_be_server <- function(id, shared) {
           writeData(wb, "Within_Subject_Variability", be_result()$cv_table)
         }
         for (p in names(be_result()$anova)) {
-          sn <- substr(paste0("ANOVA_", friendly_name(p)), 1, 31)
+          sn <- safe_excel_sheet_name(paste0("ANOVA_", friendly_name(p)), names(wb))
           addWorksheet(wb, sn)
           df <- as.data.frame(be_result()$anova[[p]])
           df$Source <- rownames(df); writeData(wb, sn, df)

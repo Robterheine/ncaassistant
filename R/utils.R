@@ -911,3 +911,17 @@ dose_per_kg_warning <- function(data, col_map) {
 #' magnifier user, WCAG 2.2.1)
 notify_error <- function(msg, ...) showNotification(msg, type = "error", duration = NULL, ...)
 
+#' Safe, unique Excel worksheet name (<= 31 chars, forbidden characters stripped)
+safe_excel_sheet_name <- function(base, existing = character(0)) {
+  s <- gsub("[\\[\\]\\*\\?/\\\\:]", "_", as.character(base))
+  s <- trimws(gsub("^'+|'+$", "", s))
+  if (!nzchar(s)) s <- "Sheet"
+  cand <- substr(s, 1L, 31L)
+  k <- 2L
+  while (tolower(cand) %in% tolower(existing)) {
+    suf <- paste0("_", k)
+    cand <- paste0(substr(s, 1L, 31L - nchar(suf)), suf)
+    k <- k + 1L
+  }
+  cand
+}

@@ -214,14 +214,15 @@ be_scaled_explain <- function(row, name, ci_level = 90) {
   if (!"Route" %in% names(row) || !row$Bioequivalent %in% c("YES", "NO")) return(NULL)
   pe <- row$Point_Est; inside <- function(v) if (isTRUE(v)) "inside" else "outside"
   pe_ok <- pe_within_limits(pe)
+  pe_str <- sub("(\\.[0-9])0$", "\\1", sprintf("%.2f", round_half_up(pe, 2)))
   near <- is.finite(row$s_WR) && abs(row$s_WR - RSABE_SWITCH) <= 0.02
   tail <- if (near) " s_WR is close to the switch, so a small change in the data can change the route." else ""
   met <- if (row$Bioequivalent == "YES") "Bioequivalence concluded." else "Bioequivalence not concluded."
   if (row$Approach == "FDA RSABE") {
     if (row$Route == "Scaled")
-      return(sprintf("%s: s_WR %.3f at or above %.3f, scaled route; criterion bound %.4f %s 0; point estimate %.1f%% %s 80 to 125%%. %s%s",
+      return(sprintf("%s: s_WR %.3f at or above %.3f, scaled route; criterion bound %.4f %s 0; point estimate %s%% %s 80 to 125%%. %s%s",
                      name, row$s_WR, RSABE_SWITCH, row$Crit_Bound, if (row$Crit_Bound <= 0) "at or below" else "above",
-                     pe, inside(pe_ok), met, tail))
+                     pe_str, inside(pe_ok), met, tail))
     return(sprintf("%s: s_WR %.3f below %.3f, so no scaling: the standard test against 80 to 125%% with the model chosen under Statistical model, not the FDA replicate model (%s%% CI %.2f to %.2f%%). %s%s",
                    name, row$s_WR, RSABE_SWITCH, ci_level, row$CI_Lower, row$CI_Upper, met, tail))
   }
@@ -229,9 +230,9 @@ be_scaled_explain <- function(row, name, ci_level = 90) {
     return(sprintf("%s: standard limits, 80 to 125%% (the EMA widens Cmax only). %s", name, met))
   cv <- 100 * sqrt(exp(row$s_WR^2) - 1)
   if (row$Route == "Scaled")
-    return(sprintf("%s: CVwR %.1f%%, above 30%%; limits %.2f to %.2f%%; %s%% CI %.2f to %.2f%% %s the limits; point estimate %.1f%% %s 80 to 125%%. %s%s",
+    return(sprintf("%s: CVwR %.1f%%, above 30%%; limits %.2f to %.2f%%; %s%% CI %.2f to %.2f%% %s the limits; point estimate %s%% %s 80 to 125%%. %s%s",
                    name, cv, row$Scaled_Lower, row$Scaled_Upper, ci_level, row$CI_Lower, row$CI_Upper,
-                   inside(row$CI_Lower >= row$Scaled_Lower && row$CI_Upper <= row$Scaled_Upper), pe, inside(pe_ok), met, tail))
+                   inside(row$CI_Lower >= row$Scaled_Lower && row$CI_Upper <= row$Scaled_Upper), pe_str, inside(pe_ok), met, tail))
   sprintf("%s: CVwR %.1f%%, at or below 30%%, so the standard limits of 80 to 125%% apply. %s%s", name, cv, met, tail)
 }
 

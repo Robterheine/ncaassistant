@@ -1,6 +1,6 @@
 # NCA Assistant — Validation Package
 
-This folder contains the validation package for NCA Assistant v1.9.0. It follows a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles for custom software used in a regulated pharmaceutical environment.
+This folder contains the validation package for NCA Assistant v1.9.1. It follows a risk-based approach consistent with ICH Q9 and GAMP 5 Category 5 principles for custom software used in a regulated pharmaceutical environment.
 
 ---
 
@@ -72,7 +72,7 @@ On completion the script prints a results summary to the console and writes `val
 
 ## What the Script Tests
 
-The script runs **629 automated tests** in thirty-three sections, each mapped to a URS requirement:
+The script runs **646 automated tests** in thirty-four sections, each mapped to a URS requirement:
 
 | Section | Code | Tests | Tests cover |
 |---------|------|------:|-------------|
@@ -107,7 +107,8 @@ The script runs **629 automated tests** in thirty-three sections, each mapped to
 | Covariate adjustment | COV | 16 | The parallel-group model with baseline covariates against Python statsmodels and matrix algebra, invariance to centering, rescaling, row order and level order, no change without covariates, every stop rule, the coefficient table, a seeded type I error and precision simulation, the group balance, the record, the audit event and the planner offer |
 | FDA reference-scaled bioequivalence | RSA | 16 | Appendix G of the FDA guidance against two independent implementations (Python and R) on 13 replicateBE data sets, consistency with `PowerTOST::power.RSABE`, the switch at 0.294 and the point-estimate limits, complete cases, refused input, the assessment wrapper, the explanation lines, notes, record and audit, module wiring, the fixes of the code review and the interface audit, the point estimate rounded to two decimals at both edges, and the note on the model below the switch |
 | EMA expanding limits | ABL | 4 | ABEL verdict, limits and sWR against `replicateBE::method.A` on its 30 reference data sets, widening for Cmax only with the cap at CVwR 50%, design rules and the point-estimate condition, exclusions |
-| BE run and record | GLD | 33 | The nine bioequivalence runs of v1.8.0 against their stored results, which must be identical; a real Analysis Record for each of them, reproduced in a separate R process (MATCH); a changed reference value, setting, Reference treatment or code file (DIFFERENT); a change below the table's rounding (CLOSE); the comparison rules and the settings read back from the record; and the refusal of a design that does not fit the data, with a survey of every bundled dataset |
+| BE run and record | GLD | 33 | The nine bioequivalence runs of v1.8.0 against their stored results; a real Analysis Record for each of them, reproduced in a separate R process (MATCH); a changed reference value, setting, Reference treatment or code file (DIFFERENT); a change below the table's rounding (CLOSE); the comparison rules and the settings read back from the record; and the refusal of a design that does not fit the data, with a survey of every bundled dataset |
+| Statistical, code and stability audit v1.9.1 | AUD | 17 | One regression test per finding (F-01 to F-17): single-subject dose auto-fill and BLQ override reproduction, BE Excel sheet targets, parallel Welch sensitivity notes, Figure Record aesthetics and settings, controlled-mode fail-closed login and cross-session signature lockout, incomplete-subject counting and wording, exclusion modal defaults, excluded profiles in plots, replicate CV table with excluded zeros, pre-exclusion M13A checks, Figure Record summary preview, worksheet sanitization and zip error propagation, boundary PE text and round-half-up CIs, bundle cleanup and half-hour work hours, zero-area MRT guard and adaptive power curve grid, and Data Guide exclusion guidance |
 | Text matches the code | DOC | 7 | The scope statement in every copy, the constants, limits and references on the Statistical Methods page, no em dashes, help and Data Guide against the approach selector, the requirement IDs of the URS document against the list behind the coverage line, the BLQ rule texts and the zero segment against the pipeline, and the counts in the READMEs, the version history, the protocol, the URS and the manual against this run |
 
 In addition, **82 manual tests** are defined in the script (Section MAN). These require a running app instance and cover interactive features such as file upload (flat and CDISC ADNCA), column mapping, interlock messages, the half-life review and minimum-R² note, choosing the Reference treatment, the replicate variability table, planning with both CVs, CDISC parameter codes, partial AUC intervals in the batch and bioequivalence paths (including an invalid interval, a suppressed metric and the shaded figure), the Complete Analysis Record download and its reproduction check, the Visualize Figure Record, loading and downloading an example, exclusions in the app (including download and loading back), the half-life rules dialog and a Dose column per kg. They are included in the script for traceability but are marked SKIP in automated runs. The 13 MAN-GXP tests cover controlled mode: nothing runs before sign-in, the first sign-in, the header, the inactivity warning, the password change, sign-out, open mode unchanged, every path's audit entries, fail-closed behaviour, the Records page and signing dialog, the inspector account, the Audit trail page and restoring an archive on a clean machine. They need a test server set up as described in the user manual's appendix on controlled installations, not a laptop.
@@ -134,8 +135,8 @@ Visualisation tests (URS-VIZ) are classified SUPPORTIVE because graphical output
 A passing run produces:
 
 ```
-Total: 711 (auto: 629, manual: 82)
-  PASS: 629 | FAIL: 0 | ERROR: 0 | SKIP: 82
+Total: 728 (auto: 646, manual: 82)
+  PASS: 646 | FAIL: 0 | ERROR: 0 | SKIP: 82
 
 ALL CRITICAL TESTS PASSED
 
@@ -144,7 +145,7 @@ URS: 96/96 covered (93 by automated tests; manual tests only: URS-BE-06, URS-BE-
 Results: validation/validation_results.csv
 ```
 
-Of the 629 automated tests, 457 are CRITICAL and 172 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
+Of the 646 automated tests, 467 are CRITICAL and 179 SUPPORTIVE. The coverage line separates requirements covered by automated tests from those covered by manual tests only; the latter are met only once the manual tests have been carried out and recorded.
 
 IQ-REL-01 and IQ-REL-02 pass only on an unchanged release: after any edit to a file listed in the manifest, IQ-REL-01 fails until `make_release_files.R` is run again for a new release. When IQ-REL-02 fails, its Detail column names each package whose version differs from `renv.lock`.
 

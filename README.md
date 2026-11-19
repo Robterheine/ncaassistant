@@ -1,6 +1,6 @@
 # NCA Assistant
 
-**Version 1.9.0** | Designed by Rob ter Heine
+**Version 1.9.1** | Designed by Rob ter Heine
 
 A free, open-source Shiny application for non-compartmental pharmacokinetic analysis (NCA), bioequivalence testing, study planning and figures. It is written for people who run such an analysis now and then rather than daily: parameters carry plain-language names, the app says what it did and what it refused to do, and any analysis can be exported as a package that re-runs itself. Built by the [Radboud Applied Pharmacometrics](https://www.radboudumc.nl/en/research/research-groups/radboud-applied-pharmacometrics) research group at Radboudumc, Nijmegen, The Netherlands.
 
@@ -147,7 +147,7 @@ The validation package in [`validation/`](validation/) follows a risk-based appr
 Rscript validation/validation.R
 ```
 
-This executes 629 automated tests (plus 82 manual tests defined for a running app) and writes a results CSV with per-section results and URS traceability, and an environment file with the R and package versions and the SHA-256 of every tested file. Each release also ships a manifest of file hashes and a package lockfile (`validation/release_manifest.csv`, `validation/renv.lock`), which the installation checks compare against.
+This executes 646 automated tests (plus 82 manual tests defined for a running app) and writes a results CSV with per-section results and URS traceability, and an environment file with the R and package versions and the SHA-256 of every tested file. Each release also ships a manifest of file hashes and a package lockfile (`validation/release_manifest.csv`, `validation/renv.lock`), which the installation checks compare against.
 
 **Validation deliverables:**
 
@@ -161,6 +161,16 @@ See [`validation/README.md`](validation/README.md) for detailed instructions on 
 
 ---
 
+## Version History
+
+- **v1.9.1** (November 2026): Fixes from a statistical, code and stability audit. Single-subject NCA fills in per-profile doses on initial load and dataset replacement, and keeps BLQ-imputed zeros out of manual half-life fits and their Analysis Records. Bioequivalence Excel exports with exclusions preserve the `Without_Exclusions` sheet, parallel-group Welch sensitivity notes apply exclusions, widened limits, point-estimate rules and SAS-style rounding, pre-exclusion ICH M13A checks run on unexcluded rows only, and fixed-effects replicate tables count subjects with at least two observations per treatment. Figure Records reproduce custom plot settings and non-syntactic column names, excluded profiles are left out of batch and summary plots, and controlled mode fails closed on database errors, counts failed review signatures towards the five-failure lockout across sessions, previews Figure Record summaries and honours half-hour work windows. Validation grows from 629 to 646 automated tests (with 82 manual tests).
+- **v1.9.0** (October 2026): Bioequivalence Analysis Records recompute the confidence intervals and the verdict from the shipped bioequivalence code, and bioequivalence runs stop with a plain-language message when the selected design does not fit the data.
+- **v1.8.0** (October 2026): Optional controlled mode for GxP server installations (sign-in, hash-chained SQLite audit trail, stored records and review signatures), exclusions with a reason, half-life quality flags, baseline covariate adjustment and supplementary Welch intervals for parallel-group studies, and EMA ABEL and FDA RSABE for replicate designs.
+
+Earlier releases back to v0.1, together with notes on where results can differ between versions, are listed under **About -> Version History** inside the app ([`app.R`](app.R)).
+
+---
+
 ## Citation
 
 If NCA Assistant helped with your work, please cite the article that describes it:
@@ -169,7 +179,7 @@ If NCA Assistant helped with your work, please cite the article that describes i
 
 To cite the software itself, for example the exact version you ran, use:
 
-> ter Heine R. NCA Assistant (v1.9.0). Radboud Applied Pharmacometrics, Radboudumc, Nijmegen, The Netherlands. https://github.com/Robterheine/NCAassistant
+> ter Heine R. NCA Assistant (v1.9.1). Radboud Applied Pharmacometrics, Radboudumc, Nijmegen, The Netherlands. https://github.com/Robterheine/NCAassistant
 
 > Kim H, Han S, Cho YS, Yoon SK, Bae KS. Development of R packages: 'NonCompart' and 'ncar' for noncompartmental analysis (NCA). *Transl Clin Pharmacol*. 2018;26(1):10-15.
 

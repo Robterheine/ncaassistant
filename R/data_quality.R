@@ -511,7 +511,7 @@ run_data_quality_check <- function(data, col_map, lloq = 0, dec = ".") {
             paste(length(incomplete), "subjects missing data for one or more treatments"),
             paste0("Subjects: ", paste(head(incomplete, 5), collapse = ", "),
                    if (length(incomplete) > 5) paste0(" (+ ", length(incomplete)-5, " more)")),
-            "Dropouts or incomplete crossover. With fixed effects these subjects do not contribute to the treatment comparison; the mixed model uses their data.")
+            "Dropouts or incomplete crossover. In a 2\u00D72 crossover these subjects leave both models; in a replicate design the mixed model uses their remaining periods (and fixed effects retain subjects with at least two observations).")
       } else {
         add("OK", "Design",
             "All subjects have data for all treatments (complete crossover)")

@@ -274,7 +274,8 @@ gxp_sign_server <- function(input, output, session) {
     d <- tempfile("rec_")
     html <- tryCatch({
       utils::unzip(f, exdir = d)
-      s <- list.files(d, pattern = "summary\\.html$", recursive = TRUE, full.names = TRUE)[1]
+      s <- list.files(d, pattern = "(summary|figure_provenance)\\.html$", recursive = TRUE, full.names = TRUE)[1]
+      if (is.na(s)) stop("no summary html")
       paste(readLines(s, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
     }, error = function(e) "<p>The summary cannot be read from this record.</p>")
     unlink(d, recursive = TRUE)
@@ -285,7 +286,11 @@ gxp_sign_server <- function(input, output, session) {
   })
 
   output$gxp_rec_download <- downloadHandler(
-    filename = function() { r <- rec_now(); if (r$status %in% c("Approved", "Rejected")) sub("\\.zip$", "_signed.zip", r$name) else r$name },
+    filename = function() {
+      r <- rec_now()
+      if (is.null(r)) return("record.zip")
+      if (r$status %in% c("Approved", "Rejected")) sub("\\.zip$", "_signed.zip", r$name) else r$name
+    },
     content = function(file) {
       r <- rec_now(); req(r, can_see_all() || r$author == me)
       src <- file.path(gxp_config()$records, paste0(r$sha, ".zip"))
@@ -294,12 +299,17 @@ gxp_sign_server <- function(input, output, session) {
         stop("The download was stopped because it could not be recorded in the audit trail.", call. = FALSE)
       if (!signed) { file.copy(src, file); return(invisible()) }
       d <- tempfile("bundle_"); dir.create(d)
+      on.exit(unlink(d, recursive = TRUE), add = TRUE)
       file.copy(src, file.path(d, r$name))
       writeLines(gxp_signature_sheet(r, audit_read()), file.path(d, paste0("signatures_", substr(r$sha, 1, 8), ".html")))
       zip_record_dir(d, file)
     })
   output$gxp_rec_sheet <- downloadHandler(
-    filename = function() paste0("signatures_", substr(rec()$sha, 1, 8), ".html"),
+    filename = function() {
+      r <- rec()
+      if (is.null(r)) return("signatures.html")
+      paste0("signatures_", substr(r$sha, 1, 8), ".html")
+    },
     content = function(file) {
       r <- rec_now(); req(r, can_see_all() || r$author == me)
       if (!gxp_guard("record_downloaded", object = paste0("signatures_", substr(r$sha, 1, 8), ".html"), sha256 = r$sha,
@@ -355,15 +365,18 @@ gxp_sign_server <- function(input, output, session) {
     if (meaning == "review_rejected" && !nzchar(reason)) return(msg("Give the reason for the rejection."))
     if (!identical(r$sha, session$userData$gxp_sign_sha))
       return(msg("The selected record is not the one in this dialog. Close it and open the record again."))
+    st <- tryCatch(gxp_store_read(), error = function(e) NULL)
+    if (is.null(st) || gxp_is_locked(me, st)) return(msg("Your account is locked. Please contact the system owner."))
     fail <- function(why) {
       gxp_guard("signature_failed", object = r$name, sha256 = r$sha,
                 details = list(attempt = .or(session$userData$gxp_failures, 0L) + 1L, why = why))
+      tr_now <- tryCatch(audit_read(), error = function(e) NULL)
+      if (!is.null(tr_now) && gxp_failed_since(me, tr_now) == GXP_PWD_FAILURE_LIMIT)
+        gxp_alert("account_locked", me, sprintf("after %d failed password attempts", GXP_PWD_FAILURE_LIMIT), session = session)
       left <- gxp_count_failure(session, "signature_failures")
       msg(sprintf("User ID or password is incorrect. %d %s left before you are signed out.", left, if (left == 1) "attempt" else "attempts"))
     }
     if (!identical(input$gxp_sign_user, me)) return(fail("user ID"))
-    st <- tryCatch(gxp_store_read(), error = function(e) NULL)
-    if (is.null(st) || gxp_is_locked(me, st)) return(msg("Your account is locked. Please contact the system owner."))
     if (gxp_must_change(me, st)) return(msg("Change your password before you sign."))
     if (!gxp_has_role_now(me, "reviewer", st)) return(msg("Only a reviewer can sign; your reviewer role has been removed."))
     cfg <- gxp_config()
@@ -501,19 +514,22 @@ gxp_sign_server <- function(input, output, session) {
       return()
     }
     msg <- function(t) output$gxp_rev_msg <- renderUI(tags$div(class = "alert alert-danger py-2 small", t))
-    fail <- function() {
+    st <- tryCatch(gxp_store_read(), error = function(e) NULL)
+    if (is.null(st) || gxp_is_locked(me, st)) return(msg("Your account is locked. Please contact the system owner."))
+    fail <- function(why) {
       gxp_guard("signature_failed", object = "audit trail review",
-                details = list(attempt = .or(session$userData$gxp_failures, 0L) + 1L))
+                details = list(attempt = .or(session$userData$gxp_failures, 0L) + 1L, why = why))
+      tr_now <- tryCatch(audit_read(), error = function(e) NULL)
+      if (!is.null(tr_now) && gxp_failed_since(me, tr_now) == GXP_PWD_FAILURE_LIMIT)
+        gxp_alert("account_locked", me, sprintf("after %d failed password attempts", GXP_PWD_FAILURE_LIMIT), session = session)
       left <- gxp_count_failure(session, "signature_failures")
       msg(sprintf("User ID or password is incorrect. %d %s left before you are signed out.", left, if (left == 1) "attempt" else "attempts"))
     }
-    if (!identical(input$gxp_rev_user, me)) return(fail())
-    st <- tryCatch(gxp_store_read(), error = function(e) NULL)
-    if (is.null(st) || gxp_is_locked(me, st)) return(msg("Your account is locked. Please contact the system owner."))
+    if (!identical(input$gxp_rev_user, me)) return(fail("user ID"))
     if (gxp_must_change(me, st)) return(msg("Change your password before you sign."))
     if (!gxp_has_role_now(me, "reviewer", st)) return(msg("Only a reviewer can sign; your reviewer role has been removed."))
     cfg <- gxp_config()
-    if (!isTRUE(shinymanager::check_credentials(cfg$users, passphrase = cfg$key)(me, input$gxp_rev_pwd)$result)) return(fail())
+    if (!isTRUE(shinymanager::check_credentials(cfg$users, passphrase = cfg$key)(me, input$gxp_rev_pwd)$result)) return(fail("password"))
     p <- session$userData$gxp_review_period; h <- audit_head()
     if (!gxp_guard("trail_reviewed", details = list(from = p[["from"]], to = p[["to"]], head_seq = h$seq, head_hash = h$hash,
                                                    printed_name = gxp_user(session)$name))) return()
@@ -587,10 +603,18 @@ gxp_exceptions <- function(tr, recs = gxp_records(tr)) {
     if (!identical(strip(tr$details[starts[k - 1]]), strip(tr$details[starts[k]]))) pick(tr[starts[k], ])
   }))
   clock <- which(c(FALSE, tr$time_utc[-1] < tr$time_utc[-nrow(tr)]))
-  wh <- as.integer(strsplit(gsub(":\\d\\d", "", .or(gxp_config()$work_hours, "07:00-19:00")), "-")[[1]])
-  local_hour <- as.integer(format(as.POSIXct(tr$time_utc, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC"), "%H", tz = ""))
+  parse_hm <- function(s, def) {
+    m <- regmatches(s, regexec("^\\s*(\\d{1,2})(?::(\\d{2}))?\\s*$", s))[[1]]
+    if (length(m) == 0) return(def)
+    60L * as.integer(m[2]) + (if (nzchar(m[3])) as.integer(m[3]) else 0L)
+  }
+  wh_parts <- strsplit(.or(gxp_config()$work_hours, "07:00-19:00"), "-", fixed = TRUE)[[1]]
+  wh_start <- if (length(wh_parts) >= 1) parse_hm(wh_parts[1], 420L) else 420L
+  wh_end   <- if (length(wh_parts) >= 2) parse_hm(wh_parts[2], 1140L) else 1140L
+  ts_loc   <- as.POSIXct(tr$time_utc, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")
+  local_min <- 60L * as.integer(format(ts_loc, "%H", tz = "")) + as.integer(format(ts_loc, "%M", tz = ""))
   human <- !tr$role %in% c("system")
-  outside <- which(human & !is.na(local_hour) & (local_hour < wh[1] | local_hour >= wh[2]))
+  outside <- which(human & !is.na(local_min) & (local_min < wh_start | local_min >= wh_end))
   ses <- tr[!is.na(tr$session) & !tr$role %in% "system", ]
   span <- if (nrow(ses)) stats::aggregate(time_utc ~ user + session, ses, function(x) paste(min(x), max(x), sep = "|")) else NULL
   overlap <- if (!is.null(span) && nrow(span) > 1) do.call(rbind, lapply(split(span, span$user), function(s) {

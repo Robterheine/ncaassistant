@@ -1,5 +1,5 @@
 # ============================================================================
-# Non-Compartmental Analysis Assistant v1.9.0
+# Non-Compartmental Analysis Assistant v1.9.1
 # ============================================================================
 # Radboud Applied Pharmacometrics — Radboudumc, Nijmegen
 # Designed by Rob ter Heine
@@ -21,7 +21,7 @@
 #   6. Bioequivalence Testing
 # ============================================================================
 
-APP_VERSION <- "1.9.0"
+APP_VERSION <- "1.9.1"
 APP_NAME    <- "Non-Compartmental Analysis Assistant"
 
 # Mirror APP_VERSION into the global environment. When RStudio runs a single-file
@@ -928,8 +928,23 @@ server <- function(input, output, session) {
           
           tags$div(
             class = "border-start border-3 border-primary ps-3 mb-3",
-            tags$h6(class = "fw-bold mb-1", "v1.9.0",
+            tags$h6(class = "fw-bold mb-1", "v1.9.1",
                     tags$span(class = "badge bg-primary ms-2", "current")),
+            tags$p(class = "text-muted mb-1", "November 2026"),
+            tags$p(class = "mb-1", tags$strong("Results can differ from v1.9.0"),
+                   " when a single-subject run uses a Dose column whose first profile is not 100 or a manual half-life fit over points that include a BLQ-imputed zero, for N_Ref and N_Test in the fixed-effects replicate table when a subject has only one observation on a treatment, for the supplementary Welch or unadjusted confidence limits when a boundary lies exactly halfway at the third decimal, and when a degenerate log-down profile has zero area (MRT is now NA instead of NaN). Standard batch and bioequivalence runs on valid data are unchanged, and the nine stored v1.8.0 runs still match."),
+            tags$ul(class = "mb-0",
+              tags$li(tags$strong("Correctness fix: "), "in Analyze One Subject at a Time, the dose is filled in from the data as soon as the first profile loads or a new dataset replaces the previous one, and manual half-life fits leave out BLQ-imputed zeros in both the app and its Analysis Record"),
+              tags$li(tags$strong("Correctness fix: "), "in Bioequivalence Testing, the Excel download with exclusions keeps its Without_Exclusions sheet instead of overwriting it, the parallel-group Welch note applies exclusions, widened limits, point-estimate rules and SAS-style rounding, pre-exclusion ICH M13A checks run on unexcluded rows only, and fixed-effects replicate tables count subjects with at least two observations per treatment"),
+              tags$li(tags$strong("Changed: "), "the Figure Record script reproduces custom labels, tick steps, themes, point visibility, export choice and columns whose names contain spaces or symbols; excluded profiles are left out of batch mean and box plots and of Visualize Data summary curves and sample counts; the Upload exclusion dialog opens with sample-level categories; the RSABE and ABEL power curve uses a smaller simulation grid with a progress indicator; Data Preparation Guide item 11 points to built-in Exclusions"),
+              tags$li(tags$strong("Controlled mode: "), "sign-in fails closed if the user database or audit trail cannot be read or written, failed review signatures count towards the five-failure lockout across sessions, Figure Record HTML summaries open on the Records page, signed-bundle temporary folders are cleaned up, and work-hours checks honour minutes such as 08:30-17:30"),
+              tags$li("Validation: 646 automated and 82 manual tests (was 629 and 82), with a new section of 17 regression tests (AUD-01 to AUD-17) from a statistical, code and stability audit")
+            )
+          ),
+
+          tags$div(
+            class = "border-start border-3 border-secondary ps-3 mb-3",
+            tags$h6(class = "fw-bold mb-1", "v1.9.0"),
             tags$p(class = "text-muted mb-1", "October 2026"),
             tags$p(class = "mb-1", tags$strong("Results of runs that proceed are unchanged from v1.8.0,"),
                    " and tests prove it. One thing changes: a bioequivalence run now stops when the selected design does not fit the data. Version 1.8.0 showed a warning and analysed anyway."),

@@ -409,20 +409,25 @@ gxp_store_update <- function(fun, path = gxp_config()$users, key = gxp_config()$
 # its lock. shinymanager is never asked to count failures or force a password
 # change: it would rewrite the user store without that lock.
 
-#' Failed sign-ins since the user's last good sign-in, password change, reset or creation
+#' Failed sign-ins or signatures since the user's last good sign-in, signature, password change, reset or creation
 gxp_failed_since <- function(user, tr) {
-  mine <- tr$event[tr$object %in% user & tr$event %in%
-                     c("login_ok", "login_failed", "password_changed", "password_reset", "user_added")]
-  last_good <- max(c(0L, which(mine != "login_failed")))
-  sum(mine[seq_along(mine) > last_good] == "login_failed")
+  is_auth <- tr$object %in% user & tr$event %in%
+    c("login_ok", "login_failed", "password_changed", "password_reset", "user_added")
+  is_sig <- tr$user %in% user & tr$event %in%
+    c("signature_failed", "record_signed", "trail_reviewed")
+  mine <- tr$event[is_auth | is_sig]
+  bad <- mine %in% c("login_failed", "signature_failed")
+  last_good <- max(c(0L, which(!bad)))
+  sum(bad[seq_along(mine) > last_good])
 }
 
-#' Is the account locked (failed sign-ins at or above the limit)?
+#' Is the account locked (failed sign-ins or signatures at or above the limit, or unreadable state)?
 gxp_is_locked <- function(user, store = gxp_store_read(), tr = tryCatch(audit_read(), error = function(e) NULL)) {
+  if (is.null(store) || is.null(tr)) return(TRUE)
   pm <- store$pwd_mngt
   n <- suppressWarnings(as.numeric(pm$n_wrong_pwd[pm$user == user]))
   (length(n) == 1 && !is.na(n) && n >= GXP_PWD_FAILURE_LIMIT) ||
-    (!is.null(tr) && gxp_failed_since(user, tr) >= GXP_PWD_FAILURE_LIMIT)
+    gxp_failed_since(user, tr) >= GXP_PWD_FAILURE_LIMIT
 }
 
 #' Must the user change the password before anything else: a new account, a

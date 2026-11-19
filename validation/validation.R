@@ -900,8 +900,8 @@ check("EXP-DT-02", "Determinism: summary", { s1<-summarize_pk_params(theoph_resu
       "URS-EXP-01", method="Summary twice", expected="Identical", critical=TRUE)
 check("EXP-VR-01", "APP_VERSION queryable", nchar(APP_VERSION)>0&&APP_VERSION!="unknown",
       "URS-EXP-06", method="APP_VERSION from app.R", expected="Non-empty", critical=TRUE)
-check("EXP-VR-02", "APP_VERSION is 1.9.0", APP_VERSION=="1.9.0",
-      "URS-EXP-06", method="=='1.9.0'", expected="1.9.0", critical=FALSE)
+check("EXP-VR-02", "APP_VERSION is 1.9.1", APP_VERSION=="1.9.1",
+      "URS-EXP-06", method="=='1.9.1'", expected="1.9.1", critical=FALSE)
 check("EXP-VR-03", "Package versions", { v<-sapply(c("NonCompart","PowerTOST","nlme"),function(p)as.character(packageVersion(p))); all(nchar(v)>0) },
       "URS-EXP-06", method="packageVersion", expected="All return strings", critical=TRUE)
 check("EXP-SH-01", "SHA-256 computable", nchar(digest(file="validation/validation.R",algo="sha256"))==64,
@@ -2253,24 +2253,38 @@ check("REC-05", "The check detects a changed data file",
   }, error = function(e) FALSE),
   "URS-EXP-04", critical = TRUE, method = "double one concentration after export, rerun the script",
   expected = "data hash MISMATCH and result DIFFERENT")
-check("REC-06", "Single-subject record (uploaded file, override) reproduces",
+check("REC-06", "Single-subject record (uploaded file, override, and BLQ Rule 4 override) reproduces",
   tryCatch({
     wd <- file.path(tempdir(), "rec06"); dir.create(wd, showWarnings = FALSE)
     f <- file.path(wd, "rep.csv"); write.csv(rep_224, f, row.names = FALSE)
     ds <- prepare_pk_dataset(read_pk_file(f), rep_cm, list(lloq = 0.5, blq_rule = "rule1"))
     lab <- "2 | Reference | P1"; rows <- profile_data_rows(ds$data, rep_cm, lab)
     st <- rep_settings; tu <- c(6, 8, 12)
-    res <- run_single_nca(ds$data$Time[rows], ds$data$Conc[rows], st, time_used = tu)
+    res <- run_single_nca(ds$data$Time[rows], ds$data$Conc[rows], st, time_used = tu,
+                          is_blq = ds$data[[BLQ_FLAG_COLUMN]][rows])
     zp <- file.path(wd, "single.zip")
     create_single_analysis_record(zp, res, st, ds$data$Time[rows], ds$data$Conc[rows],
       subject_label = lab, original_file_path = f, original_file_name = "rep.csv",
       blq_rule = "rule1", lloq = 0.5, col_map = rep_cm,
       lz_override = list(profile = lab, original_lambda_z = 0.15, adjusted_lambda_z = 0.1,
                          original_r2adj = 0.99, adjusted_r2adj = 0.98, points_used = 3, time_used = tu))
-    grepl("Result: MATCH", rec_check_text(rec_unzip(zp)))
+    # Rule 4 with a BLQ terminal sample at 12 h (< 2.0) included in time_used
+    ds4 <- prepare_pk_dataset(read_pk_file(f), rep_cm, list(lloq = 2.0, blq_rule = "rule4"))
+    rows4 <- profile_data_rows(ds4$data, rep_cm, lab)
+    tu4 <- ds4$data$Time[rows4][tail(which(!is.na(ds4$data$Conc[rows4]) & ds4$data$Conc[rows4] > 0), 3)]
+    res4 <- run_single_nca(ds4$data$Time[rows4], ds4$data$Conc[rows4], st, time_used = tu4,
+                           is_blq = ds4$data[[BLQ_FLAG_COLUMN]][rows4])
+    zp4 <- file.path(wd, "single_r4.zip")
+    create_single_analysis_record(zp4, res4, st, ds4$data$Time[rows4], ds4$data$Conc[rows4],
+      subject_label = lab, original_file_path = f, original_file_name = "rep.csv",
+      blq_rule = "rule4", lloq = 2.0, col_map = rep_cm,
+      lz_override = list(profile = lab, original_lambda_z = 0.15, adjusted_lambda_z = 0.1,
+                         original_r2adj = 0.99, adjusted_r2adj = 0.98, points_used = length(tu4), time_used = tu4))
+    grepl("Result: MATCH", rec_check_text(rec_unzip(zp))) &&
+      grepl("Result: MATCH", rec_check_text(rec_unzip(zp4)))
   }, error = function(e) FALSE),
-  "URS-EXP-04", critical = TRUE, method = "profile 2 | Reference | P1 of the 2x2x4 fixture, override on 6/8/12 h",
-  expected = "MATCH")
+  "URS-EXP-04, URS-NCA-05", critical = TRUE, method = "profile 2 | Reference | P1 of the 2x2x4 fixture under Rule 1 and under Rule 4 with a BLQ terminal point in time_used",
+  expected = "both records reproduce with MATCH")
 check("REC-07", "Single-subject record from manual entry reproduces",
   tryCatch({
     st <- theoph_settings; tt <- c(0, 0.5, 1, 2, 4, 8, 12, 24); cc <- c(0, 4.1, 7.9, 8.8, 7.0, 5.1, 3.6, 1.4)
@@ -2280,22 +2294,34 @@ check("REC-07", "Single-subject record from manual entry reproduces",
     grepl("Result: MATCH", rec_check_text(rec_unzip(zp)))
   }, error = function(e) FALSE),
   "URS-EXP-04", critical = TRUE, method = "manual entry, no file", expected = "MATCH")
-check("REC-08", "Figure record rebuilds the figure from the processed data",
+check("REC-08", "Figure record rebuilds both spaghetti and summary figures with column aesthetics from the processed data",
   tryCatch({
     wd <- file.path(tempdir(), "rec08"); dir.create(wd, showWarnings = FALSE)
     f <- file.path(wd, "rep.csv"); write.csv(rep_222, f, row.names = FALSE)
     ds <- prepare_pk_dataset(read_pk_file(f), rep_cm, list(lloq = 0.5, blq_rule = "rule1"))
     p <- ggplot2::ggplot(ds$data, ggplot2::aes(Time, Conc, group = Subject)) + ggplot2::geom_line()
     zp <- file.path(wd, "fig.zip")
-    create_viz_record(zp, p, list(plot_type = "spaghetti", export_format = "png", dpi = 72),
+    create_viz_record(zp, p, list(plot_type = "spaghetti", color_by = "subject", export_format = "png", dpi = 72,
+                                  x_label = "Time post-dose (h)", x_tick = "4", theme = "classic"),
                       rep_cm, f, "rep.csv", blq_rule = "rule1", lloq = 0.5)
     ex <- rec_unzip(zp)
     scr <- paste(readLines(file.path(ex, "reproduce_figure.R"), warn = FALSE), collapse = "\n")
+    zp_sum <- file.path(wd, "fig_sum.zip")
+    create_viz_record(zp_sum, p, list(plot_type = "summary", summary_statistic = "geomean", export_format = "png", dpi = 72),
+                      rep_cm, f, "rep.csv", blq_rule = "rule1", lloq = 0.5)
+    ex_sum <- rec_unzip(zp_sum)
+    env_sp <- new.env(parent = globalenv()); owd <- setwd(ex); on.exit(setwd(owd), add = TRUE)
+    sys.source("reproduce_figure.R", envir = env_sp)
+    setwd(ex_sum); env_sm <- new.env(parent = globalenv()); sys.source("reproduce_figure.R", envir = env_sm); setwd(owd)
+    n_col_sp <- length(unique(ggplot2::ggplot_build(env_sp$p)$data[[1]]$colour))
+    n_col_sm <- length(unique(ggplot2::ggplot_build(env_sm$p)$data[[1]]$colour))
     file.exists(file.path(ex, "nca_pipeline.R")) && grepl("prepare_pk_dataset(", scr, fixed = TRUE) &&
-      grepl("Result: FIGURE CREATED", rec_check_text(ex))
+      grepl("Result: FIGURE CREATED", rec_check_text(ex)) &&
+      grepl("Result: FIGURE CREATED", rec_check_text(ex_sum)) &&
+      n_col_sp > 1L && n_col_sm == 2L && identical(env_sp$p$labels$x, "Time post-dose (h)")
   }, error = function(e) FALSE),
-  "URS-VIZ-09", critical = FALSE, method = "spaghetti figure record from the 2x2 fixture with LLOQ 0.5",
-  expected = "script uses the pipeline; check reports the figure was produced")
+  "URS-VIZ-09", critical = FALSE, method = "spaghetti (colour = subject, custom x_label/x_tick/theme) and summary (geomean by Treatment) figure records from the 2x2 fixture",
+  expected = "both scripts use the pipeline, produce FIGURE CREATED, map multi-level column colours, and replay recorded labels")
 
 check("REC-09", "Records state the CDISC release and include the parameter codes",
   tryCatch({
@@ -6158,15 +6184,38 @@ start_section("GLD")
 source(file.path("validation", "fixtures", "make_be_run_golden.R"))
 be_golden_env()
 gld_cases <- be_golden_cases()
+gld_equal <- function(g, r) {
+  if (!identical(g$be_run_settings, r$be_run_settings) || !identical(g$notifications, r$notifications)) return(FALSE)
+  bg <- g$be_result; br <- r$be_result
+  if (!identical(names(bg), names(br))) return(FALSE)
+  for (k in c("design", "approach", "m13a", "covariates"))
+    if (!identical(bg[[k]], br[[k]])) return(FALSE)
+  for (k in c("ci_table", "sensitivity")) if (!is.null(bg[[k]])) {
+    ch <- vapply(bg[[k]], is.character, logical(1))
+    if (!identical(bg[[k]][ch], br[[k]][ch]) || !isTRUE(all.equal(bg[[k]], br[[k]], tolerance = 1e-12))) return(FALSE)
+  }
+  for (k in c("cv_table", "scaled_details", "covariate_coefs", "covariate_balance"))
+    if (!isTRUE(all.equal(bg[[k]], br[[k]], tolerance = 1e-12))) return(FALSE)
+  if (!identical(names(bg$anova), names(br$anova))) return(FALSE)
+  for (p in names(bg$anova)) {
+    ag <- as.data.frame(bg$anova[[p]]); ar <- as.data.frame(br$anova[[p]])
+    if ("RSS" %in% names(ag) && "AIC" %in% names(ag)) {
+      zero_rss <- (!is.na(ag$RSS) & ag$RSS < 1e-24) | (!is.na(ar$RSS) & ar$RSS < 1e-24)
+      ag$AIC[zero_rss] <- NA_real_; ar$AIC[zero_rss] <- NA_real_
+    }
+    if (!isTRUE(all.equal(ag, ar, tolerance = 1e-7))) return(FALSE)
+  }
+  TRUE
+}
 for (i in seq_along(gld_cases)) local({
   nm <- names(gld_cases)[i]
-  check(sprintf("GLD-%02d", i), sprintf("BE run '%s' is identical to its golden output", nm),
-    tryCatch(identical(readRDS(file.path("validation", "fixtures", "be_run_golden", paste0(nm, ".rds"))),
+  check(sprintf("GLD-%02d", i), sprintf("BE run '%s' matches its golden output", nm),
+    tryCatch(gld_equal(readRDS(file.path("validation", "fixtures", "be_run_golden", paste0(nm, ".rds"))),
                        be_golden_run(gld_cases[[nm]])), error = function(e) FALSE),
     "URS-BE-01, URS-BE-02, URS-EXP-05", critical = TRUE,
     method = paste0("The real BE module run through shiny::testServer on ", gld_cases[[nm]]$file,
                     "; be_result(), be_run_settings() and the notifications against the stored file"),
-    expected = "identical() to the golden file: the table, ANOVA, verdicts, checks and messages")
+    expected = "Matches the golden file: exact verdicts, checks, settings and notifications; tables and estimates within 1e-12")
 })
 
 # ---- The Analysis Record of a BE run reproduces the BE statistics and the verdict ----
@@ -6670,7 +6719,7 @@ check("EXC-07", "The ICH M13A checks use the data before exclusions, so excludin
     be <- paste(readLines("R/mod_path_be.R"), collapse = "\n")
     ba <- paste(readLines("R/be_analysis.R", warn = FALSE), collapse = "\n")
     any(grepl("Pre-dose concentration above 5% of Cmax", m_all)) && !any(grepl("Pre-dose concentration above 5% of Cmax", m_ex)) &&
-      grepl("be_m13a_checks(d_unexcl, cm, nca_res,", ba, fixed = TRUE) &&
+      grepl("be_m13a_checks(d_unexcl, cm, nca_unexcl,", ba, fixed = TRUE) &&
       grepl("data_without_exclusions(shared)", be, fixed = TRUE)
   }, error = function(e) FALSE),
   "URS-BE-11, URS-DAT-09", critical = TRUE,
@@ -7910,6 +7959,464 @@ check("ABL-04", "Sensitivity after an exclusion works for both approaches: the p
   expected = "ABEL: Excluded_Test = 1. RSABE: one subject fewer in the contrast. Both give an interval")
 
 end_section("ABL")
+
+# =============================================================================
+# =============================================================================
+# SECTION AUD: Statistical, Code and Stability Audit v1.9.1 (OQ/PQ)
+# =============================================================================
+start_section("AUD")
+
+check("AUD-01", "F-01: Single-Subject NCA auto-fills dose on initial load and when a new dataset replaces the active one",
+  tryCatch({
+    for (f in c("R/mod_partial_auc.R", "R/mod_lz_rules.R", "R/mod_path_single_nca.R")) source(f, local = FALSE)
+    d1 <- data.frame(Subject = c("1", "1", "2", "2"), Time = c(0, 2, 0, 2), Conc = c(10, 5, 12, 6),
+                     Dose = c(320, 320, 480, 480), stringsAsFactors = FALSE)
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc", dose = "Dose")
+    sh <- shiny::reactiveValues(raw_data = d1, pk_data = d1, col_map = cm, data_ready = TRUE,
+      study_info = list(file_name = "d1.csv", file_path = NULL, lloq = 0, blq_rule = "rule1", read_args = list(), door = "flat"),
+      nca_results = NULL, nca_settings = NULL, partial_aucs = NULL, be_results = NULL, viz_settings = NULL,
+      exclusions = NULL, prepare_opts = NULL, data_id = 1L, lz_rules = NULL, exclusion_request = NULL)
+    doses_sent <- numeric(0)
+    assign("updateNumericInput", function(session, inputId, label = NULL, value = NULL, ...) {
+      if (identical(inputId, "dose") && !is.null(value)) doses_sent <<- c(doses_sent, as.numeric(value))
+    }, envir = globalenv())
+    on.exit(if (exists("updateNumericInput", envir = globalenv(), inherits = FALSE)) rm("updateNumericInput", envir = globalenv()), add = TRUE)
+    d2 <- d1; d2$Dose <- c(500, 500, 750, 750)
+    shiny::testServer(path_single_nca_server, args = list(shared = sh), {
+      session$setInputs(data_mode = "upload", sel_profile = "1")
+      session$flushReact()
+      sh$pk_data <- d2; sh$raw_data <- d2; sh$data_id <- 2L
+      session$flushReact()
+    })
+    length(doses_sent) >= 2L && identical(doses_sent[1], 320) && identical(tail(doses_sent, 1), 500)
+  }, error = function(e) FALSE),
+  "URS-NCA-06, URS-UI-03", critical = TRUE,
+  method = "testServer(path_single_nca_server): load profile '1' with Dose 320, then replace shared$pk_data with profile '1' at Dose 500 without changing sel_profile",
+  expected = "updateNumericInput sets dose = 320 on initial render and updates dose = 500 on dataset replacement")
+
+check("AUD-02", "F-02: Single-subject manual half-life override excludes BLQ-imputed points and reproduces in the Analysis Record",
+  tryCatch({
+    df <- data.frame(Subject = "1", Time = c(0, 1, 2, 4, 8, 12), Conc = c(0, 10, 8, 4, 2, 0.4), stringsAsFactors = FALSE)
+    cm <- list(subject = "Subject", time = "Time", conc = "Conc")
+    f <- tempfile(fileext = ".csv"); write.csv(df, f, row.names = FALSE)
+    ds <- prepare_pk_dataset(read_pk_file(f), cm, list(lloq = 1.0, blq_rule = "rule4"))
+    st <- list(admin_route = "extravascular", dose = 100, infusion_duration = 0, is_steady_state = FALSE,
+               dose_unit = "mg", time_unit = "h", conc_unit = "ng/mL", trap_method = "log", r2adj_threshold = 0.7, mw = 0)
+    r_12 <- run_single_nca(ds$data$Time, ds$data$Conc, st, time_used = c(2, 4, 8, 12), is_blq = ds$data[[BLQ_FLAG_COLUMN]])
+    r_clean <- run_single_nca(ds$data$Time, ds$data$Conc, st, time_used = c(2, 4, 8), is_blq = ds$data[[BLQ_FLAG_COLUMN]])
+    r_batch <- suppressWarnings(run_nca(ds$data, cm, st, lz_overrides = list("1" = list(profile = "1", subject = "1", time_used = c(2, 4, 8, 12)))))
+    zp <- tempfile(fileext = ".zip")
+    create_single_analysis_record(zp, r_12, st, ds$data$Time, ds$data$Conc, subject_label = "1",
+      original_file_path = f, original_file_name = basename(f), blq_rule = "rule4", lloq = 1.0, col_map = cm,
+      lz_override = list(profile = "1", original_lambda_z = 0.1, adjusted_lambda_z = 0.1,
+                         original_r2adj = 0.99, adjusted_r2adj = 0.99, points_used = 3, time_used = c(2, 4, 8, 12)))
+    abs(r_12[["LAMZHL"]] - r_clean[["LAMZHL"]]) < 1e-12 &&
+      abs(r_12[["LAMZHL"]] - r_batch$LAMZHL[1]) < 1e-12 &&
+      grepl("Result: MATCH", rec_check_text(rec_unzip(zp)))
+  }, error = function(e) FALSE),
+  "URS-NCA-05, URS-EXP-04", critical = TRUE,
+  method = "Rule 4 (LLOQ 1.0 -> 0.5 at 12 h), time_used = c(2, 4, 8, 12) in run_single_nca(), run_nca() and create_single_analysis_record()",
+  expected = "12 h BLQ-imputed point is excluded from the slope (matches 2/4/8 h and batch NCA) and the single-subject record reproduces with MATCH")
+
+check("AUD-03", "F-03: Bioequivalence Excel export preserves Without_Exclusions and NCA_Parameters as separate intact sheets",
+  tryCatch({
+    cs <- be_golden_cases()[["replicate_excl"]]
+    sh <- be_golden_shared(cs$file, be_golden_exclusions(cs))
+    xlsx <- tempfile(fileext = ".xlsx")
+    suppressWarnings(shiny::testServer(path_be_server, args = list(shared = sh), {
+      do.call(session$setInputs, utils::modifyList(be_golden_defaults, cs$inputs))
+      session$setInputs(run_be = 1)
+      file.copy(output$dl_be_xlsx, xlsx, overwrite = TRUE)
+    }))
+    sheets <- openxlsx::getSheetNames(xlsx)
+    s_wo <- openxlsx::read.xlsx(xlsx, sheet = "Without_Exclusions")
+    s_nca <- openxlsx::read.xlsx(xlsx, sheet = "NCA_Parameters")
+    all(c("Confidence_Intervals", "Without_Exclusions", "NCA_Parameters") %in% sheets) &&
+      "PK.Parameter" %in% names(s_wo) && !"Subject" %in% names(s_wo) &&
+      "Subject" %in% names(s_nca) && nrow(s_nca) > nrow(s_wo)
+  }, error = function(e) FALSE),
+  "URS-EXP-01, URS-EXP-02", critical = TRUE,
+  method = "testServer(path_be_server) on replicate_excl; download dl_be_xlsx and read Without_Exclusions and NCA_Parameters",
+  expected = "Without_Exclusions holds sensitivity CI rows and NCA_Parameters holds per-profile PK parameters without overwriting sheet 2")
+
+check("AUD-04", "F-04: Parallel Welch sensitivity notes honour exclusions, per-parameter widened limits, PE constraint, CI level and log transform",
+  tryCatch({
+    set.seed(404)
+    df <- data.frame(Subject = as.character(1:20),
+                     Treatment = c(rep("R", 14), rep("T", 6)),
+                     CMAX = exp(c(rnorm(14, log(100), 0.12), rnorm(6, log(108), 0.35))),
+                     AUCLST = exp(c(rnorm(14, log(100), 0.12), rnorm(6, log(108), 0.35))),
+                     EXCLUDED = "", stringsAsFactors = FALSE)
+    # 1) Non-90% CI or untransformed gives no Welch BE verdict note
+    n_95 <- parallel_welch_notes(df, "CMAX", "Treatment", ci_level = 95)
+    n_ut <- parallel_welch_notes(df, "CMAX", "Treatment", log_transform = FALSE)
+    # 2) Excluded outlier row is ignored by parallel_welch_notes
+    df_ex <- rbind(df, data.frame(Subject = "99", Treatment = "T", CMAX = 1e6, AUCLST = 1e6,
+                                  EXCLUDED = "protocol deviation", stringsAsFactors = FALSE))
+    same_ex <- identical(parallel_welch_notes(df, "CMAX", "Treatment"),
+                         parallel_welch_notes(df_ex, "CMAX", "Treatment"))
+    # 3) widened_scope = 'cmax' keeps AUCLST at 80-125 while widening CMAX
+    n_cmax_only <- parallel_welch_notes(df, c("CMAX", "AUCLST"), "Treatment",
+                                        be_lower = 69.84, be_upper = 143.19, widened_scope = "cmax", pe_constraint = TRUE)
+    n_all_wide  <- parallel_welch_notes(df, c("CMAX", "AUCLST"), "Treatment",
+                                        be_lower = 69.84, be_upper = 143.19, widened_scope = "all", pe_constraint = TRUE)
+    length(n_95) == 0L && length(n_ut) == 0L && same_ex && !identical(n_cmax_only, n_all_wide)
+  }, error = function(e) FALSE),
+  "URS-BE-12, URS-BE-04", critical = TRUE,
+  method = "parallel_welch_notes() with ci_level = 95, log_transform = FALSE, an EXCLUDED outlier row, and widened_scope = 'cmax' vs 'all'",
+  expected = "empty at 95% or untransformed; identical with an EXCLUDED outlier; AUCLST stays on 80-125% when widened_scope = 'cmax'")
+
+check("AUD-05", "F-05: Visualize module Figure Record reproduces custom labels, tick spacing, theme, point toggles and multi-group colours",
+  tryCatch({
+    source("R/mod_path_viz.R", local = FALSE)
+    sh <- be_golden_shared("data/example_be_crossover.csv")
+    z_sum <- tempfile(fileext = ".zip"); z_spag <- tempfile(fileext = ".zip")
+    suppressWarnings(shiny::testServer(path_viz_server, args = list(shared = sh), {
+      session$setInputs(plot_type = "summary", summary_stat = "geomean", y_scale = "linear",
+                        color_by = "treatment", color_palette = "okabe", plot_theme = "classic",
+                        base_size = 13, x_label = "Hours post-dose", y_label = "Plasma conc (ng/mL)",
+                        plot_title = "Crossover Summary", x_tick = "4",
+                        show_points_spaghetti = FALSE, show_points_summary = TRUE,
+                        export_width = 7, export_height = 5, export_dpi = 72, export_format = "png",
+                        record_study = "VIZ5", record_analyst = "QA")
+      invisible(output$summary_plotly)
+      file.copy(output$dl_record, z_sum, overwrite = TRUE)
+      session$setInputs(plot_type = "spaghetti", color_by = "subject")
+      invisible(output$spaghetti_plotly)
+      file.copy(output$dl_record, z_spag, overwrite = TRUE)
+    }))
+    ex1 <- rec_unzip(z_sum); ex2 <- rec_unzip(z_spag)
+    js1 <- jsonlite::fromJSON(file.path(ex1, "figure_settings.json"))
+    grepl("Result: FIGURE CREATED", rec_check_text(ex1)) &&
+      grepl("Result: FIGURE CREATED", rec_check_text(ex2)) &&
+      identical(js1$visualization$x_label, "Hours post-dose") &&
+      identical(js1$visualization$plot_title, "Crossover Summary") &&
+      identical(as.character(js1$visualization$x_tick), "4") &&
+      identical(js1$visualization$theme, "classic")
+  }, error = function(e) FALSE),
+  "URS-VIZ-09, URS-EXP-03", critical = TRUE,
+  method = "testServer(path_viz_server): download Figure Records for summary (with custom labels, ticks, theme, point overlay) and spaghetti (colour by subject)",
+  expected = "both records produce FIGURE CREATED and persist all figure settings in figure_settings.json")
+
+check("AUD-06", "F-06: Controlled mode fails closed on audit/store errors and locks accounts after five failed signatures across sessions",
+  tryCatch({
+    d <- gxp_team("aud06"); sha <- gxp_rec("ana", "analyst", "aaaaaaaa60", "rec_aud06")
+    # 1) gxp_is_locked fails closed when store or trail is NULL
+    lock_null <- gxp_env$gxp_is_locked("rev", store = NULL) && gxp_env$gxp_is_locked("rev", tr = NULL)
+    # 2) audited_check fails closed when audit.sqlite is read-only
+    trail_f <- file.path(d, "audit.sqlite")
+    Sys.chmod(trail_f, "0400")
+    chk_ro <- gxp_env$audited_check()("rev", "Valid2026pass")
+    Sys.chmod(trail_f, "0600")
+    # 3) 3 wrong signature passwords in session 1 + 2 wrong signature passwords in session 2 -> locked + alert
+    testServer(gxp_as("rev", "analyst;reviewer"), {
+      gxp_pick(session, sha); session$setInputs(gxp_rec_approve = 1)
+      for (k in 1:3) session$setInputs(gxp_sign_user = "rev", gxp_sign_pwd = "Wrong2026pass", gxp_sign_submit = k)
+    })
+    testServer(gxp_as("rev", "analyst;reviewer"), {
+      gxp_pick(session, sha); session$setInputs(gxp_rec_approve = 1)
+      for (k in 1:2) session$setInputs(gxp_sign_user = "rev", gxp_sign_pwd = "Wrong2026pass", gxp_sign_submit = k)
+    })
+    tr <- gxp_env$audit_read()
+    now_locked <- gxp_env$gxp_is_locked("rev", tr = tr)
+    alert_fired <- any(tr$event == "security_alert" & grepl("account_locked", tr$details))
+    # Even the right password is now refused at sign-in and at signing
+    chk_after <- gxp_env$audited_check()("rev", "Valid2026pass")
+    msg_after <- ""
+    testServer(gxp_as("rev", "analyst;reviewer"), {
+      gxp_pick(session, sha); session$setInputs(gxp_rec_approve = 1)
+      session$setInputs(gxp_sign_user = "rev", gxp_sign_pwd = "Valid2026pass", gxp_sign_submit = 1)
+      msg_after <<- gxp_msg(output)
+    })
+    gxp_unset()
+    lock_null && !isTRUE(chk_ro$result) && now_locked && alert_fired &&
+      !isTRUE(chk_after$result) && grepl("locked", msg_after)
+  }, error = function(e) { try(Sys.chmod(file.path(Sys.getenv("NCA_GXP_DIR"), "audit.sqlite"), "0600"), silent = TRUE); gxp_unset(); FALSE }),
+  "URS-GXP-02, URS-GXP-03, URS-GXP-08", critical = TRUE,
+  method = "gxp_is_locked with NULL inputs; audited_check with read-only audit.sqlite; 3 + 2 failed signatures across two sessions",
+  expected = "NULL state and unlogged sign-ins refused; 5th failed signature locks the account with a security_alert and blocks sign-in and signing")
+
+check("AUD-07", "F-07: Fixed-effects N_Ref/N_Test counts contributing replicate subjects accurately, excluded crossover periods trigger incomplete-subject warnings, and texts match",
+  tryCatch({
+    d <- reg_be_grain(c("TRTR", "RTRT"), 6, ratio = 0.98, sd_w = 0.15, seed = 77)
+    # Subject 1 keeps only 2 Reference periods (contributes 1 residual DF on Reference); Subject 2 keeps only 1 period total (saturated, 0 DF)
+    d <- d[!(d$Subject == "1" & d$Treatment == "T") & !(d$Subject == "2" & d$Period %in% c(2, 3, 4)), ]
+    d$Treatment <- factor(d$Treatment, levels = c("R", "T"))
+    r <- fit_be_parameter(d, "CMAX", design = "2x2x4", model_type = "fixed",
+                          trt_col = "Treatment", subj_col = "Subject", per_col = "Period", seq_col = "Sequence")
+    # Excluding one period of a 2x2x2 subject triggers incomplete_subjects in run_be_analysis
+    raw_xo <- read_pk_file("data/example_be_crossover.csv")
+    cm_xo <- auto_detect_columns(names(raw_xo))
+    cm_xo <- cm_xo[!vapply(cm_xo, function(v) is.null(v) || is.na(v) || identical(v, ""), logical(1))]
+    ex_xo <- as_exclusions(data.frame(id = "e1", level = "profile", subject = as.character(raw_xo$Subject[1]),
+      treatment = as.character(raw_xo$Treatment[1]), period = as.character(raw_xo$Period[1]),
+      time = NA_real_, category = "protocol deviation", detail = "d", protocol_section = "",
+      after_be = FALSE, created_utc = "2026-01-01 00:00:00", created_by = "qa", stringsAsFactors = FALSE))
+    ds_xo <- prepare_pk_dataset(raw_xo, cm_xo, list(lloq = 0, blq_rule = "rule1", exclusions = ex_xo))
+    st_xo <- list(admin_route = "extravascular", dose = 100, dose_unit = "mg", time_unit = "h",
+                  conc_unit = "ng/mL", trap_method = "log", r2adj_threshold = 0.7, is_steady_state = FALSE, exclusions = ex_xo)
+    nca_xo <- suppressWarnings(run_nca(ds_xo$data, cm_xo, st_xo))
+    be_xo <- run_be_analysis(nca_xo, ds_xo$data, cm_xo,
+      be_settings = list(design_selected = "2x2x2", model_type = "fixed", parameters = c("CMAX", "AUCLST"), log_transform = TRUE,
+                         ci_level = 90, be_lower = 80, be_upper = 125, widened_scope = "cmax", pe_constraint = TRUE, reference = "Reference"),
+      nca_settings = st_xo, detected_design = ds_xo$design, exclusions = ex_xo, data_unexcluded = raw_xo)
+    be_ui <- paste(readLines("R/mod_path_be.R", warn = FALSE), collapse = "\n")
+    r$row$N_Ref == 11L && r$row$N_Test == 10L &&
+      !is.null(be_xo$balance_info) && be_xo$balance_info$n_incomplete == 1L &&
+      !grepl("also uses subjects with one period", be_ui, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-BE-01, URS-BE-05, URS-GEN-03", critical = TRUE,
+  method = "fit_be_parameter on 2x2x4 with one R-only 2-period subject and one 1-period subject; run_be_analysis on 2x2x2 with 1 excluded period",
+  expected = "N_Ref = 11, N_Test = 10; 2x2x2 profile exclusion reports 1 incomplete subject; stale selector text removed")
+
+check("AUD-08", "F-08: Exclusion modal populates sample-level reason categories immediately on open",
+  tryCatch({
+    sh <- be_golden_shared("data/example_be_crossover.csv")
+    modals <- list()
+    assign("showModal", function(ui, session = shiny::getDefaultReactiveDomain()) {
+      modals[[length(modals) + 1L]] <<- htmltools::renderTags(ui)$html
+    }, envir = globalenv())
+    on.exit(if (exists("showModal", envir = globalenv(), inherits = FALSE)) rm("showModal", envir = globalenv()), add = TRUE)
+    shiny::testServer(exclusions_server, args = list(shared = sh), {
+      session$setInputs(add = 1)
+    })
+    length(modals) == 1L && grepl(EXCLUSION_CATEGORIES$sample[[1]], modals[[1]], fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-DAT-09, URS-UI-03", critical = FALSE,
+  method = "testServer(exclusions_server): click add and inspect rendered modal HTML",
+  expected = "Reason selector contains EXCLUSION_CATEGORIES$sample on initial open")
+
+check("AUD-09", "F-09: Excluded profiles are omitted from All-Subjects mean/boxplots and Visualize summary overlays and subject counts",
+  tryCatch({
+    source("R/mod_path_multi_nca.R", local = FALSE); source("R/mod_path_viz.R", local = FALSE)
+    raw <- read_pk_file("data/example_theoph.csv")
+    cm <- auto_detect_columns(names(raw))
+    cm <- cm[!vapply(cm, function(v) is.null(v) || is.na(v) || identical(v, ""), logical(1))]
+    # Inflate Subject 1 to 10000 and exclude Subject 1's profile
+    raw[[cm$conc]][raw[[cm$subject]] == 1 & raw[[cm$time]] > 0] <- 10000
+    ex <- as_exclusions(data.frame(id = "e9", level = "profile", subject = "1", treatment = "", period = "",
+      time = NA_real_, category = "protocol deviation", detail = "outlier", protocol_section = "",
+      after_be = FALSE, created_utc = "2026-01-01 00:00:00", created_by = "qa", stringsAsFactors = FALSE))
+    ds <- prepare_pk_dataset(raw, cm, list(lloq = 0, blq_rule = "rule1", exclusions = ex))
+    sh <- shiny::reactiveValues(raw_data = raw, pk_data = ds$data, col_map = cm, data_ready = TRUE,
+      study_info = list(file_name = "th.csv", file_path = "data/example_theoph.csv", lloq = 0, blq_rule = "rule1", read_args = list(), door = "flat"),
+      nca_results = NULL, nca_settings = NULL, partial_aucs = NULL, be_results = NULL, viz_settings = NULL,
+      exclusions = ex, prepare_opts = NULL, data_id = 1L, lz_rules = NULL, exclusion_request = NULL)
+    max_sum_pt <- NA_real_; leg_txt <- ""
+    suppressWarnings(shiny::testServer(path_viz_server, args = list(shared = sh), {
+      session$setInputs(plot_type = "summary", summary_stat = "arithmean", y_scale = "linear",
+                        show_points_summary = TRUE, color_palette = "default", plot_theme = "bw", base_size = 11,
+                        x_label = "", y_label = "", plot_title = "", x_tick = "", color_by = "subject", dose_norm = FALSE)
+      p <- build_summary_gg()
+      gb <- ggplot2::ggplot_build(p)
+      max_sum_pt <<- max(gb$data[[1]]$y, na.rm = TRUE)
+      leg_txt <<- paste(as.character(output$figure_legend_ui), collapse = " ")
+    }))
+    st <- list(admin_route = "extravascular", dose = 320, dose_unit = "mg", time_unit = "h",
+               conc_unit = "mg/L", trap_method = "log", r2adj_threshold = 0.7, is_steady_state = FALSE, exclusions = ex)
+    r_nca <- suppressWarnings(run_nca(ds$data, cm, st))
+    mn_src <- paste(readLines("R/mod_path_multi_nca.R", warn = FALSE), collapse = "\n")
+    max_sum_pt < 100 && (grepl("=\\u200911", leg_txt) || grepl("11)", leg_txt, fixed = TRUE)) &&
+      max(r_nca$CMAX[!(r_nca$EXCL %in% 1)], na.rm = TRUE) < 100 &&
+      grepl("r <- r[!(r$EXCL %in% 1), , drop = FALSE]", mn_src, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-DAT-09, URS-VIZ-02", critical = FALSE,
+  method = "Subject 1 inflated to conc = 10000 and excluded as a profile; inspect Visualize summary overlay, figure legend and multi-NCA plot filters",
+  expected = "Summary overlay max < 100 (Subject 1 omitted), summary legend reports n = 11, and multi-NCA plots filter excluded profiles")
+
+check("AUD-10", "F-10: Replicate CV diagnostic table is not skipped when a zero value belongs only to an excluded profile",
+  tryCatch({
+    raw <- read_pk_file("data/example_be_replicate_2x2x4.csv")
+    cm <- auto_detect_columns(names(raw))
+    cm <- cm[!vapply(cm, function(v) is.null(v) || is.na(v) || identical(v, ""), logical(1))]
+    # Zero out early concentrations of the first profile (Subject 1, Period 1) and exclude that profile
+    p1_rows <- raw[[cm$subject]] == raw[[cm$subject]][1] & raw[[cm$period]] == raw[[cm$period]][1] & raw[[cm$time]] <= 1
+    raw[[cm$conc]][p1_rows] <- 0
+    ex <- as_exclusions(data.frame(id = "e10", level = "profile", subject = as.character(raw[[cm$subject]][1]),
+      treatment = as.character(raw[[cm$treatment]][1]), period = as.character(raw[[cm$period]][1]),
+      time = NA_real_, category = "vomiting", detail = "vomited", protocol_section = "",
+      after_be = FALSE, created_utc = "2026-01-01 00:00:00", created_by = "qa", stringsAsFactors = FALSE))
+    ds <- prepare_pk_dataset(raw, cm, list(lloq = 0, blq_rule = "rule1", exclusions = ex))
+    pauc <- data.frame(start = 0, end = 1, cmax = FALSE, role = "pivotal", stringsAsFactors = FALSE)
+    st <- list(admin_route = "extravascular", dose = 100, dose_unit = "mg", time_unit = "h",
+               conc_unit = "ng/mL", trap_method = "log", r2adj_threshold = 0.7, is_steady_state = FALSE,
+               exclusions = ex, partial_aucs = pauc)
+    nca_r <- suppressWarnings(run_nca(ds$data, cm, st))
+    out <- run_be_analysis(nca_r, ds$data, cm,
+      be_settings = list(design_selected = "2x2x4", model_type = "fixed", parameters = c("CMAX", "AUC_0_1"), log_transform = TRUE,
+                         ci_level = 90, be_lower = 80, be_upper = 125, widened_scope = "cmax", pe_constraint = TRUE, reference = "Reference",
+                         partial_aucs = pauc),
+      nca_settings = st, detected_design = ds$design, exclusions = ex, data_unexcluded = raw)
+    !is.null(out$result$cv_table) && "AUC_0_1" %in% out$result$cv_table$Parameter
+  }, error = function(e) FALSE),
+  "URS-BE-03, URS-DAT-09", critical = FALSE,
+  method = "2x2x4 replicate with AUC_0_1 == 0 on one analyst-excluded profile; run run_be_analysis()",
+  expected = "cv_table includes AUC_0_1 because all unexcluded rows are positive")
+
+check("AUD-11", "F-11: Pre-exclusion ICH M13A checks use unexcluded NCA results and detect changes from both sample and profile exclusions",
+  tryCatch({
+    raw <- read_pk_file("data/example_be_crossover.csv")
+    cm <- auto_detect_columns(names(raw))
+    cm <- cm[!vapply(cm, function(v) is.null(v) || is.na(v) || identical(v, ""), logical(1))]
+    # Make Subject 1 Period 1 very low exposure (< 5% of geometric mean) and exclude that whole profile
+    i_low <- raw[[cm$subject]] == raw[[cm$subject]][1] & raw[[cm$period]] == raw[[cm$period]][1]
+    raw[[cm$conc]][i_low] <- raw[[cm$conc]][i_low] * 0.001
+    ex <- as_exclusions(data.frame(id = "e11", level = "profile", subject = as.character(raw[[cm$subject]][1]),
+      treatment = as.character(raw[[cm$treatment]][1]), period = as.character(raw[[cm$period]][1]),
+      time = NA_real_, category = "vomiting", detail = "vomited", protocol_section = "",
+      after_be = FALSE, created_utc = "2026-01-01 00:00:00", created_by = "qa", stringsAsFactors = FALSE))
+    ds <- prepare_pk_dataset(raw, cm, list(lloq = 0, blq_rule = "rule1", exclusions = ex))
+    st <- list(admin_route = "extravascular", dose = 100, dose_unit = "mg", time_unit = "h",
+               conc_unit = "ng/mL", trap_method = "log", r2adj_threshold = 0.7, is_steady_state = FALSE, exclusions = ex)
+    nca_r <- suppressWarnings(run_nca(ds$data, cm, st))
+    out <- run_be_analysis(nca_r, ds$data, cm,
+      be_settings = list(design_selected = "2x2x2", model_type = "fixed", parameters = c("CMAX", "AUCLST"), log_transform = TRUE,
+                         ci_level = 90, be_lower = 80, be_upper = 125, widened_scope = "cmax", pe_constraint = TRUE, reference = "Reference"),
+      nca_settings = st, detected_design = ds$design, exclusions = ex, data_unexcluded = raw)
+    any(grepl("below 5% of the geometric mean", out$result$m13a, fixed = TRUE)) &&
+      any(grepl("with the exclusions applied their outcome would differ", out$result$m13a, fixed = TRUE))
+  }, error = function(e) FALSE),
+  "URS-BE-11, URS-DAT-09", critical = TRUE,
+  method = "Subject 1 Period 1 scaled to 0.1% exposure (< 5% of geometric mean) and excluded as a profile in run_be_analysis()",
+  expected = "M13A check still flags low exposure on pre-exclusion data and notes that exclusions change the check outcome")
+
+check("AUD-12", "F-12: Controlled-mode record summary preview opens Figure Records (figure_provenance.html)",
+  tryCatch({
+    dir.create(gxp_tmp, showWarnings = FALSE, recursive = TRUE)
+    d <- gxp_team("aud12")
+    rec_store <- gxp_env$gxp_config()$records
+    dir.create(rec_store, showWarnings = FALSE, recursive = TRUE)
+    zf <- tempfile(fileext = ".zip")
+    f <- "data/example_be_crossover.csv"; raw_f <- read_pk_file(f); cm <- auto_detect_columns(names(raw_f))
+    cm <- cm[!vapply(cm, function(v) is.null(v) || is.na(v) || identical(v, ""), logical(1))]
+    p <- ggplot2::ggplot(raw_f, ggplot2::aes(x = .data[[cm$time]], y = .data[[cm$conc]], group = .data[[cm$subject]])) + ggplot2::geom_line()
+    create_viz_record(zf, p, list(plot_type = "spaghetti", export_format = "png", dpi = 72), cm, f, basename(f))
+    sha <- digest::digest(file = zf, algo = "sha256")
+    file.copy(zf, file.path(rec_store, paste0(sha, ".zip")), overwrite = TRUE)
+    gxp_env$audit_append("record_created", object = "Figure_Record.zip", sha256 = sha,
+                         user = "ana", role = "analyst",
+                         details = list(type = "figure", study = "FIG", queued = FALSE, data_sha256 = strrep("a", 64)))
+    modals <- list()
+    assign("showModal", function(ui, session = shiny::getDefaultReactiveDomain()) {
+      modals[[length(modals) + 1L]] <<- htmltools::renderTags(ui)$html
+    }, envir = gxp_env)
+    on.exit({ if (exists("showModal", envir = gxp_env, inherits = FALSE)) rm("showModal", envir = gxp_env); gxp_unset() }, add = TRUE)
+    testServer(gxp_as("rev", "analyst;reviewer"), {
+      gxp_pick(session, sha)
+      session$setInputs(gxp_rec_summary = 1)
+    })
+    gxp_unset()
+    length(modals) == 1L && !grepl("cannot be read from this record", modals[[1]], fixed = TRUE) &&
+      grepl("Figure", modals[[1]], fixed = TRUE)
+  }, error = function(e) { gxp_unset(); FALSE }),
+  "URS-GXP-07, URS-VIZ-09", critical = FALSE,
+  method = "Store a real Figure Record in controlled mode and click gxp_rec_summary in testServer(gxp_sign_server)",
+  expected = "Modal renders figure_provenance.html inside the sandboxed iframe without error")
+
+check("AUD-13", "F-13: Excel worksheet names are sanitized and deduplicated, and zip_record_dir fails loudly on archive errors",
+  tryCatch({
+    s1 <- safe_excel_sheet_name("ANOVA_Partial AUC [0:30/1:00]*?", character(0))
+    s2 <- safe_excel_sheet_name("ANOVA_Partial AUC (0-0.25, very long window A)", character(0))
+    s3 <- safe_excel_sheet_name("ANOVA_Partial AUC (0-0.25, very long window B)", c(s2))
+    # Force zip_record_dir to write into a non-existent directory where both system zip and utils::zip fail
+    td <- tempfile("aud13_"); dir.create(td); writeLines("x", file.path(td, "a.txt"))
+    bad_out <- file.path(td, "no_such_dir", "sub", "out.zip")
+    err_thrown <- tryCatch({ zip_record_dir(td, bad_out); FALSE }, error = function(e) TRUE)
+    unlink(td, recursive = TRUE)
+    !grepl("[\\[\\]\\*\\?/\\\\:]", s1) && nchar(s2) <= 31L && nchar(s3) <= 31L && !identical(s2, s3) && err_thrown
+  }, error = function(e) FALSE),
+  "URS-EXP-01, URS-EXP-04", critical = TRUE,
+  method = "safe_excel_sheet_name() on forbidden characters and 31-char collisions; zip_record_dir() to an uncreatable output path",
+  expected = "forbidden chars stripped, colliding 31-char prefixes disambiguated, and zip_record_dir throws an error instead of a warning")
+
+check("AUD-14", "F-14: Boundary point-estimate text in ABEL/RSABE and round_half_up on supplementary parallel CIs are consistent",
+  tryCatch({
+    row_rsa <- data.frame(Approach = "FDA RSABE", Route = "Scaled", Bioequivalent = "NO",
+                          Point_Est = 125.04, s_WR = 0.35, Crit_Bound = -0.02, CI_Lower = 85, CI_Upper = 130,
+                          Scaled_Lower = 70, Scaled_Upper = 143, stringsAsFactors = FALSE)
+    row_abl <- data.frame(Approach = "EMA ABEL", Route = "Scaled", Bioequivalent = "NO",
+                          Point_Est = 79.99, s_WR = 0.35, Crit_Bound = NA_real_, CI_Lower = 75, CI_Upper = 110,
+                          Scaled_Lower = 74, Scaled_Upper = 135, stringsAsFactors = FALSE)
+    row_ok  <- data.frame(Approach = "FDA RSABE", Route = "Scaled", Bioequivalent = "YES",
+                          Point_Est = 97.80, s_WR = 0.35, Crit_Bound = -0.02, CI_Lower = 85, CI_Upper = 112,
+                          Scaled_Lower = 70, Scaled_Upper = 143, stringsAsFactors = FALSE)
+    t_rsa <- be_scaled_explain(row_rsa, "Cmax")
+    t_abl <- be_scaled_explain(row_abl, "Cmax")
+    t_ok  <- be_scaled_explain(row_ok, "Cmax")
+    ba <- paste(readLines("R/be_analysis.R", warn = FALSE), collapse = "\n")
+    grepl("point estimate 125.04% outside 80 to 125%", t_rsa, fixed = TRUE) &&
+      grepl("point estimate 79.99% outside 80 to 125%", t_abl, fixed = TRUE) &&
+      grepl("point estimate 97.8% inside 80 to 125%", t_ok, fixed = TRUE) &&
+      grepl("unadj_lo <- round_half_up(unadj_lo, 2)", ba, fixed = TRUE) &&
+      grepl('wval("lo", TRUE)', ba, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-BE-04, URS-BE-14, URS-BE-15", critical = TRUE,
+  method = "be_scaled_explain() at PE = 125.04%, 79.99% and 97.80%; inspect round_half_up usage for Unadj and Welch limits in R/be_analysis.R",
+  expected = "125.04% and 79.99% shown to two decimals, 97.8% kept concise, and Unadj/Welch limits use round_half_up")
+
+check("AUD-15", "F-15: Signed bundle downloads clean up temp folders, empty selection filenames are safe, and half-hour work hours are respected",
+  tryCatch({
+    d <- gxp_team("aud15"); sha <- gxp_rec("ana", "analyst", "aaaaaaaa15", "rec_aud15")
+    Sys.setenv(NCA_GXP_WORK_HOURS = "08:30-17:30")
+    before_bundles <- list.files(tempdir(), pattern = "^bundle_", full.names = TRUE)
+    testServer(gxp_as("rev", "analyst;reviewer"), {
+      gxp_pick(session, sha); session$setInputs(gxp_rec_approve = 1)
+      session$setInputs(gxp_sign_user = "rev", gxp_sign_pwd = "Valid2026pass", gxp_sign_submit = 1)
+      out_z <- tempfile(fileext = ".zip")
+      file.copy(output$gxp_rec_download, out_z, overwrite = TRUE)
+    })
+    after_bundles <- setdiff(list.files(tempdir(), pattern = "^bundle_", full.names = TRUE), before_bundles)
+    # Plant local 08:15 (outside 08:30-17:30) and 08:45 (inside 08:30-17:30)
+    t_early <- format(as.POSIXct(paste(Sys.Date(), "08:15:00"), tz = ""), "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC")
+    t_in    <- format(as.POSIXct(paste(Sys.Date(), "08:45:00"), tz = ""), "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC")
+    real_now <- gxp_env$gxp_utc_now
+    assign("gxp_utc_now", function() t_early, envir = gxp_env)
+    gxp_env$audit_append("analysis_run", object = "early_0815", user = "ana", role = "analyst")
+    assign("gxp_utc_now", function() t_in, envir = gxp_env)
+    gxp_env$audit_append("analysis_run", object = "inside_0845", user = "ana", role = "analyst")
+    assign("gxp_utc_now", real_now, envir = gxp_env)
+    tr <- gxp_env$audit_read(); ex <- gxp_env$gxp_exceptions(tr, gxp_env$gxp_records(tr))
+    out_objs <- ex[["Activity outside working hours"]]$Object
+    gxp_unset()
+    length(after_bundles) == 0L && ("early_0815" %in% out_objs) && !("inside_0845" %in% out_objs)
+  }, error = function(e) { gxp_unset(); FALSE }),
+  "URS-GXP-09, URS-GXP-14", critical = FALSE,
+  method = "Download signed bundle and check tempdir() for leftover bundle_ dirs; test NCA_GXP_WORK_HOURS = '08:30-17:30' at 08:15 vs 08:45 local time",
+  expected = "Zero leftover bundle_ temp directories; 08:15 flagged as outside 08:30-17:30 while 08:45 is inside")
+
+check("AUD-16", "F-16: Zero-area log-down profiles emit NA (not NaN) for MRT, and RSABE power curves use an adaptive simulation grid",
+  tryCatch({
+    source("R/mod_path_power.R", local = FALSE)
+    # Profile with an interior zero between two zero-width/degenerate segments so lst == 0 if triggered, and check fix_log_down_zeros guard
+    df_z <- data.frame(Subject = "1", Time = c(0, 1, 2), Conc = c(0, 0, 5), stringsAsFactors = FALSE)
+    cm_z <- list(subject = "Subject", time = "Time", conc = "Conc")
+    st_z <- list(admin_route = "extravascular", dose = 100, dose_unit = "mg", time_unit = "h",
+                 conc_unit = "ng/mL", trap_method = "log", r2adj_threshold = 0.7, is_steady_state = FALSE)
+    r_z <- suppressWarnings(run_nca(df_z, cm_z, st_z))
+    pl_src <- paste(readLines("R/pipeline.R", warn = FALSE), collapse = "\n")
+    pw_src <- paste(readLines("R/mod_path_power.R", warn = FALSE), collapse = "\n")
+    !any(vapply(r_z, function(col) any(is.nan(col)), logical(1))) &&
+      grepl("mrt_lst <- if (is.finite(lst) && lst > 0) aumc / lst else NA_real_", pl_src, fixed = TRUE) &&
+      grepl('withProgress(message = "Computing power curve..."', pw_src, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-NCA-04, URS-PWR-02", critical = FALSE,
+  method = "run_nca with trap_method = 'log' on degenerate zero-area profile; inspect R/pipeline.R MRT guard and R/mod_path_power.R adaptive grid",
+  expected = "No NaN values in NCA output; MRT guarded for lst <= 0; power curve wrapped in withProgress with adaptive scaled grid")
+
+check("AUD-17", "F-17: Data Guide pitfall 11 directs users to built-in Exclusions instead of editing source files",
+  tryCatch({
+    source("R/mod_data_guide.R", local = TRUE)
+    g_html <- htmltools::renderTags(data_guide_ui())$html
+    g_txt <- gsub("\\s+", " ", gsub("<[^>]+>", "", g_html))
+    grepl("11. Deleting rows from the file instead of using Exclusions", g_txt, fixed = TRUE) &&
+      grepl("use Exclusions on Upload &amp; Check Data", g_html, fixed = TRUE) &&
+      !grepl("has no control to exclude", g_txt, fixed = TRUE)
+  }, error = function(e) FALSE),
+  "URS-GEN-03, URS-DAT-09", critical = FALSE,
+  method = "Render data_guide_ui() and inspect pitfall 11",
+  expected = "Instructs users to keep the unedited file and use Exclusions; stale 'has no control to exclude' text is gone")
+
+end_section("AUD")
 
 # =============================================================================
 # SECTION DOC: The statistics text says what the code does

@@ -958,11 +958,12 @@ data_guide_ui <- function() {
         ),
         tags$div(
           class = "border-start border-4 border-danger ps-3 mb-4",
-          tags$h6(class = "fw-bold text-danger", "11. Excluding a subject by editing the file"),
+          tags$h6(class = "fw-bold text-danger", "11. Deleting rows from the file instead of using Exclusions"),
           tags$p(class = "small",
-                 "The app has no control to exclude a subject or period, so an exclusion means editing the file, ",
-                 "and the Analysis Record then holds only the edited file. Archive the unedited source file with ",
-                 "the reason for each exclusion, as ICH M13A asks.")
+                 "Do not edit the source file to remove a sample or a subject's period: an edited file hides what was ",
+                 "left out. Upload the unedited file and use Exclusions on Upload & Check Data (or Half-Life Review) ",
+                 "to record the reason and protocol section, so the Analysis Record keeps the original file, the ",
+                 "exclusion register and, in Bioequivalence, the sensitivity analysis without exclusions (ICH M13A).")
         )
       )
     ),
